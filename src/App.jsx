@@ -268,6 +268,7 @@ export default function App() {
         zoomOnScroll={true}
         zoomOnPinch={true}
         selectionOnDrag={false}
+        multiSelectionKeyCode="Shift"
         fitView
       >
         <Background />

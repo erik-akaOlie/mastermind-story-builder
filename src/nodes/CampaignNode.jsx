@@ -26,12 +26,13 @@ export default function CampaignNode({ data, selected }) {
   const isEdgeHighlighted = data.hoveredEdgeNodeIds?.has(data.id)
   const anythingActive = data.anyHovered || data.hoveredEdgeNodeIds != null
 
-  // Hover always wins visual priority over selection
-  const isActive = hovered || isEdgeHighlighted
-  const lifted = isActive || (selected && !anythingActive)
+  // Selected cards are always part of the user's active focus — never dimmed
+  // Hover gives lift; selected gives lift only when nothing is being hovered
+  const isActive = hovered || isEdgeHighlighted || selected
+  const lifted = hovered || isEdgeHighlighted || (selected && !anythingActive)
 
   const baseopacity = data.locked ? 0.5 : 1
-  const isDimmed = anythingActive ? !isActive : (data.anySelected && !selected)
+  const isDimmed = !isActive && (anythingActive || data.anySelected)
   const opacity = isDimmed ? baseopacity * 0.5 : baseopacity
 
   return (
