@@ -45,8 +45,9 @@ export default function CampaignNode({ data, selected }) {
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <Handle type="target" position={Position.Top} className="opacity-0" />
-      <Handle type="source" position={Position.Bottom} className="opacity-0" />
+      {/* Invisible center handles — floating edges compute their own border points */}
+      <Handle type="source" position={Position.Top} className="opacity-0" style={{ top: '50%', left: '50%' }} />
+      <Handle type="target" position={Position.Top} className="opacity-0" style={{ top: '50%', left: '50%' }} />
 
       {/* Header */}
       <div
