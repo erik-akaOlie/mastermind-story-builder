@@ -23,14 +23,15 @@ export default function CampaignNode({ data, selected }) {
   const [hovered, setHovered] = useState(false)
   const typeConfig = NODE_TYPES[data.type] || { label: data.type, color: data.color || '#6B7280' }
 
-  const lifted = selected || hovered
-
-  // Dimming logic:
-  // - locked node: 0.5 base opacity
-  // - another node is selected and this one isn't: multiply by 0.5
-  const baseopacity = data.locked ? 0.5 : 1
   const isEdgeHighlighted = data.hoveredEdgeNodeIds?.has(data.id)
-  const isDimmed = data.anySelected && !selected && !hovered && !isEdgeHighlighted
+  const anythingActive = data.anyHovered || data.hoveredEdgeNodeIds != null
+
+  // Hover always wins visual priority over selection
+  const isActive = hovered || isEdgeHighlighted
+  const lifted = isActive || (selected && !anythingActive)
+
+  const baseopacity = data.locked ? 0.5 : 1
+  const isDimmed = anythingActive ? !isActive : (data.anySelected && !selected)
   const opacity = isDimmed ? baseopacity * 0.5 : baseopacity
 
   return (
