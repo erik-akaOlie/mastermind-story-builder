@@ -1,6 +1,15 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Anchor the rem base to the browser's root font-size preference (default 16px).
+   Using 100% — not a hard-coded px value — so users who increase their browser
+   font size for accessibility get proportional scaling throughout the app. */
+html {
+  font-size: 100%;
+}
 
 /* Override React Flow's default hand cursor on the canvas pane */
 .react-flow__pane {
@@ -14,3 +23,47 @@
 .is-panning .react-flow__pane:active {
   cursor: grabbing !important;
 }
+
+/* Remove React Flow's selection/focus indicators from the node wrapper div.
+   Safe to use here — these target the RF wrapper, not our content div,
+   so there's no conflict with our inline box-shadow on the inner card. */
+.react-flow__node.selected,
+.react-flow__node:focus,
+.react-flow__node:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* Marquee drag rectangle — visible while dragging to select */
+.react-flow__selection {
+  background: rgba(99, 102, 241, 0.06);
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  border-radius: 4px;
+}
+
+/* Header title input — placeholder inherits text color at 50% opacity so it
+   shifts correctly when the header switches between dark and light backgrounds */
+.modal-header-input::placeholder {
+  color: inherit;
+  opacity: 0.5;
+}
+
+/* Post-selection bounding box — React Flow renders this around all selected
+   nodes after release. We hide it entirely; our cards communicate selected
+   state via scale, shadow, and opacity instead. The element stays in the DOM
+   so multi-node drag-to-move continues to work. */
+.react-flow__nodesselection-rect {
+  background: none;
+  border: none;
+}
+
+/* Placeholder for contenteditable text nodes */
+[contenteditable][data-placeholder]:empty::before {
+  content: attr(data-placeholder);
+  color: #d1d5db;
+  font-style: italic;
+  font-weight: 400;
+  font-size: 14px;
+  pointer-events: none;
+}
+
