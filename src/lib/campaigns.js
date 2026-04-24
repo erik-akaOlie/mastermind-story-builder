@@ -6,6 +6,7 @@
 // ============================================================================
 
 import { supabase } from './supabase.js'
+import { persistWrite } from './errorReporting.js'
 
 // The five built-in card types, seeded on every new campaign.
 // Matches src/store/useTypeStore.js (the hardcoded DEFAULT_TYPES).
@@ -69,6 +70,20 @@ export async function createCampaign(name, description = null) {
 }
 
 // ----------------------------------------------------------------------------
+// Fetch a single campaign by id. Returns null if not found (or not owned by
+// the current user — RLS filters it out before we see it).
+// ----------------------------------------------------------------------------
+export async function getCampaign(id) {
+  const { data, error } = await supabase
+    .from('campaigns')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle()
+  if (error) throw error
+  return data
+}
+
+// ----------------------------------------------------------------------------
 // Load the node types for a campaign. Returned in insertion order.
 // ----------------------------------------------------------------------------
 export async function listNodeTypes(campaignId) {
@@ -86,14 +101,16 @@ export async function listNodeTypes(campaignId) {
 // Rename a campaign (and/or update its description).
 // ----------------------------------------------------------------------------
 export async function updateCampaign(id, patch) {
-  const { data, error } = await supabase
-    .from('campaigns')
-    .update(patch)
-    .eq('id', id)
-    .select()
-    .single()
-  if (error) throw error
-  return data
+  return persistWrite(async () => {
+    const { data, error } = await supabase
+      .from('campaigns')
+      .update(patch)
+      .eq('id', id)
+      .select()
+      .single()
+    if (error) throw error
+    return data
+  }, 'this campaign')
 }
 
 // ----------------------------------------------------------------------------
@@ -101,6 +118,8 @@ export async function updateCampaign(id, patch) {
 // (node_types, nodes, node_sections, connections, text_nodes) go with it.
 // ----------------------------------------------------------------------------
 export async function deleteCampaign(id) {
-  const { error } = await supabase.from('campaigns').delete().eq('id', id)
-  if (error) throw error
+  return persistWrite(async () => {
+    const { error } = await supabase.from('campaigns').delete().eq('id', id)
+    if (error) throw error
+  }, 'this deletion')
 }

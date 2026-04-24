@@ -14,6 +14,7 @@
 // ============================================================================
 
 import { supabase } from './supabase.js'
+import { persistWrite } from './errorReporting.js'
 
 const SECTION_KINDS = ['narrative', 'hidden_lore', 'dm_notes', 'media']
 
@@ -63,28 +64,30 @@ export async function createNode({
   dmNotes = [],
   media = [],
 }) {
-  const { data: node, error } = await supabase
-    .from('nodes')
-    .insert({
-      campaign_id: campaignId,
-      type_id: typeId,
-      label,
-      summary,
-      avatar_url: avatarUrl,
-      position_x: positionX,
-      position_y: positionY,
-    })
-    .select()
-    .single()
-  if (error) throw error
+  return persistWrite(async () => {
+    const { data: node, error } = await supabase
+      .from('nodes')
+      .insert({
+        campaign_id: campaignId,
+        type_id: typeId,
+        label,
+        summary,
+        avatar_url: avatarUrl,
+        position_x: positionX,
+        position_y: positionY,
+      })
+      .select()
+      .single()
+    if (error) throw error
 
-  await writeSections(node.id, { storyNotes, hiddenLore, dmNotes, media })
+    await writeSections(node.id, { storyNotes, hiddenLore, dmNotes, media })
 
-  return dbNodeToReactFlow(
-    node,
-    { narrative: storyNotes, hidden_lore: hiddenLore, dm_notes: dmNotes, media },
-    { [typeId]: { key: typeKey } }
-  )
+    return dbNodeToReactFlow(
+      node,
+      { narrative: storyNotes, hidden_lore: hiddenLore, dm_notes: dmNotes, media },
+      { [typeId]: { key: typeKey } }
+    )
+  }, 'your new card')
 }
 
 // ----------------------------------------------------------------------------
@@ -101,8 +104,10 @@ export async function updateNode(id, { label, summary, avatarUrl, positionX, pos
   if (typeId !== undefined) patch.type_id = typeId
   if (Object.keys(patch).length === 0) return
 
-  const { error } = await supabase.from('nodes').update(patch).eq('id', id)
-  if (error) throw error
+  return persistWrite(async () => {
+    const { error } = await supabase.from('nodes').update(patch).eq('id', id)
+    if (error) throw error
+  }, 'this card')
 }
 
 // ----------------------------------------------------------------------------
@@ -110,15 +115,20 @@ export async function updateNode(id, { label, summary, avatarUrl, positionX, pos
 // For V1 this is simple and correct; can be optimized with upserts later.
 // ----------------------------------------------------------------------------
 export async function updateNodeSections(nodeId, { storyNotes, hiddenLore, dmNotes, media }) {
-  await writeSections(nodeId, { storyNotes, hiddenLore, dmNotes, media })
+  return persistWrite(
+    () => writeSections(nodeId, { storyNotes, hiddenLore, dmNotes, media }),
+    'this card'
+  )
 }
 
 // ----------------------------------------------------------------------------
 // Delete a node (cascades to its sections and any connections touching it).
 // ----------------------------------------------------------------------------
 export async function deleteNode(id) {
-  const { error } = await supabase.from('nodes').delete().eq('id', id)
-  if (error) throw error
+  return persistWrite(async () => {
+    const { error } = await supabase.from('nodes').delete().eq('id', id)
+    if (error) throw error
+  }, 'this deletion')
 }
 
 // ============================================================================
