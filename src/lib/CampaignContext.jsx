@@ -4,9 +4,13 @@
 // Tracks which campaign is currently "active" (the one whose canvas is being
 // edited). Persists the active campaign ID to localStorage so refreshes
 // don't bounce the user back to the picker.
+//
+// Also fetches the active campaign's row when the id changes, so the rest of
+// the UI can reach for data.name without re-querying Supabase.
 // ============================================================================
 
 import { createContext, useContext, useEffect, useState } from 'react'
+import { getCampaign } from './campaigns.js'
 
 const ACTIVE_KEY = 'mastermind:activeCampaignId'
 
@@ -21,6 +25,8 @@ export function CampaignProvider({ children }) {
     }
   })
 
+  const [activeCampaign, setActiveCampaign] = useState(null)
+
   // Wrap the setter to also mirror into localStorage.
   const setActiveCampaignId = (id) => {
     setActiveCampaignIdState(id)
@@ -32,16 +38,26 @@ export function CampaignProvider({ children }) {
     }
   }
 
-  // When the user signs out of Supabase elsewhere, we want to clear
-  // the active campaign on the next mount. (The onAuthStateChange in
-  // AuthContext already drives the Login screen; this is defense in depth
-  // for refreshes between signed-in sessions.)
+  // Fetch the active campaign row whenever the id changes.
   useEffect(() => {
-    // No-op right now; kept as the hook-shaped home for future cleanups.
-  }, [])
+    let cancelled = false
+    if (!activeCampaignId) {
+      setActiveCampaign(null)
+      return
+    }
+    getCampaign(activeCampaignId)
+      .then((row) => { if (!cancelled) setActiveCampaign(row) })
+      .catch((err) => {
+        if (!cancelled) {
+          console.error('Failed to load active campaign', err)
+          setActiveCampaign(null)
+        }
+      })
+    return () => { cancelled = true }
+  }, [activeCampaignId])
 
   return (
-    <CampaignContext.Provider value={{ activeCampaignId, setActiveCampaignId }}>
+    <CampaignContext.Provider value={{ activeCampaignId, activeCampaign, setActiveCampaignId }}>
       {children}
     </CampaignContext.Provider>
   )
