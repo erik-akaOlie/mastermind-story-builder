@@ -339,4 +339,12 @@ Going forward:
 - When the divergence is a deliberate design decision worth preserving with context, write an ADR in [`docs/decisions/`](./docs/decisions/) and link to it from both files.
 - If a divergence is a tactical hack that'll be revisited, note it in this file under a "Known Divergences" table and document it precisely.
 
-No known divergences at this time.
+### Known Divergences
+
+| Area | Current reality | Design-doc state | Why it's logged here |
+|---|---|---|---|
+| Custom node types | Persisted per-browser in `localStorage` via `useTypeStore` (key `dnd-node-types`) | Described as per-campaign rows in `node_types` | Tactical: the DB already supports it; the UI write path wasn't migrated. Revisit before custom types become user-facing to anyone besides Erik. Cross-ref: "Cut Scope Notes" above. |
+| Top-left breadcrumb + campaign switcher (`UserMenu.jsx`) | Collapsible house-icon chip that expands on hover to reveal `Campaigns / <name> v`; chevron opens a dropdown that switches campaigns in place | Design doc still describes a top-right UserMenu with separate Campaigns button + avatar | New UX, shipped after the design-doc Sprint 1 sync. Design doc should be updated to match (preferred path per policy). |
+| Sync status chip (`SyncIndicator.jsx`) + lock overlay (`LockOverlay.jsx`) + 3-strike auto-retry (`persistWrite` + `useProbeLoop`) | Ambient bottom-left "Edited just now" chip; lock modal freezes edits on offline / 3 consecutive failures; 3s probe loop unlocks on reconnect; Sonner toast on final failure | Not in design doc | New behavior responding to the "loss of trust" risk in `project-brief.md`. Candidate for an ADR covering the probe-vs-requeue tradeoff and the 3-failure threshold. |
+
+These last two divergences should be resolved either by updating `design-document.md` or writing ADRs — they're not hacks, they're design decisions that happened after the most recent doc sync.
