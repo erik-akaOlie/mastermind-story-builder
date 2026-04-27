@@ -9,7 +9,7 @@ import EditModal from './components/EditModal'
 import CampaignNode from './nodes/CampaignNode'
 import TextNode from './nodes/TextNode'
 import { useCampaign } from './lib/CampaignContext.jsx'
-import { listNodeTypes } from './lib/campaigns.js'
+import { ensureBuiltinTypes } from './lib/campaigns.js'
 import {
   loadNodes,
   createNode as dbCreateNode,
@@ -45,9 +45,8 @@ export default function App() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(null)
 
-  // Node-type lookups for this campaign (built-in + custom).
-  // typeIdByKey: 'character' -> uuid ; typeByKeyColor: for dot coloring.
-  const [typeIdByKey, setTypeIdByKey] = useState({})
+  // Type-id lookups now live in useTypeStore (per-user, hydrated on load).
+  // Read via useTypeStore.getState().idByKey inside callbacks.
 
   // ── Canvas state ─────────────────────────────────────────────────────────
   const [nodes, setNodes, onNodesChange] = useNodesState([])
@@ -74,16 +73,20 @@ export default function App() {
       setLoading(true)
       setLoadError(null)
       try {
-        const types = await listNodeTypes(activeCampaignId)
+        // Types live at the user level. ensureBuiltinTypes is idempotent:
+        // it inserts any of the five defaults the user is missing and
+        // returns the full list (built-in + custom).
+        const types = await ensureBuiltinTypes()
 
-        // Build the two lookup maps the canvas needs:
-        // - typeIdByKey: used when inserting new nodes (we have the key, need the id)
-        // - typesById:   used when translating DB rows back to React shape
+        // Hydrate the in-memory type store so components reading via
+        // useNodeTypes() get the latest set without having to refetch.
+        useTypeStore.getState().hydrate(types)
+
+        // keyById is still needed locally to translate DB rows back to the
+        // flat React shape inside loadNodes.
         const keyById = {}
-        const idByKey = {}
         for (const t of types) {
-          idByKey[t.key] = t.id
-          keyById[t.id]  = { key: t.key, color: t.color, label: t.label, iconName: t.icon_name }
+          keyById[t.id] = { key: t.key, color: t.color, label: t.label, iconName: t.icon_name }
         }
 
         const [campaignNodes, campaignConnections, campaignTextNodes] = await Promise.all([
@@ -94,7 +97,6 @@ export default function App() {
 
         if (cancelled) return
 
-        setTypeIdByKey(idByKey)
         setNodes([...campaignNodes, ...campaignTextNodes])
         setEdges(campaignConnections)
       } catch (err) {
@@ -263,7 +265,7 @@ export default function App() {
 
   // ── Add card (DB-backed) ─────────────────────────────────────────────────
   const addCardNode = useCallback(async (typeKey, flowPos) => {
-    const typeId = typeIdByKey[typeKey]
+    const typeId = useTypeStore.getState().idByKey[typeKey]
     if (!typeId) {
       console.error(`No type_id for key: ${typeKey}`)
       return
@@ -283,7 +285,7 @@ export default function App() {
     } catch (err) {
       console.error('Failed to create card:', err)
     }
-  }, [activeCampaignId, typeIdByKey, nodes, setNodes])
+  }, [activeCampaignId, nodes, setNodes])
 
   // ── Add text (DB-backed) ─────────────────────────────────────────────────
   const addTextNode = useCallback(async (flowPos) => {
@@ -379,7 +381,7 @@ export default function App() {
     if (updatedData.summary !== undefined) nodeField.summary   = updatedData.summary
     if (updatedData.avatar !== undefined)  nodeField.avatarUrl = updatedData.avatar
     if (updatedData.type !== undefined) {
-      const typeId = typeIdByKey[updatedData.type]
+      const typeId = useTypeStore.getState().idByKey[updatedData.type]
       if (typeId) nodeField.typeId = typeId
     }
     if (Object.keys(nodeField).length > 0) {
@@ -439,13 +441,13 @@ export default function App() {
         })
         .catch(console.error)
     })
-  }, [nodes, edges, typeIdByKey, activeCampaignId, setNodes, setEdges])
+  }, [nodes, edges, activeCampaignId, setNodes, setEdges])
 
   // ── Duplicate (DB-backed) ───────────────────────────────────────────────
   const onDuplicate = useCallback(async (nodeId) => {
     const source = nodes.find((n) => n.id === nodeId)
     if (!source || source.type !== 'campaignNode') return
-    const typeId = typeIdByKey[source.data.type]
+    const typeId = useTypeStore.getState().idByKey[source.data.type]
     if (!typeId) {
       console.error(`No type_id for key: ${source.data.type}`)
       return
@@ -469,7 +471,7 @@ export default function App() {
     } catch (err) {
       console.error('Failed to duplicate card:', err)
     }
-  }, [activeCampaignId, nodes, typeIdByKey, setNodes])
+  }, [activeCampaignId, nodes, setNodes])
 
   // ── Lock toggle — in-memory only (feature scoped out of V1) ─────────────
   const onLockToggle = useCallback((nodeId) => {

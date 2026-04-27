@@ -2,6 +2,7 @@ import { useState, useMemo, useRef, useEffect } from 'react'
 import { X, MagnifyingGlass } from '@phosphor-icons/react'
 import { ICON_REGISTRY, recommendIcons, getIcon } from '../nodes/iconRegistry'
 import { useTypeStore } from '../store/useTypeStore'
+import { createCustomType } from '../lib/campaigns.js'
 
 // ── Color math ─────────────────────────────────────────────────────────────
 const hexToRgb = (hex) => {
@@ -254,13 +255,28 @@ export default function CreateTypeModal({ onClose, onCreated }) {
     : recommended.length ? recommended : ICON_REGISTRY.slice(0, 16)
 
   const canCreate = label.trim() && iconName && color
+  const [saving, setSaving] = useState(false)
 
-  const handleCreate = () => {
-    if (!canCreate) return
+  const handleCreate = async () => {
+    if (!canCreate || saving) return
+    setSaving(true)
     const key = label.trim().toLowerCase().replace(/\W+/g, '_') + '_' + Date.now()
-    addType(key, { label: label.trim(), color, iconName })
-    onCreated?.(key)
-    onClose()
+    try {
+      const row = await createCustomType({
+        key,
+        label: label.trim(),
+        color,
+        iconName,
+        sortOrder: 100 + Object.keys(types).length,
+      })
+      addType(row)
+      onCreated?.(row.key)
+      onClose()
+    } catch {
+      // persistWrite has already surfaced the error via Sonner toast.
+      // Leave the modal open so the user can retry without losing their input.
+      setSaving(false)
+    }
   }
 
   const textColor = luminance(color) > 0.5 ? '#1f2937' : '#ffffff'
@@ -382,17 +398,17 @@ export default function CreateTypeModal({ onClose, onCreated }) {
             Cancel
           </button>
           <button
-            disabled={!canCreate}
+            disabled={!canCreate || saving}
             onClick={handleCreate}
             className="px-4 py-2 text-sm font-semibold rounded transition-opacity"
             style={{
-              backgroundColor: canCreate ? '#0284C7' : '#d1d5db',
-              color: canCreate ? '#ffffff' : '#9ca3af',
-              opacity: canCreate ? 1 : 0.6,
-              cursor: canCreate ? 'pointer' : 'not-allowed',
+              backgroundColor: canCreate && !saving ? '#0284C7' : '#d1d5db',
+              color: canCreate && !saving ? '#ffffff' : '#9ca3af',
+              opacity: canCreate && !saving ? 1 : 0.6,
+              cursor: canCreate && !saving ? 'pointer' : 'not-allowed',
             }}
           >
-            Create type
+            {saving ? 'Creating…' : 'Create type'}
           </button>
         </div>
       </div>
