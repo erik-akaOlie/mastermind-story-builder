@@ -4,6 +4,66 @@ A running log of meaningful changes to MasterMind: Story Builder. Append-only. N
 
 ## [Unreleased]
 
+### Sprint 1.5b — Cascade of polish + bug fixes (2026-04-28)
+
+Sprint 1.5 (Realtime) shipped, but exposed several bugs and UX issues
+underneath. All fixed in the same session and verified end-to-end.
+
+**Fixed**
+- **Multi-tab DELETE propagation** — Realtime DELETE events on RLS-protected
+  tables silently dropped because Postgres' default `REPLICA IDENTITY` only
+  sends the primary key in DELETE broadcasts, so the `campaign_id=eq.X`
+  subscription filter doesn't match. Required SQL:
+
+  ```sql
+  alter table public.nodes          replica identity full;
+  alter table public.node_sections  replica identity full;
+  alter table public.connections    replica identity full;
+  alter table public.text_nodes     replica identity full;
+  ```
+  Apply this pattern to any future table whose Realtime DELETE events need
+  to pass an RLS check or column filter.
+- **Right-click context menu position bug** — switched
+  [`src/App.jsx`](./src/App.jsx) from the deprecated `rfInstance.project()`
+  with manual `getBoundingClientRect` subtraction to
+  `rfInstance.screenToFlowPosition({ x: clientX, y: clientY })`. The old
+  pattern produced bad coordinates when DevTools or other panels shifted
+  the viewport.
+- **TextNode trash icon** broken on every edit session after the first.
+  Two compounding causes:
+  1. `useReactFlow().setNodes((nds) => nds.filter(...))` doesn't propagate
+     removals to App's `useNodesState` — RF v11 only emits `'reset'` changes
+     for kept nodes when controlled-mode `onNodesChange` is wired up, never
+     `'remove'` for the missing one. Fix: new
+     [`src/lib/CanvasOpsContext.jsx`](./src/lib/CanvasOpsContext.jsx)
+     exposes App's `onDeleteNode` to descendants; TextNode's trash now
+     routes through there.
+  2. RF v11's NodeWrapper interferes with React's synthetic event delegation
+     for selected nodes — `onMouseDown`/`onClick` on toolbar buttons fail to
+     fire after the second-and-later edit sessions. Fix: new internal
+     `NativeButton` wrapper in
+     [`src/nodes/TextNode.jsx`](./src/nodes/TextNode.jsx) attaches
+     native `pointerdown` + `click` listeners directly to each toolbar
+     button, bypassing React's event system. Also calls `preventDefault()`
+     on `pointerdown` so contenteditable focus isn't shifted mid-click.
+- **Text-block focus on create** — programmatic `el.focus()` on a freshly-
+  mounted contenteditable inside a React Flow node was a no-op in Edge
+  even though `document.hasFocus()` was true and tabindex was set. Fix in
+  [`src/nodes/TextNode.jsx`](./src/nodes/TextNode.jsx): added `autoFocus`
+  attribute + a retry loop (up to 10 attempts at 50ms intervals) that
+  bails as soon as `document.activeElement === el`.
+- **Submenu hover gap on right-click → Add card → \[type\]** — the 4px gap
+  between the primary menu and submenu let mouseleave fire mid-traversal.
+  Fix in [`src/components/CanvasContextMenu.jsx`](./src/components/CanvasContextMenu.jsx):
+  16px-wide invisible bridge overlapping both menus + 200ms hover-intent
+  close delay (cancellable on re-enter).
+
+**Added**
+- [`src/lib/CanvasOpsContext.jsx`](./src/lib/CanvasOpsContext.jsx) — small
+  context that exposes App-level operations (`onDeleteNode`) to React
+  Flow's custom node renderers. See file header for the React Flow
+  removal-propagation issue it works around.
+
 ### Sprint 1.5 — Realtime cross-tab sync (2026-04-27)
 
 **Added**

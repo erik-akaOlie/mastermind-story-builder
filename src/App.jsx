@@ -1,33 +1,34 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import ReactFlow, { Background, useNodesState, useEdgesState } from 'reactflow'
-import { getNodeCenter, getSpreadBorderPoints } from './utils/edgeRouting'
 import { useTypeStore } from './store/useTypeStore'
 import FloatingEdge from './edges/FloatingEdge'
 import ContextMenu from './components/ContextMenu'
 import CanvasContextMenu from './components/CanvasContextMenu'
 import EditModal from './components/EditModal'
+import { LightboxProvider } from './components/Lightbox'
 import CampaignNode from './nodes/CampaignNode'
 import TextNode from './nodes/TextNode'
 import { useCampaign } from './lib/CampaignContext.jsx'
-import { ensureBuiltinTypes } from './lib/campaigns.js'
 import {
-  loadNodes,
   createNode as dbCreateNode,
   updateNode as dbUpdateNode,
   updateNodeSections as dbUpdateNodeSections,
   deleteNode as dbDeleteNode,
 } from './lib/nodes.js'
 import {
-  loadConnections,
   createConnection as dbCreateConnection,
   deleteConnection as dbDeleteConnection,
 } from './lib/connections.js'
 import {
-  loadTextNodes,
   createTextNode as dbCreateTextNode,
   updateTextNode as dbUpdateTextNode,
   deleteTextNode as dbDeleteTextNode,
 } from './lib/textNodes.js'
+import { useSpacebarPan } from './hooks/useSpacebarPan'
+import { useCampaignData } from './hooks/useCampaignData'
+import { useEdgeGeometry } from './hooks/useEdgeGeometry'
+import { useNodeHoverSelection } from './hooks/useNodeHoverSelection'
+import { CanvasOpsProvider } from './lib/CanvasOpsContext.jsx'
 
 const nodeTypes = {
   campaignNode: CampaignNode,
@@ -41,18 +42,20 @@ const edgeTypes = {
 export default function App() {
   const { activeCampaignId } = useCampaign()
 
-  // ── Persistence / load state ─────────────────────────────────────────────
-  const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState(null)
-
-  // Type-id lookups now live in useTypeStore (per-user, hydrated on load).
+  // Type-id lookups live in useTypeStore (per-user, hydrated on load).
   // Read via useTypeStore.getState().idByKey inside callbacks.
 
   // ── Canvas state ─────────────────────────────────────────────────────────
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
 
-  const [isPanning,   setIsPanning]   = useState(false)
+  const { loading, loadError } = useCampaignData({
+    campaignId: activeCampaignId,
+    setNodes,
+    setEdges,
+  })
+
+  const isPanning = useSpacebarPan()
   const [contextMenu, setContextMenu] = useState(null)  // { nodeId, x, y }
   const [canvasMenu,  setCanvasMenu]  = useState(null)  // { x, y, flowPos }
   const rfInstanceRef = useRef(null)
@@ -60,171 +63,17 @@ export default function App() {
   // { node, connectedNodes, allOtherNodes, originRect }
   const [editingNode, setEditingNode] = useState(null)
 
-  // Refs to guard against re-running when nothing geometrically changed
-  const prevEdgeGeoRef = useRef('')
-  const prevDotsRef    = useRef('')
+  useEdgeGeometry({ nodes, edges, setNodes, setEdges })
 
-  // ── Load campaign data on mount / campaign change ───────────────────────
-  useEffect(() => {
-    if (!activeCampaignId) return
-    let cancelled = false
-
-    async function load() {
-      setLoading(true)
-      setLoadError(null)
-      try {
-        // Types live at the user level. ensureBuiltinTypes is idempotent:
-        // it inserts any of the five defaults the user is missing and
-        // returns the full list (built-in + custom).
-        const types = await ensureBuiltinTypes()
-
-        // Hydrate the in-memory type store so components reading via
-        // useNodeTypes() get the latest set without having to refetch.
-        useTypeStore.getState().hydrate(types)
-
-        // keyById is still needed locally to translate DB rows back to the
-        // flat React shape inside loadNodes.
-        const keyById = {}
-        for (const t of types) {
-          keyById[t.id] = { key: t.key, color: t.color, label: t.label, iconName: t.icon_name }
-        }
-
-        const [campaignNodes, campaignConnections, campaignTextNodes] = await Promise.all([
-          loadNodes(activeCampaignId, keyById),
-          loadConnections(activeCampaignId),
-          loadTextNodes(activeCampaignId),
-        ])
-
-        if (cancelled) return
-
-        setNodes([...campaignNodes, ...campaignTextNodes])
-        setEdges(campaignConnections)
-      } catch (err) {
-        if (!cancelled) setLoadError(err.message)
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-
-    load()
-    return () => {
-      cancelled = true
-    }
-  }, [activeCampaignId, setNodes, setEdges])
-
-  // ── Recompute spread connection points whenever nodes move ──────────────
-  useEffect(() => {
-    const nodeConnections = {}
-    nodes.forEach((n) => { nodeConnections[n.id] = [] })
-
-    edges.forEach((edge) => {
-      const sourceNode = nodes.find((n) => n.id === edge.source)
-      const targetNode = nodes.find((n) => n.id === edge.target)
-      if (!sourceNode || !targetNode) return
-
-      const sourceCenter = getNodeCenter(sourceNode)
-      const targetCenter = getNodeCenter(targetNode)
-
-      nodeConnections[edge.source].push({ id: edge.id, targetCenter })
-      nodeConnections[edge.target].push({ id: edge.id, targetCenter: sourceCenter })
-    })
-
-    const allBorderPoints = {}
-    nodes.forEach((node) => {
-      allBorderPoints[node.id] = getSpreadBorderPoints(node, nodeConnections[node.id] || [])
-    })
-
-    const newEdgeGeo = {}
-    edges.forEach((edge) => {
-      const sourcePoint = allBorderPoints[edge.source]?.[edge.id]
-      const targetPoint = allBorderPoints[edge.target]?.[edge.id]
-      if (!sourcePoint || !targetPoint) return
-      newEdgeGeo[edge.id] = { sourcePoint, targetPoint }
-    })
-
-    const newDotsMap = {}
-    nodes.forEach((node) => {
-      const borderPoints = allBorderPoints[node.id] || {}
-      newDotsMap[node.id] = Object.entries(borderPoints).map(([edgeId, p]) => {
-        const edge = edges.find((e) => e.id === edgeId)
-        const otherNodeId = edge?.source === node.id ? edge?.target : edge?.source
-        const otherNode = nodes.find((n) => n.id === otherNodeId)
-        const color = useTypeStore.getState().types[otherNode?.data?.type]?.color ?? '#94a3b8'
-        return {
-          x: p.x - node.position.x,
-          y: p.y - node.position.y,
-          color,
-        }
-      })
-    })
-
-    const edgeGeoJson = JSON.stringify(newEdgeGeo)
-    const dotsJson    = JSON.stringify(newDotsMap)
-
-    if (edgeGeoJson !== prevEdgeGeoRef.current) {
-      prevEdgeGeoRef.current = edgeGeoJson
-      setEdges((eds) =>
-        eds.map((edge) => {
-          const geo = newEdgeGeo[edge.id]
-          if (!geo) return edge
-          return { ...edge, type: 'floating', data: { ...edge.data, ...geo } }
-        })
-      )
-    }
-
-    if (dotsJson !== prevDotsRef.current) {
-      prevDotsRef.current = dotsJson
-      setNodes((nds) =>
-        nds.map((n) => ({
-          ...n,
-          data: { ...n.data, connectionDots: newDotsMap[n.id] || [] },
-        }))
-      )
-    }
-  }, [nodes, edges, setEdges, setNodes])
-
-  // ── Hover / selection UI (not persisted) ─────────────────────────────────
-  const onSelectionChange = useCallback(({ nodes: selected }) => {
-    const anySelected = selected.length > 0
-    setNodes((nds) =>
-      nds.map((n) => ({ ...n, data: { ...n.data, anySelected } }))
-    )
-  }, [setNodes])
-
-  const onNodeMouseEnter = useCallback(() => {
-    setNodes((nds) =>
-      nds.map((n) => ({ ...n, data: { ...n.data, anyHovered: true } }))
-    )
-  }, [setNodes])
-
-  const onNodeMouseLeave = useCallback(() => {
-    setNodes((nds) =>
-      nds.map((n) => ({ ...n, data: { ...n.data, anyHovered: false } }))
-    )
-  }, [setNodes])
-
-  const onEdgeMouseEnter = useCallback((_, edge) => {
-    const connectedIds = new Set([edge.source, edge.target])
-    setNodes((nds) =>
-      nds.map((n) => ({ ...n, data: { ...n.data, hoveredEdgeNodeIds: connectedIds } }))
-    )
-    setEdges((eds) =>
-      eds.map((e) =>
-        e.id === edge.id
-          ? { ...e, style: { ...e.style, opacity: 1, strokeWidth: 2 } }
-          : e
-      )
-    )
-  }, [setNodes, setEdges])
-
-  const onEdgeMouseLeave = useCallback(() => {
-    setNodes((nds) =>
-      nds.map((n) => ({ ...n, data: { ...n.data, hoveredEdgeNodeIds: null } }))
-    )
-    setEdges((eds) =>
-      eds.map((e) => ({ ...e, style: { ...e.style, opacity: undefined, strokeWidth: undefined } }))
-    )
-  }, [setNodes, setEdges])
+  // Hover / selection UI (not persisted; backed by useCanvasUiStore so a
+  // hover event mutates one atomic value instead of every node's data).
+  const {
+    onSelectionChange,
+    onNodeMouseEnter,
+    onNodeMouseLeave,
+    onEdgeMouseEnter,
+    onEdgeMouseLeave,
+  } = useNodeHoverSelection({ setEdges })
 
   // ── Persist node position on drag end ────────────────────────────────────
   const onNodeDragStop = useCallback((_, node) => {
@@ -253,11 +102,9 @@ export default function App() {
   const onPaneContextMenu = useCallback((event) => {
     event.preventDefault()
     if (!rfInstanceRef.current) return
-    const pane = event.currentTarget
-    const rect = pane.getBoundingClientRect()
-    const flowPos = rfInstanceRef.current.project({
-      x: event.clientX - rect.left,
-      y: event.clientY - rect.top,
+    const flowPos = rfInstanceRef.current.screenToFlowPosition({
+      x: event.clientX,
+      y: event.clientY,
     })
     setContextMenu(null)
     setCanvasMenu({ x: event.clientX, y: event.clientY, flowPos })
@@ -496,33 +343,6 @@ export default function App() {
     }
   }, [nodes, setNodes, setEdges])
 
-  // ── Keyboard: spacebar pan ──────────────────────────────────────────────
-  const handleKeyDown = useCallback((e) => {
-    if (e.code === 'Space' && !e.repeat) {
-      const tag = document.activeElement?.tagName
-      const isEditable = tag === 'INPUT' || tag === 'TEXTAREA' ||
-        document.activeElement?.isContentEditable
-      if (isEditable) return
-      e.preventDefault()
-      setIsPanning(true)
-    }
-  }, [])
-
-  const handleKeyUp = useCallback((e) => {
-    if (e.code === 'Space') {
-      setIsPanning(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    window.addEventListener('keydown', handleKeyDown)
-    window.addEventListener('keyup', handleKeyUp)
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown)
-      window.removeEventListener('keyup', handleKeyUp)
-    }
-  }, [handleKeyDown, handleKeyUp])
-
   // ── Render ──────────────────────────────────────────────────────────────
   if (loading) {
     return (
@@ -544,6 +364,8 @@ export default function App() {
   }
 
   return (
+    <LightboxProvider>
+    <CanvasOpsProvider value={{ onDeleteNode }}>
     <div
       style={{ width: '100vw', height: '100vh' }}
       className={isPanning ? 'is-panning' : ''}
@@ -624,5 +446,7 @@ export default function App() {
         />
       )}
     </div>
+    </CanvasOpsProvider>
+    </LightboxProvider>
   )
 }
