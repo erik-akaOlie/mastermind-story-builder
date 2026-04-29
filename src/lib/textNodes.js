@@ -98,7 +98,7 @@ export async function deleteTextNode(id) {
 // Internal helpers
 // ============================================================================
 
-function dbTextNodeToReactFlow(t) {
+export function dbTextNodeToReactFlow(t) {
   return {
     id:   t.id,
     type: 'textNode',

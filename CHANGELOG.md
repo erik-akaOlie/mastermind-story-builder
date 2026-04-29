@@ -4,6 +4,52 @@ A running log of meaningful changes to MasterMind: Story Builder. Append-only. N
 
 ## [Unreleased]
 
+### Sprint 1.5 — Realtime cross-tab sync (2026-04-27)
+
+**Added**
+- `useCampaignData` opens a Supabase Realtime channel per active campaign with
+  four `postgres_changes` listeners (`nodes`, `node_sections`, `connections`,
+  `text_nodes`). Incoming events translate back to React/React Flow shape via
+  the existing marshalers (`dbNodeToReactFlow`, `dbTextNodeToReactFlow`) and
+  merge into `setNodes` / `setEdges`. Channel teardown on campaign switch /
+  unmount via `supabase.removeChannel`.
+- `dbTextNodeToReactFlow` is now exported from `src/lib/textNodes.js` so the
+  hook can reuse it for INSERT/UPDATE handlers.
+
+**Database (run once per project)**
+- The four data tables must be members of the `supabase_realtime` publication.
+  Idempotent SQL block:
+
+  ```sql
+  do $$
+  declare t text;
+  begin
+    foreach t in array array['nodes','node_sections','connections','text_nodes']
+    loop
+      if not exists (
+        select 1 from pg_publication_tables
+        where pubname='supabase_realtime' and schemaname='public' and tablename=t
+      ) then
+        execute format('alter publication supabase_realtime add table public.%I', t);
+      end if;
+    end loop;
+  end$$;
+  ```
+
+  (Erik's project already had `nodes` published from a Supabase template; the
+  idempotent form skips it cleanly.)
+
+**Trade-offs accepted (V1)**
+- No echo filter. Self-writes round-trip through the channel and re-set
+  identical values — harmless for inserts/updates of the same data, but two
+  tabs simultaneously typing the same field could drop a character. Revisit
+  as 1.5b only if Erik notices it.
+- `node_sections` has no `campaign_id` column, so the DB-side filter is
+  omitted; RLS scopes events to the user's own rows and the handler
+  client-side drops events whose `node_id` isn't in local state.
+- `text_nodes` UPDATE handler preserves `data.editing` so a remote update
+  can't kick the local tab out of edit mode mid-keystroke.
+
 ### Sprint 1 hygiene — Image storage migration + App.jsx refactor (2026-04-27)
 
 **Added**
