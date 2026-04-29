@@ -1,6 +1,6 @@
 # ADR-0005: Image storage on Supabase Storage with two variants per upload
 Date: 2026-04-27
-Status: Accepted
+Status: Implemented (2026-04-27)
 
 ## Context
 
@@ -106,8 +106,10 @@ definitions themselves do not.
 
 **Avatar (`nodes.avatar_url` column):**
 
-Stays as a column on `nodes`. The content transitions from a base64 data
-URI string to a Supabase Storage path string:
+Stays as a column on `nodes`. As of 2026-04-27, EditModal writes the
+Storage path directly; new avatars never land as base64 again. The
+column still tolerates legacy base64 data URIs (so old data renders),
+and `useImageUrl` resolves either shape transparently.
 
 ```
 old:  "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAY..."
@@ -248,7 +250,55 @@ The `(storage.foldername(name))[1]` pulls the first path segment
 ## References
 
 - Schema: [`supabase/schema.sql`](../../supabase/schema.sql)
+- Migration: [`supabase/migrations/002_card_media_bucket.sql`](../../supabase/migrations/002_card_media_bucket.sql)
 - Related: [ADR-0002 (modular sections)](./0002-modular-node-sections.md) —
   image entries live as items inside an existing `node_sections` row.
 - Future: this ADR will need to be amended once URL paste arrives in
   Sprint 5 and once AI image generation specifies its provenance fields.
+
+## Implementation amendment (2026-04-27): SECURITY DEFINER on the bucket policy
+
+The RLS expression as drafted in section 8 — inlining a `select 1 from
+public.campaigns where id::text = (storage.foldername(name))[1] and
+owner_id = auth.uid()` directly in the policy's `with check` /
+`using` clause — **silently fails in practice**. Every upload returns
+`new row violates row-level security policy`, and every signed-URL
+request also fails. The diagnostics looked clean: the four policies
+were in place, the bucket existed and was private, `storage.foldername`
+indexed correctly, the user owned the campaign, and the JWT was being
+sent with the request.
+
+Root cause: when the storage policy's expression queries another
+schema's table, the cross-schema lookup doesn't resolve the way the
+policy author expects. The `EXISTS` subquery returns false for rows the
+caller can otherwise read directly, so the policy denies the action.
+
+The fix shipped in `002_card_media_bucket.sql` is a `SECURITY DEFINER`
+helper:
+
+```sql
+create or replace function public.user_owns_card_media_path(object_name text)
+returns boolean
+language sql
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.campaigns
+    where id::text = (storage.foldername(object_name))[1]
+      and owner_id = auth.uid()
+  );
+$$;
+
+grant execute on function public.user_owns_card_media_path(text) to authenticated;
+```
+
+The four bucket policies then call `public.user_owns_card_media_path(name)`
+instead of inlining the lookup. Security is preserved — the helper still
+pivots on `auth.uid()`, so it only ever returns true for the calling
+user's own campaigns — but the cross-schema query runs with elevated
+privileges and resolves correctly.
+
+**Apply this pattern to any future Storage bucket whose ownership check
+needs to read a `public` table.** The naive inlined version reads as if
+it should work but doesn't.

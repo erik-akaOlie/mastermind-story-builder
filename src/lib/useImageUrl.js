@@ -46,9 +46,18 @@ export function useImageUrl(input, variant = 'full') {
 
     // Storage path — fetch a signed URL.
     let cancelled = false
-    getImageUrl(value, variant).then((signed) => {
-      if (!cancelled) setUrl(signed)
-    })
+    getImageUrl(value, variant)
+      .then((signed) => {
+        if (cancelled) return
+        if (signed == null) {
+          console.warn(`useImageUrl: signed URL was null for ${value} (${variant})`)
+        }
+        setUrl(signed)
+      })
+      .catch((err) => {
+        console.error(`useImageUrl: rejected for ${value} (${variant})`, err)
+        if (!cancelled) setUrl(null)
+      })
     return () => {
       cancelled = true
     }

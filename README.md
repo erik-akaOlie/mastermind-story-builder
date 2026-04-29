@@ -24,11 +24,13 @@ cp .env.example .env
 # Fill in VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY from your Supabase dashboard
 ```
 
-If this is a fresh Supabase project, run the schema once to create all tables and RLS policies:
+If this is a fresh Supabase project, run **all three** SQL files once in the Supabase SQL Editor (in order):
 
-- Open your Supabase project → SQL Editor → New query
-- Paste the contents of [`supabase/schema.sql`](./supabase/schema.sql)
-- Click Run
+1. [`supabase/schema.sql`](./supabase/schema.sql) — tables + RLS policies
+2. [`supabase/migrations/001_node_types_per_user.sql`](./supabase/migrations/001_node_types_per_user.sql) — moves `node_types` to per-user ownership
+3. [`supabase/migrations/002_card_media_bucket.sql`](./supabase/migrations/002_card_media_bucket.sql) — creates the image-storage bucket and its RLS
+
+Each file is idempotent and safe to re-run.
 
 Then:
 
@@ -97,6 +99,13 @@ Opens at `http://localhost:5173`. Sign up with an email on first visit (Supabase
 - Optimistic UI: changes appear instantly, write to the database in the background
 - Refreshing or closing the browser preserves all work
 
+### Image Storage
+
+- Avatars and inspiration images upload to a private **Supabase Storage** bucket (`card-media`)
+- Two variants generated client-side at upload: a 256px thumb for canvas/list use and a 1920px full-size for the lightbox — both WebP
+- The database stores only the path; renderers fetch a fresh signed URL each render via `useImageUrl`
+- Bucket access is RLS-gated to the campaign owner via a `SECURITY DEFINER` helper. See [ADR-0005](./docs/decisions/0005-image-storage.md).
+
 ---
 
 ## What's Not Built Yet
@@ -143,20 +152,30 @@ Opens at `http://localhost:5173`. Sign up with an email on first visit (Supabase
 | Styling | Tailwind CSS v3 |
 | Icons | Phosphor Icons |
 | Drag-to-reorder | dnd-kit |
-| State | Zustand v5 (node types); React state for canvas |
+| State | Zustand v5 (node types + canvas UI flags); React state for canvas data |
 | Auth + DB | Supabase (Postgres + Auth + RLS) |
+| Image storage | Supabase Storage (`card-media` bucket, signed URLs) |
 
 ---
 
 ## Project Structure
 
 ```
-├── src/              React app source
+├── src/
+│   ├── App.jsx           Canvas orchestration (composes hooks; renders ReactFlow + menus + modal)
+│   ├── lib/              Data access + Supabase client + image storage helpers
+│   ├── hooks/            useSpacebarPan, useCampaignData, useEdgeGeometry, useNodeHoverSelection
+│   ├── store/            useTypeStore, useCanvasUiStore, useSyncStore (Zustand)
+│   ├── components/       Login, CampaignPicker, EditModal, Lightbox, MigrateImages, ...
+│   ├── nodes/            CampaignNode, TextNode (React Flow node types)
+│   ├── edges/            FloatingEdge
+│   └── utils/            edgeRouting, labelUtils
 ├── supabase/
-│   └── schema.sql    Full database schema + RLS policies (run once in SQL editor)
-├── docs/             Architecture decisions and reference (forthcoming)
-├── Market Research/  Competitive analysis, strategic roadmap, founder memos
-├── public/avatars/   Static avatar images for the sample Strahd data
-├── .env.example      Template — copy to .env and fill in your Supabase credentials
-└── CLAUDE.md         Source of truth for AI sessions
+│   ├── schema.sql        Initial database schema + RLS policies
+│   └── migrations/       Incremental migrations (run after schema.sql, in numeric order)
+├── docs/decisions/       ADRs covering architecture calls (Supabase, image storage, etc.)
+├── Market Research/      Competitive analysis, strategic roadmap, founder memos
+├── public/avatars/       Static avatar images for the sample Strahd data
+├── .env.example          Template — copy to .env and fill in your Supabase credentials
+└── CLAUDE.md             Source of truth for AI sessions
 ```

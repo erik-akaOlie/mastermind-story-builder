@@ -34,6 +34,14 @@ html {
   box-shadow: none !important;
 }
 
+/* Lift hovered / selected / edge-highlighted cards above all other cards so
+   nearby cards don't visually cut through them. CampaignNode adds the
+   .is-lifted class to its inner div whenever the card is in the active
+   state; :has() then promotes the React Flow wrapper's z-index. */
+.react-flow__node:has(.is-lifted) {
+  z-index: 10 !important;
+}
+
 /* Marquee drag rectangle — visible while dragging to select */
 .react-flow__selection {
   background: rgba(99, 102, 241, 0.06);

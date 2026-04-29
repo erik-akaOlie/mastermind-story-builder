@@ -1,6 +1,9 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { Handle, Position, useViewport } from 'reactflow'
 import { useNodeTypes } from '../store/useTypeStore'
+import { useCanvasUiStore, selectIsEdgeHighlighted } from '../store/useCanvasUiStore'
+import { useImageUrl } from '../lib/useImageUrl'
+import { useLightbox } from '../components/Lightbox'
 import { labelInitial } from '../utils/labelUtils'
 
 // Shared offscreen canvas for text-width measurement. Created once, reused by
@@ -135,8 +138,11 @@ export default function CampaignNode({ data, selected }) {
     return longestWordWidth > finalSpan
   }, [typeConfig.icon, data.label, titleFontSize, iconSize])
 
-  const isEdgeHighlighted = data.hoveredEdgeNodeIds?.has(data.id)
-  const anythingActive = data.anyHovered || data.hoveredEdgeNodeIds != null
+  const isEdgeHighlighted = useCanvasUiStore(selectIsEdgeHighlighted(data.id))
+  const anyHovered   = useCanvasUiStore((s) => s.anyHovered)
+  const anySelected  = useCanvasUiStore((s) => s.anySelected)
+  const edgeHovered  = useCanvasUiStore((s) => s.hoveredEdgeNodeIds != null)
+  const anythingActive = anyHovered || edgeHovered
 
   // Selected cards are always part of the user's active focus — never dimmed, always lifted.
   // Hover and edge-highlight also lift. Selection persists regardless of what else is hovered.
@@ -144,7 +150,7 @@ export default function CampaignNode({ data, selected }) {
   const lifted   = hovered || isEdgeHighlighted || selected
 
   const baseopacity = data.locked ? 0.5 : 1
-  const isDimmed = !isActive && (anythingActive || data.anySelected)
+  const isDimmed = !isActive && (anythingActive || anySelected)
   const opacity = data.isEditing ? 0 : (isDimmed ? baseopacity * 0.5 : baseopacity)
 
   const shadow = lifted ? SHADOW_LIFTED : SHADOW_NORMAL
@@ -153,10 +159,12 @@ export default function CampaignNode({ data, selected }) {
   const avatarBg = darkenColor(typeConfig.color)
   const avatarInitialSize = Math.round(avatarSize * 0.45)
   const hdrText = headerTextColor(typeConfig.color)
+  const avatarUrl = useImageUrl(data.avatar, 'thumb')
+  const lightbox = useLightbox()
 
   return (
     <div
-      className="relative rounded-lg border w-64 transition-all duration-150"
+      className={`relative rounded-lg border w-64 transition-all duration-150 ${lifted ? 'is-lifted' : ''}`}
       style={{
         opacity,
         boxShadow: shadow,
@@ -202,11 +210,17 @@ export default function CampaignNode({ data, selected }) {
             backgroundColor: avatarBg,
           }}
         >
-          {data.avatar ? (
+          {avatarUrl ? (
             <img
-              src={data.avatar}
+              src={avatarUrl}
               alt={data.label || ''}
-              className="w-full h-full object-cover"
+              className="w-full h-full object-cover cursor-zoom-in"
+              onClick={(e) => {
+                e.stopPropagation()
+                lightbox.open(data.avatar)
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
+              draggable={false}
             />
           ) : (
             <span
