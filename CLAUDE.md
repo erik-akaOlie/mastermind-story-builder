@@ -437,13 +437,16 @@ Custom user-created types are scoped per campaign in Supabase but the UI flow fo
 
 ## What Is NOT Built (roadmap)
 
-See README.md "What's Not Built Yet" for the sprint-by-sprint plan. High level:
-
-- **Sprint 2:** Undo/redo; card templates per type
-- **Sprint 3:** Modular card sections UI (reorder/add/remove; template editor)
-- **Sprint 4:** Search panel; drag-to-connect; relationship labels on edges; Shift+1 fit-all
-- **Sprint 5:** AI copilot grounded in campaign data
-- **Deferred:** Player view, sharing/collaboration, D&D Beyond integration, native mobile apps
+See [`BACKLOG.md`](./BACKLOG.md) for the current backlog. It's tier-ranked
+(Tier 1 quick wins, Tier 2 foundational, Tier 3 big features that need a
+spike, Tier 4 polish), reviewed at the start of each sprint, and each item
+carries a problem statement, success criteria, and dependencies. The
+numbered Sprint 2 / 3 / 4 / 5 roadmap that previously lived here is retired
+— sequential sprint plans don't survive contact with reality once the
+backlog grows past a handful of items with real dependencies. Deferred
+work (player view, sharing/collaboration, D&D Beyond integration, native
+mobile apps) is captured in `project-brief.md` and the Market Research
+roadmap.
 
 ## Cut from V1
 
