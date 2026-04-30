@@ -90,7 +90,7 @@ Ten action types:
 |---|---|---|---|
 | 1 | `createCard` | App.jsx (right-click → Add card) | Delete the card |
 | 2 | `editCardField` | EditModal session-end (modal close, see "Edit sessions") | Restore prior value of that field |
-| 3 | `moveCard` | App.jsx (`onNodeDragStop`) — only if Δ ≥ 4px | Move back to prior position |
+| 3 | `moveCard` | App.jsx (`onNodeDragStop` + `onSelectionDragStop`) — per-card 4px filter; the entry groups every card from one drag into a single undo step | Move every card in the entry back to its prior position |
 | 4 | `deleteCard` | App.jsx context menu (Delete) | Re-create card + all dependent rows (sections + connections) |
 | 5 | `addConnection` | EditModal ConnectionsSection | Delete the connection |
 | 6 | `removeConnection` | EditModal ConnectionsSection | Recreate the connection |
@@ -152,9 +152,14 @@ React→DB marshaling step):
 { type: 'editCardField', campaignId, label: 'Edit summary', timestamp,
   cardId, field: 'summary', before: 'old', after: 'new' }
 
-// 3. moveCard — to undo, move back to before position
-{ type: 'moveCard', campaignId, label: 'Move card', timestamp,
-  cardId, before: { x, y }, after: { x, y } }
+// 3. moveCard — to undo, move every card in `cards` back to its before position
+//
+// `cards` is always an array, even for a single-card drag. A multi-select
+// drag (shift+click or marquee) collapses into ONE entry with N elements,
+// so Ctrl+Z reverts the whole drag in one shot rather than N-times. The
+// label pluralizes accordingly: "Move card" vs "Move 5 cards".
+{ type: 'moveCard', campaignId, label: 'Move card' | 'Move N cards', timestamp,
+  cards: [{ cardId, before: { x, y }, after: { x, y } }, ...] }
 
 // 4. deleteCard — to undo, restore everything that cascaded with it
 { type: 'deleteCard', campaignId, label: 'Delete card', timestamp,

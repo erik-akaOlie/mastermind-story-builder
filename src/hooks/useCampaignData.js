@@ -27,6 +27,8 @@
 import { useEffect, useState } from 'react'
 import { useTypeStore } from '../store/useTypeStore'
 import { useSyncStore } from '../store/useSyncStore.js'
+import { useUndoStore } from '../store/useUndoStore.js'
+import { useAuth } from '../lib/AuthContext.jsx'
 import { ensureBuiltinTypes, getCampaignLastEditedAt } from '../lib/campaigns.js'
 import { loadNodes, dbNodeToReactFlow } from '../lib/nodes.js'
 import { loadConnections } from '../lib/connections.js'
@@ -41,6 +43,8 @@ const KIND_TO_FIELD = {
 }
 
 export function useCampaignData({ campaignId, setNodes, setEdges }) {
+  const { user } = useAuth()
+  const userId = user?.id ?? null
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(null)
 
@@ -48,6 +52,11 @@ export function useCampaignData({ campaignId, setNodes, setEdges }) {
     if (!campaignId) return
     let cancelled = false
     let channel = null
+
+    // Per-campaign undo scope. setScope hydrates from sessionStorage if this
+    // tab already has history for (userId × campaignId), otherwise starts
+    // empty. Switching campaigns or users automatically swaps the stack.
+    useUndoStore.getState().setScope({ userId, campaignId })
 
     async function load() {
       setLoading(true)
@@ -91,7 +100,7 @@ export function useCampaignData({ campaignId, setNodes, setEdges }) {
       // campaign's timestamp into a new view.
       useSyncStore.getState().setLastSavedAt(null)
     }
-  }, [campaignId, setNodes, setEdges])
+  }, [campaignId, userId, setNodes, setEdges])
 
   return { loading, loadError }
 }
