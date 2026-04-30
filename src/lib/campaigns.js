@@ -168,3 +168,50 @@ export async function deleteCampaign(id) {
     if (error) throw error
   }, 'this deletion')
 }
+
+// ----------------------------------------------------------------------------
+// Returns the most recent edit timestamp across all of this campaign's data,
+// or null if the campaign has no rows yet. Used to seed the "Edited Nm ago"
+// chip so it reflects real activity on initial load (not just in-session
+// saves). Connections only have created_at; their delete events leave no
+// timestamp behind, which is an accepted accuracy gap for V1.
+// ----------------------------------------------------------------------------
+export async function getCampaignLastEditedAt(campaignId) {
+  const [nodesRes, sectionsRes, connectionsRes, textNodesRes] = await Promise.all([
+    supabase.from('nodes')
+      .select('updated_at')
+      .eq('campaign_id', campaignId)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase.from('node_sections')
+      .select('updated_at, node:nodes!inner(campaign_id)')
+      .eq('node.campaign_id', campaignId)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase.from('connections')
+      .select('created_at')
+      .eq('campaign_id', campaignId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase.from('text_nodes')
+      .select('updated_at')
+      .eq('campaign_id', campaignId)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ])
+
+  const candidates = [
+    nodesRes.data?.updated_at,
+    sectionsRes.data?.updated_at,
+    connectionsRes.data?.created_at,
+    textNodesRes.data?.updated_at,
+  ].filter(Boolean)
+
+  if (candidates.length === 0) return null
+  const latest = candidates.reduce((max, ts) => (ts > max ? ts : max))
+  return new Date(latest)
+}

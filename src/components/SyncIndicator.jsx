@@ -5,11 +5,17 @@
 // readable when cards scroll behind it. Reports the current persistence state
 // in plain English and updates the "Edited Nm ago" relative time every 60s.
 //
+// lastSavedAt is seeded from the campaign's most recent updated_at on load
+// (see useCampaignData → getCampaignLastEditedAt) and bumps on both local
+// saves and Realtime events from other tabs, so the chip reflects real
+// activity even on first paint.
+//
 // States (priority order):
 //   Offline     — "Offline"
 //   Locked      — "Can't save"
 //   Saved       — "Edited just now" / "Edited 1m ago" / …
-//   Initial     — (renders nothing before the first save in this session)
+//   Initial     — (renders nothing only for a brand-new campaign with no
+//                  rows yet, since lastSavedAt would still be null)
 // ============================================================================
 
 import { useEffect, useState } from 'react'
