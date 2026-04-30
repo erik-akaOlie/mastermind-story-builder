@@ -149,9 +149,24 @@ export default function CampaignNode({ data, selected }) {
   const isActive = hovered || isEdgeHighlighted || selected
   const lifted   = hovered || isEdgeHighlighted || selected
 
-  const baseopacity = data.locked ? 0.5 : 1
-  const isDimmed = !isActive && (anythingActive || anySelected)
-  const opacity = data.isEditing ? 0 : (isDimmed ? baseopacity * 0.5 : baseopacity)
+  // Three resting states for the card's opacity:
+  //   - active   (hovered / edge-highlighted / selected)        → full
+  //   - dimmed   (something ELSE is active — pulled out of focus) → way back
+  //   - resting  (nothing on the canvas is active right now)     → slightly dimmed
+  // Locked cards halve every level. The 0.25 "way back" is intentional — it
+  // signals "this isn't what you're looking at" without losing the card.
+  const baseOpacity = data.locked ? 0.5 : 1
+  const isResting = !isActive && !anythingActive && !anySelected && !data.isEditing
+  let opacity
+  if (data.isEditing) {
+    opacity = 0
+  } else if (isActive) {
+    opacity = baseOpacity
+  } else if (anythingActive || anySelected) {
+    opacity = baseOpacity * 0.25
+  } else {
+    opacity = baseOpacity * 0.85
+  }
 
   const shadow = lifted ? SHADOW_LIFTED : SHADOW_NORMAL
   const scale  = lifted ? 1.03 : 1
@@ -164,50 +179,103 @@ export default function CampaignNode({ data, selected }) {
 
   return (
     <div
-      className={`relative rounded-lg border w-64 transition-all duration-150 ${lifted ? 'is-lifted' : ''}`}
+      className={`relative rounded-lg w-64 ${lifted ? 'is-lifted' : ''}`}
       style={{
         opacity,
         boxShadow: shadow,
         transform:  `scale(${scale})`,
         backgroundColor: `color-mix(in srgb, ${typeConfig.color} 8%, white)`,
-        borderColor: `color-mix(in srgb, ${typeConfig.color} 30%, #e5e7eb)`,
+        // Three opacity timing branches keyed off the card's destination state:
+        //   - active   → 180ms ease-out          (no delay — snappy hover-in;
+        //                                        physical motion + brightening
+        //                                        kick in together for max
+        //                                        responsiveness)
+        //   - dimmed   → 260ms ease-in-out 90ms (gentle pull-back when another
+        //                                        card takes focus; 90ms delay
+        //                                        filters out rapid cursor
+        //                                        flicks for seizure safety)
+        //   - resting  → 500ms ease-in-out 90ms (collective settle when the
+        //                                        cursor lands on empty canvas
+        //                                        and the whole grid relaxes
+        //                                        back to its default state in
+        //                                        unison)
+        // Scale + shadow + bg + border at 128ms (15% faster than the 150ms
+        // baseline) so the physical motion stays the lead "responsiveness"
+        // signal on intentional hover.
+        transition: [
+          isActive
+            ? 'opacity 180ms ease-out'
+            : isResting
+              ? 'opacity 500ms ease-in-out 90ms'
+              : 'opacity 260ms ease-in-out 90ms',
+          'transform 128ms ease',
+          'box-shadow 128ms ease',
+          'background-color 128ms ease',
+          'border-color 128ms ease',
+        ].join(', '),
       }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      {/* Connection endpoint dots — rendered in HTML so they sit above the card */}
-      {data.connectionDots?.map((dot, i) => (
-        <div
-          key={i}
-          className="pointer-events-none absolute rounded-full"
-          style={{
-            width: 8,
-            height: 8,
-            left: dot.x - 4,
-            top: dot.y - 4,
-            backgroundColor: dot.color ?? '#94a3b8',
-            zIndex: 10,
-          }}
-        />
-      ))}
+      {/* Connection endpoint dots — rendered in HTML so they sit above the card.
+          Inverse-scaled so they never render smaller than 8px on screen,
+          using the same `compensation` factor as the title (capped at 5×). */}
+      {data.connectionDots?.map((dot, i) => {
+        const dotSize = 8 * compensation
+        return (
+          <div
+            key={i}
+            className="pointer-events-none absolute rounded-full"
+            style={{
+              width:  dotSize,
+              height: dotSize,
+              left:   dot.x - dotSize / 2,
+              top:    dot.y - dotSize / 2,
+              backgroundColor: dot.color ?? '#94a3b8',
+              zIndex: 10,
+            }}
+          />
+        )
+      })}
       {/* Invisible center handles — floating edges compute their own border points */}
       <Handle type="source" position={Position.Top} className="opacity-0" style={{ top: '50%', left: '50%' }} />
       <Handle type="target" position={Position.Top} className="opacity-0" style={{ top: '50%', left: '50%' }} />
 
       {/* Header */}
       <div
-        className="flex items-center rounded-t-lg gap-2 overflow-hidden"
+        className="flex items-center rounded-t-lg gap-2"
         style={{ backgroundColor: typeConfig.color }}
       >
         {/* Avatar — diameter matches the text div's border-box height (py-4 + text).
             The ref is on the sibling div, not the header, so there's no circular
-            dependency: the avatar's size doesn't influence what it's measuring. */}
+            dependency: the avatar's size doesn't influence what it's measuring.
+            Border radii are specified per corner (not via rounded-r-full + rounded-
+            tl-lg) because Tailwind's "full" = 9999px would push the top-side
+            corner-radius sum past the box width, triggering CSS proportional
+            clamping that crushed the 8px top-left back to ~0.
+            To bleed flush with the card's outer edges:
+              - alignSelf: 'flex-start' opts out of the header's `items-center`
+                so the negative top margin actually pulls the content to y=0
+                instead of getting half-absorbed by re-centering against the
+                title div (which is the height-determining sibling).
+              - height = avatarSize + 1 expands the visible area so the avatar
+                covers the full header height, including the 1px strip at the
+                bottom where header bg used to peek through.
+              - marginTop/Left: -1 pull the avatar 1px past the card's content
+                area to overlap the border on top and left. */}
         <div
-          className="flex-shrink-0 rounded-r-full overflow-hidden flex items-center justify-center"
+          className="flex-shrink-0 overflow-hidden flex items-center justify-center"
           style={{
             width:  avatarSize,
-            height: avatarSize,
+            height: avatarSize + 1,
             backgroundColor: avatarBg,
+            borderTopLeftRadius:     8,                       // matches card's rounded-lg (0.5rem)
+            borderTopRightRadius:    (avatarSize + 1) / 2,    // half-pill (right edge fully curved)
+            borderBottomRightRadius: (avatarSize + 1) / 2,
+            borderBottomLeftRadius:  0,                       // square where avatar meets card body
+            alignSelf:  'flex-start',                         // opt out of header's items-center
+            marginTop:  -1,                                   // overlap card's top border
+            marginLeft: -1,                                   // overlap card's left border
           }}
         >
           {avatarUrl ? (

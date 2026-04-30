@@ -283,7 +283,7 @@ export default function TextNode({ id, data, xPos, yPos }) {
     fontSize,
     textAlign:  align,
     fontFamily: 'Inter, sans-serif',
-    color:      '#374151',
+    color:      '#f3f4f6',
     lineHeight: 1.35,
     wordBreak:  'break-word',
   }

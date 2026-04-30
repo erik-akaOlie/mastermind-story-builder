@@ -506,7 +506,7 @@ export default function App() {
         multiSelectionKeyCode="Shift"
         fitView
       >
-        <Background />
+        <Background color="#1f2937" />
       </ReactFlow>
 
       {contextMenu && (() => {

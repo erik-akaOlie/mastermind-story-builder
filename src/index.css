@@ -11,6 +11,45 @@ html {
   font-size: 100%;
 }
 
+/* Canvas background — dark theme exploration */
+.react-flow {
+  background-color: #031a15;
+}
+
+/* Canvas vignette — conceptually part of the background.
+   Sits between the canvas color and ALL canvas content (cards, edges, text
+   nodes, UI chrome, modals). Anything that renders in or over the canvas
+   appears on top of this layer. The vignette tracks the canvas frame
+   automatically because .react-flow fills the viewport.
+
+   - As a ::before pseudo-element, it renders before any of .react-flow's
+     children in DOM order, so dots / cards / edges / viewport children
+     all stack above it without needing explicit z-index.
+   - mix-blend-mode: multiply lets the overlay only DARKEN the canvas,
+     never lighten. Light noise specks barely affect the canvas; dark
+     noise specks darken it. Tinted slate-900 corners multiply into the
+     canvas color for a deeper midnight blue/gray edge.
+   - Multi-stop gradient + SVG fractal-noise grain reduces banding on the
+     fade and adds subtle film texture. */
+.react-flow::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='200' height='200' filter='url(%23n)' opacity='0.4'/></svg>"),
+    radial-gradient(
+      ellipse at center,
+      transparent 35%,
+      rgba(15, 23, 42, 0.15) 55%,
+      rgba(15, 23, 42, 0.32) 75%,
+      rgba(15, 23, 42, 0.55) 100%
+    );
+  background-size: 200px 200px, 100% 100%;
+  background-repeat: repeat, no-repeat;
+  mix-blend-mode: multiply;
+}
+
 /* Override React Flow's default hand cursor on the canvas pane */
 .react-flow__pane {
   cursor: default !important;
