@@ -16,17 +16,24 @@
 // lib/*.js API so persistWrite + the Realtime channel + sync chip behave
 // like a normal edit.
 //
-// Phase 4 (this commit): editCardField joins moveCard as fully wired. The
-// remaining cases are still skeleton — canApply* permissively return
-// { ok: true }; apply* throw notWired. Subsequent phases (per ADR-0006 §10)
-// replace each case body in place:
+// Phase 5 (this commit): createCard + deleteCard wired. The deleteCard
+// inverse uses restoreCardWithDependents to rebuild card + sections +
+// connections in one optimistic-then-persist pass. createCard's redo path
+// re-creates at the original UUID via createNode({ id, ... }). Remaining
+// skeleton cases (per ADR-0006 §10):
 //
-//   phase 5 → createCard, deleteCard
 //   phase 7 → addConnection, removeConnection
 //   phase 8 → createTextNode, editTextNode, moveTextNode, deleteTextNode
 // ============================================================================
 
-import { updateNode, updateNodeSections } from './nodes.js'
+import {
+  createNode,
+  deleteNode,
+  updateNode,
+  updateNodeSections,
+  restoreCardWithDependents,
+  dbNodeToReactFlow,
+} from './nodes.js'
 import { useTypeStore } from '../store/useTypeStore.js'
 
 export const ACTION_TYPES = Object.freeze({
@@ -89,15 +96,32 @@ export function canApplyInverse(entry, currentState = {}) {
     }
     case ACTION_TYPES.EDIT_CARD_FIELD:
       return checkEditCardField(entry, currentState, 'after')
-    case ACTION_TYPES.CREATE_CARD:
-    case ACTION_TYPES.DELETE_CARD:
+    case ACTION_TYPES.CREATE_CARD: {
+      // Inverse = delete the card we created, so it must still exist.
+      const { nodes = [] } = currentState
+      const cardId = entry.cardId
+      if (!cardId) return { ok: false, reason: 'Malformed createCard entry' }
+      return nodes.some((n) => n.id === cardId)
+        ? { ok: true }
+        : { ok: false, reason: 'Card no longer exists' }
+    }
+    case ACTION_TYPES.DELETE_CARD: {
+      // Inverse = restore the deleted card, so nothing with that id should
+      // exist currently. If it does, something else recreated it; refuse.
+      const { nodes = [] } = currentState
+      const cardId = entry.dbCardRow?.id
+      if (!cardId) return { ok: false, reason: 'Malformed deleteCard entry' }
+      return nodes.some((n) => n.id === cardId)
+        ? { ok: false, reason: 'A card with that id already exists' }
+        : { ok: true }
+    }
     case ACTION_TYPES.ADD_CONNECTION:
     case ACTION_TYPES.REMOVE_CONNECTION:
     case ACTION_TYPES.CREATE_TEXT_NODE:
     case ACTION_TYPES.EDIT_TEXT_NODE:
     case ACTION_TYPES.MOVE_TEXT_NODE:
     case ACTION_TYPES.DELETE_TEXT_NODE:
-      // Stubbed — phases 4-8 will replace each with real validation.
+      // Stubbed — phases 7-8 will replace each with real validation.
       return { ok: true }
     default:
       return { ok: false, reason: `Unknown action type: ${entry.type}` }
@@ -127,8 +151,25 @@ export function canApplyForward(entry, currentState = {}) {
     }
     case ACTION_TYPES.EDIT_CARD_FIELD:
       return checkEditCardField(entry, currentState, 'before')
-    case ACTION_TYPES.CREATE_CARD:
-    case ACTION_TYPES.DELETE_CARD:
+    case ACTION_TYPES.CREATE_CARD: {
+      // Forward (redo) = recreate the card at its original UUID, so nothing
+      // should currently hold that id.
+      const { nodes = [] } = currentState
+      const cardId = entry.cardId
+      if (!cardId) return { ok: false, reason: 'Malformed createCard entry' }
+      return nodes.some((n) => n.id === cardId)
+        ? { ok: false, reason: 'A card with that id already exists' }
+        : { ok: true }
+    }
+    case ACTION_TYPES.DELETE_CARD: {
+      // Forward (redo) = delete the card again, so it must still exist.
+      const { nodes = [] } = currentState
+      const cardId = entry.dbCardRow?.id
+      if (!cardId) return { ok: false, reason: 'Malformed deleteCard entry' }
+      return nodes.some((n) => n.id === cardId)
+        ? { ok: true }
+        : { ok: false, reason: 'Card no longer exists' }
+    }
     case ACTION_TYPES.ADD_CONNECTION:
     case ACTION_TYPES.REMOVE_CONNECTION:
     case ACTION_TYPES.CREATE_TEXT_NODE:
@@ -164,8 +205,8 @@ export async function applyInverse(entry, context = {}) {
   switch (entry.type) {
     case ACTION_TYPES.MOVE_CARD:          return moveCardInverse(entry, context)
     case ACTION_TYPES.EDIT_CARD_FIELD:    return editCardFieldSide(entry, context, 'before')
-    case ACTION_TYPES.CREATE_CARD:        return notWired(entry, 'applyInverse')
-    case ACTION_TYPES.DELETE_CARD:        return notWired(entry, 'applyInverse')
+    case ACTION_TYPES.CREATE_CARD:        return createCardInverse(entry, context)
+    case ACTION_TYPES.DELETE_CARD:        return deleteCardInverse(entry, context)
     case ACTION_TYPES.ADD_CONNECTION:     return notWired(entry, 'applyInverse')
     case ACTION_TYPES.REMOVE_CONNECTION:  return notWired(entry, 'applyInverse')
     case ACTION_TYPES.CREATE_TEXT_NODE:   return notWired(entry, 'applyInverse')
@@ -190,8 +231,8 @@ export async function applyForward(entry, context = {}) {
   switch (entry.type) {
     case ACTION_TYPES.MOVE_CARD:          return moveCardForward(entry, context)
     case ACTION_TYPES.EDIT_CARD_FIELD:    return editCardFieldSide(entry, context, 'after')
-    case ACTION_TYPES.CREATE_CARD:        return notWired(entry, 'applyForward')
-    case ACTION_TYPES.DELETE_CARD:        return notWired(entry, 'applyForward')
+    case ACTION_TYPES.CREATE_CARD:        return createCardForward(entry, context)
+    case ACTION_TYPES.DELETE_CARD:        return deleteCardForward(entry, context)
     case ACTION_TYPES.ADD_CONNECTION:     return notWired(entry, 'applyForward')
     case ACTION_TYPES.REMOVE_CONNECTION:  return notWired(entry, 'applyForward')
     case ACTION_TYPES.CREATE_TEXT_NODE:   return notWired(entry, 'applyForward')
@@ -328,6 +369,107 @@ async function editCardFieldSide(entry, { nodes = [], setNodes } = {}, side /* '
     media:      data.media      || [],
     [field]:    value,
   })
+}
+
+// createCard / deleteCard — phase 5.
+//
+// createCard.dbRow holds the fields that went into the original createNode
+// call, so the redo path simply replays it (with `id` so the card lands at
+// its original UUID). The undo path is the obvious inverse: deleteNode.
+//
+// deleteCard.{dbCardRow, dbSectionRows, dbConnectionRows} is the snapshot
+// captured by buildDeleteCardSnapshot before the original delete persisted.
+// The undo path optimistically rebuilds React state from the snapshot, then
+// calls restoreCardWithDependents to put rows back in Supabase. The redo
+// path is deleteNode + optimistic filter (mirrors the original delete).
+
+async function createCardInverse(entry, { setNodes, setEdges } = {}) {
+  const { cardId } = entry
+  if (!cardId) throw new Error('[undoActions] createCard: missing cardId')
+
+  if (typeof setNodes === 'function') {
+    setNodes((nds) => nds.filter((n) => n.id !== cardId))
+  }
+  if (typeof setEdges === 'function') {
+    setEdges((eds) => eds.filter((e) => e.source !== cardId && e.target !== cardId))
+  }
+  await deleteNode(cardId)
+}
+
+async function createCardForward(entry, { setNodes } = {}) {
+  const { cardId, dbRow } = entry
+  if (!cardId || !dbRow) throw new Error('[undoActions] createCard: missing cardId or dbRow')
+
+  const reactNode = await createNode({
+    id:         cardId,
+    campaignId: entry.campaignId,
+    typeId:     dbRow.typeId,
+    typeKey:    dbRow.typeKey,
+    label:      dbRow.label,
+    summary:    dbRow.summary,
+    avatarUrl:  dbRow.avatarUrl,
+    positionX:  dbRow.positionX,
+    positionY:  dbRow.positionY,
+  })
+
+  if (typeof setNodes === 'function') {
+    setNodes((nds) => (nds.some((n) => n.id === cardId) ? nds : [...nds, reactNode]))
+  }
+}
+
+async function deleteCardInverse(entry, { setNodes, setEdges } = {}) {
+  const { dbCardRow, dbSectionRows = [], dbConnectionRows = [] } = entry
+  if (!dbCardRow?.id) throw new Error('[undoActions] deleteCard: missing dbCardRow.id')
+
+  // Reconstruct React shape from the DB snapshot for the optimistic update.
+  const sectionsByKind = {}
+  for (const s of dbSectionRows) sectionsByKind[s.kind] = s.content
+  const reactNode = dbNodeToReactFlow(dbCardRow, sectionsByKind, buildNodeTypesById())
+
+  const reactEdges = dbConnectionRows.map((r) => ({
+    id:     r.id,
+    source: r.source_node_id,
+    target: r.target_node_id,
+    type:   'floating',
+  }))
+
+  if (typeof setNodes === 'function') {
+    setNodes((nds) => (nds.some((n) => n.id === reactNode.id) ? nds : [...nds, reactNode]))
+  }
+  if (typeof setEdges === 'function') {
+    setEdges((eds) => {
+      const have = new Set(eds.map((e) => e.id))
+      const additions = reactEdges.filter((e) => !have.has(e.id))
+      return additions.length === 0 ? eds : [...eds, ...additions]
+    })
+  }
+
+  await restoreCardWithDependents({ dbCardRow, dbSectionRows, dbConnectionRows })
+}
+
+async function deleteCardForward(entry, { setNodes, setEdges } = {}) {
+  const cardId = entry.dbCardRow?.id
+  if (!cardId) throw new Error('[undoActions] deleteCard: missing dbCardRow.id')
+
+  if (typeof setNodes === 'function') {
+    setNodes((nds) => nds.filter((n) => n.id !== cardId))
+  }
+  if (typeof setEdges === 'function') {
+    setEdges((eds) => eds.filter((e) => e.source !== cardId && e.target !== cardId))
+  }
+  await deleteNode(cardId)
+}
+
+// Reverse type lookup: useTypeStore exposes idByKey + types but not
+// nodeTypesById in the shape dbNodeToReactFlow wants. Build it on demand
+// from the live store. Cheap (5 entries by default).
+function buildNodeTypesById() {
+  const { types = {}, idByKey = {} } = useTypeStore.getState() || {}
+  const out = {}
+  for (const [key, id] of Object.entries(idByKey)) {
+    out[id] = { key, ...(types[key] || {}) }
+  }
+  return out
 }
 
 // Small structural deep-equal good enough for the React-shape values we
