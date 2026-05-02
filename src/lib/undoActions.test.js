@@ -30,6 +30,31 @@ vi.mock('./connections.js', () => ({
   deleteConnection: vi.fn(async () => {}),
 }))
 
+vi.mock('./textNodes.js', async () => {
+  // Pull in the real dbTextNodeToReactFlow so the deleteTextNode inverse
+  // rebuild exercises the actual marshaler (no Supabase dependency).
+  const actual = await vi.importActual('./textNodes.js')
+  return {
+    ...actual,
+    createTextNode:  vi.fn(async (args) => ({
+      id: args.id ?? 'mock-text-uuid',
+      type: 'textNode',
+      position: { x: args.positionX, y: args.positionY },
+      data: {
+        text: args.contentHtml ?? '',
+        editing: false,
+        width: args.width,
+        height: args.height ?? null,
+        fontSize: args.fontSize,
+        align: args.align,
+      },
+    })),
+    updateTextNode:  vi.fn(async () => {}),
+    deleteTextNode:  vi.fn(async () => {}),
+    restoreTextNode: vi.fn(async () => {}),
+  }
+})
+
 import {
   ACTION_TYPES,
   canApplyInverse,
@@ -46,19 +71,21 @@ import {
   restoreCardWithDependents,
 } from './nodes.js'
 import { createConnection, deleteConnection } from './connections.js'
+import {
+  createTextNode,
+  updateTextNode,
+  deleteTextNode,
+  restoreTextNode,
+} from './textNodes.js'
 import { useTypeStore } from '../store/useTypeStore.js'
 
 const KNOWN = Object.values(ACTION_TYPES)
 
-// Action types still skeleton (no real validation / implementation).
-// Phases 3-7 wired everything except the four text-node ops (phase 8).
-const TEXT_NODE_TYPES = new Set([
-  ACTION_TYPES.CREATE_TEXT_NODE,
-  ACTION_TYPES.EDIT_TEXT_NODE,
-  ACTION_TYPES.MOVE_TEXT_NODE,
-  ACTION_TYPES.DELETE_TEXT_NODE,
-])
-const UNWIRED = KNOWN.filter((t) => TEXT_NODE_TYPES.has(t))
+// After phase 8, every ACTION_TYPES entry is fully wired (real canApply* +
+// apply* implementations). The empty filter pins this contract — if a
+// future phase adds a new action type without wiring it, this set goes
+// non-empty and the catalog test below fails loudly.
+const UNWIRED = []
 
 beforeEach(() => {
   createNode.mockClear()
@@ -68,6 +95,10 @@ beforeEach(() => {
   restoreCardWithDependents.mockClear()
   createConnection.mockClear()
   deleteConnection.mockClear()
+  createTextNode.mockClear()
+  updateTextNode.mockClear()
+  deleteTextNode.mockClear()
+  restoreTextNode.mockClear()
 })
 
 describe('undoActions — exports + catalog', () => {
@@ -95,25 +126,13 @@ describe('undoActions — exports + catalog', () => {
   })
 })
 
-describe('undoActions — phase-skeleton stubs', () => {
-  it('canApplyInverse permissively accepts every still-unwired action type', () => {
-    for (const type of UNWIRED) {
-      expect(canApplyInverse({ type }, { nodes: [], edges: [] })).toEqual({ ok: true })
-    }
-  })
-
-  it('canApplyForward permissively accepts every still-unwired action type', () => {
-    for (const type of UNWIRED) {
-      expect(canApplyForward({ type }, { nodes: [], edges: [] })).toEqual({ ok: true })
-    }
-  })
-
-  it('applyInverse throws "not wired" for unwired known types (e.g. createTextNode)', async () => {
-    await expect(applyInverse({ type: ACTION_TYPES.CREATE_TEXT_NODE })).rejects.toThrow(/not wired/i)
-  })
-
-  it('applyForward throws "not wired" for unwired known types', async () => {
-    await expect(applyForward({ type: ACTION_TYPES.CREATE_TEXT_NODE })).rejects.toThrow(/not wired/i)
+describe('undoActions — fully-wired catalog (phase 8: every type lives)', () => {
+  // After phase 8, every ACTION_TYPES entry has real canApply* + apply*
+  // implementations. UNWIRED stayed in scope earlier as the set of types
+  // still throwing "not wired" / permissively accepting in canApply*. With
+  // every case wired, the set is empty.
+  it('UNWIRED is empty — every action type has real validation + application', () => {
+    expect(UNWIRED).toHaveLength(0)
   })
 })
 
@@ -1293,5 +1312,254 @@ describe('undoActions — reorderListItem', () => {
       { nodes: [card] },
     )
     expect(updateNodeSections).not.toHaveBeenCalled()
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Text-node ops — phase 8.
+// Identity is the row's UUID. createTextNode + deleteTextNode carry a full
+// dbRow snapshot for restore; editTextNode + moveTextNode carry a partial
+// before/after field set.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const textNode = (id, overrides = {}) => ({
+  id,
+  type: 'textNode',
+  position: { x: 100, y: 200 },
+  data: {
+    text:     '<p>Strahd notes</p>',
+    width:    256,
+    height:   null,
+    fontSize: 18,
+    align:    'left',
+    editing:  false,
+    ...overrides,
+  },
+})
+
+const tnDbRow = (overrides = {}) => ({
+  id:           'tn-1',
+  campaign_id:  'c1',
+  content_html: '<p>Strahd notes</p>',
+  position_x:   100,
+  position_y:   200,
+  width:        256,
+  height:       null,
+  font_size:    18,
+  align:        'left',
+  ...overrides,
+})
+
+describe('undoActions — createTextNode', () => {
+  const entry = {
+    type: ACTION_TYPES.CREATE_TEXT_NODE,
+    campaignId: 'c1',
+    label: 'Add text',
+    timestamp: '2026-05-01T00:00:00Z',
+    textNodeId: 'tn-1',
+    dbRow: tnDbRow(),
+  }
+
+  it('canApplyInverse passes when the text node is still in the list', () => {
+    expect(canApplyInverse(entry, { nodes: [textNode('tn-1')] }))
+      .toEqual({ ok: true })
+  })
+
+  it('canApplyInverse refuses when the text node was already removed elsewhere', () => {
+    expect(canApplyInverse(entry, { nodes: [] }).ok).toBe(false)
+  })
+
+  it('canApplyForward passes when the id is currently absent', () => {
+    expect(canApplyForward(entry, { nodes: [textNode('other')] }))
+      .toEqual({ ok: true })
+  })
+
+  it('canApplyForward refuses when something already holds that id', () => {
+    expect(canApplyForward(entry, { nodes: [textNode('tn-1')] }).ok).toBe(false)
+  })
+
+  it('applyInverse removes the text node optimistically and persists deleteTextNode', async () => {
+    const setNodes = vi.fn()
+    await applyInverse(entry, { setNodes })
+    expect(deleteTextNode).toHaveBeenCalledWith('tn-1')
+    const updater = setNodes.mock.calls[0][0]
+    expect(updater([textNode('tn-1'), textNode('other')]))
+      .toEqual([textNode('other')])
+  })
+
+  it('applyForward recreates via createTextNode using the recorded UUID + dbRow', async () => {
+    const setNodes = vi.fn()
+    await applyForward(entry, { setNodes })
+    expect(createTextNode).toHaveBeenCalledWith({
+      id:           'tn-1',
+      campaignId:   'c1',
+      contentHtml:  '<p>Strahd notes</p>',
+      positionX:    100,
+      positionY:    200,
+      width:        256,
+      height:       null,
+      fontSize:     18,
+      align:        'left',
+    })
+    // Optimistic append. Idempotent if the realtime echo got there first.
+    const updater = setNodes.mock.calls[0][0]
+    expect(updater([])).toHaveLength(1)
+    expect(updater([textNode('tn-1')])).toEqual([textNode('tn-1')])
+  })
+})
+
+describe('undoActions — deleteTextNode', () => {
+  const entry = {
+    type: ACTION_TYPES.DELETE_TEXT_NODE,
+    campaignId: 'c1',
+    label: 'Delete text',
+    timestamp: '2026-05-01T00:00:00Z',
+    textNodeId: 'tn-1',
+    dbRow: tnDbRow(),
+  }
+
+  it('canApplyInverse passes when the id is currently absent (about to recreate)', () => {
+    expect(canApplyInverse(entry, { nodes: [] })).toEqual({ ok: true })
+  })
+
+  it('canApplyInverse refuses when something already holds that id', () => {
+    expect(canApplyInverse(entry, { nodes: [textNode('tn-1')] }).ok).toBe(false)
+  })
+
+  it('canApplyForward passes when the text node is still present', () => {
+    expect(canApplyForward(entry, { nodes: [textNode('tn-1')] }))
+      .toEqual({ ok: true })
+  })
+
+  it('applyInverse persists restoreTextNode with the snapshot intact', async () => {
+    await applyInverse(entry, {})
+    expect(restoreTextNode).toHaveBeenCalledWith(tnDbRow())
+  })
+
+  it('applyInverse optimistically appends a React-shaped text node (idempotent on echo)', async () => {
+    const setNodes = vi.fn()
+    await applyInverse(entry, { setNodes })
+    const updater = setNodes.mock.calls[0][0]
+    const result = updater([textNode('other')])
+    expect(result).toHaveLength(2)
+    const restored = result.find((n) => n.id === 'tn-1')
+    expect(restored).toMatchObject({
+      id: 'tn-1', type: 'textNode', position: { x: 100, y: 200 },
+    })
+    expect(restored.data.text).toBe('<p>Strahd notes</p>')
+    // No double-insert if Realtime echo got there first.
+    expect(updater([textNode('tn-1')])).toEqual([textNode('tn-1')])
+  })
+
+  it('applyForward removes optimistically and re-issues deleteTextNode', async () => {
+    const setNodes = vi.fn()
+    await applyForward(entry, { setNodes })
+    expect(deleteTextNode).toHaveBeenCalledWith('tn-1')
+    const updater = setNodes.mock.calls[0][0]
+    expect(updater([textNode('tn-1'), textNode('other')]))
+      .toEqual([textNode('other')])
+  })
+})
+
+describe('undoActions — moveTextNode', () => {
+  const entry = {
+    type: ACTION_TYPES.MOVE_TEXT_NODE,
+    campaignId: 'c1',
+    textNodeId: 'tn-1',
+    before: { x: 10, y: 20 },
+    after:  { x: 100, y: 200 },
+  }
+
+  it('canApplyInverse passes when the text node still exists', () => {
+    expect(canApplyInverse(entry, { nodes: [textNode('tn-1')] }))
+      .toEqual({ ok: true })
+  })
+
+  it('canApplyInverse refuses when the text node was deleted elsewhere', () => {
+    expect(canApplyInverse(entry, { nodes: [] }).ok).toBe(false)
+  })
+
+  it('applyInverse persists `before` and updates setNodes optimistically', async () => {
+    const setNodes = vi.fn()
+    await applyInverse(entry, { setNodes })
+    expect(updateTextNode).toHaveBeenCalledWith('tn-1', { positionX: 10, positionY: 20 })
+    const updater = setNodes.mock.calls[0][0]
+    const result = updater([textNode('tn-1', { editing: false })])
+    expect(result[0].position).toEqual({ x: 10, y: 20 })
+  })
+
+  it('applyForward persists `after`', async () => {
+    await applyForward(entry, {})
+    expect(updateTextNode).toHaveBeenCalledWith('tn-1', { positionX: 100, positionY: 200 })
+  })
+})
+
+describe('undoActions — editTextNode', () => {
+  const textOnlyEntry = {
+    type: ACTION_TYPES.EDIT_TEXT_NODE,
+    campaignId: 'c1',
+    textNodeId: 'tn-1',
+    before: { text: '<p>old</p>' },
+    after:  { text: '<p>new</p>' },
+  }
+
+  it('canApplyInverse passes when current matches `after` on the recorded fields', () => {
+    expect(canApplyInverse(textOnlyEntry, {
+      nodes: [textNode('tn-1', { text: '<p>new</p>' })],
+    })).toEqual({ ok: true })
+  })
+
+  it('canApplyInverse refuses when the value drifted', () => {
+    expect(canApplyInverse(textOnlyEntry, {
+      nodes: [textNode('tn-1', { text: '<p>something else</p>' })],
+    }).ok).toBe(false)
+  })
+
+  it('canApplyInverse only checks recorded fields (other field changes do not block)', () => {
+    // Entry recorded only a text edit; the user also resized the node since.
+    // canApplyInverse should still pass because `before` only specifies `text`.
+    expect(canApplyInverse(textOnlyEntry, {
+      nodes: [textNode('tn-1', { text: '<p>new</p>', width: 999 })],
+    })).toEqual({ ok: true })
+  })
+
+  it('applyInverse persists only `before` fields via updateTextNode', async () => {
+    await applyInverse(textOnlyEntry, {})
+    expect(updateTextNode).toHaveBeenCalledWith('tn-1', { contentHtml: '<p>old</p>' })
+  })
+
+  it('applyForward persists only `after` fields', async () => {
+    await applyForward(textOnlyEntry, {})
+    expect(updateTextNode).toHaveBeenCalledWith('tn-1', { contentHtml: '<p>new</p>' })
+  })
+
+  it('handles a multi-field resize entry (width/height + position shift)', async () => {
+    const resizeEntry = {
+      type: ACTION_TYPES.EDIT_TEXT_NODE,
+      campaignId: 'c1',
+      textNodeId: 'tn-1',
+      before: { width: 200, height: 80,  positionX: 100, positionY: 200 },
+      after:  { width: 320, height: 120, positionX: 80,  positionY: 200 },
+    }
+    const setNodes = vi.fn()
+    await applyInverse(resizeEntry, { setNodes })
+
+    expect(updateTextNode).toHaveBeenCalledWith('tn-1', {
+      width: 200, height: 80, positionX: 100, positionY: 200,
+    })
+
+    // Optimistic update threads positionX/positionY back into n.position.
+    const updater = setNodes.mock.calls[0][0]
+    const result = updater([textNode('tn-1', { width: 320, height: 120 })])
+    expect(result[0].position).toEqual({ x: 100, y: 200 })
+    expect(result[0].data.width).toBe(200)
+    expect(result[0].data.height).toBe(80)
+  })
+
+  it('refuses when text node id is missing', async () => {
+    await expect(applyInverse(
+      { ...textOnlyEntry, textNodeId: undefined },
+      {},
+    )).rejects.toThrow(/missing textNodeId/i)
   })
 })
