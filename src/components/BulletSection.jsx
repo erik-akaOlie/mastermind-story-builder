@@ -20,7 +20,7 @@ import SectionLabel from './SectionLabel'
 // string arrays in node.data without depending on this file's internals.
 export const newItem = (value = '') => ({ id: crypto.randomUUID(), value })
 
-function SortableBulletInput({ id, value, onChange, onKeyDown, onRemove, inputRef, placeholder, dotColor }) {
+function SortableBulletInput({ id, value, onChange, onKeyDown, onRemove, onFocus, onBlur, inputRef, placeholder, dotColor }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
   const textareaRef = useRef(null)
 
@@ -58,6 +58,8 @@ function SortableBulletInput({ id, value, onChange, onKeyDown, onRemove, inputRe
         rows={1}
         value={value}
         onChange={onChange}
+        onFocus={onFocus}
+        onBlur={onBlur}
         placeholder={placeholder}
         onKeyDown={onKeyDown}
       />
@@ -69,10 +71,34 @@ function SortableBulletInput({ id, value, onChange, onKeyDown, onRemove, inputRe
   )
 }
 
-export default function BulletSection({ items, onChange, label, placeholder, dotColor, addLabel }) {
+// Optional semantic callbacks for per-item undo logging (phase 7c). Each
+// fires once per user-visible action; the parent (EditModal) logs the
+// event into its chronological action log and emits one recordAction per
+// log entry on modal close. Parents that don't need them can leave them
+// undefined — onChange still flows for state management.
+//
+//   onAddItem    ({ item, position })
+//   onRemoveItem ({ item, position })
+//   onItemBlur   ({ itemId, position, before, after })   // bullets only;
+//                                                          fires on textarea
+//                                                          blur if value changed
+//   onReorderItem({ itemId, from, to })                  // only when from !== to
+//
+// onItemBlur is the source of editListItem entries. We track value-at-focus
+// per bullet id so the on-blur diff fires once per net edit (matches the
+// "Word-style typing exemption" — Ctrl+Z while focused is browser-native
+// per-keystroke; once you blur, the whole field-level change becomes one
+// undo step).
+export default function BulletSection({
+  items, onChange, label, placeholder, dotColor, addLabel,
+  onAddItem, onRemoveItem, onItemBlur, onReorderItem,
+}) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
   const refs = useRef([])
   const prevCount = useRef(items.length)
+  // Per-bullet `value-at-focus` map keyed by bullet id. Set on focus,
+  // diffed on blur to fire onItemBlur exactly once per net edit.
+  const focusValueRef = useRef(new Map())
 
   // When a bullet is added (length grows), focus the new last bullet so the
   // user can type into it immediately.
@@ -84,8 +110,18 @@ export default function BulletSection({ items, onChange, label, placeholder, dot
   }, [items.length])
 
   const updateItem = (id, v) => onChange(items.map((x) => x.id === id ? { ...x, value: v } : x))
-  const removeItem = (id) => onChange(items.filter((x) => x.id !== id))
-  const addItem    = ()    => onChange([...items, newItem()])
+  const removeItem = (id) => {
+    const idx = items.findIndex((x) => x.id === id)
+    if (idx === -1) return
+    const removed = items[idx]
+    onChange(items.filter((x) => x.id !== id))
+    onRemoveItem?.({ item: { ...removed }, position: idx })
+  }
+  const addItem = () => {
+    const fresh = newItem()
+    onChange([...items, fresh])
+    onAddItem?.({ item: { ...fresh }, position: items.length })
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -94,12 +130,16 @@ export default function BulletSection({ items, onChange, label, placeholder, dot
         sensors={sensors}
         collisionDetection={closestCenter}
         onDragEnd={({ active, over }) => {
+          // dnd-kit only reports a meaningful over.id when the drag landed
+          // on a different bullet — same-position drops have over.id === active.id
+          // and we filter them out so no reorder log entry fires for a
+          // drag-and-drop-back-to-original move (per Erik's spec).
           if (over && active.id !== over.id) {
-            onChange(arrayMove(
-              items,
-              items.findIndex((x) => x.id === active.id),
-              items.findIndex((x) => x.id === over.id),
-            ))
+            const from = items.findIndex((x) => x.id === active.id)
+            const to   = items.findIndex((x) => x.id === over.id)
+            if (from === -1 || to === -1 || from === to) return
+            onChange(arrayMove(items, from, to))
+            onReorderItem?.({ itemId: active.id, from, to })
           }
         }}
       >
@@ -114,6 +154,19 @@ export default function BulletSection({ items, onChange, label, placeholder, dot
                 placeholder={placeholder}
                 dotColor={dotColor}
                 onChange={(e) => updateItem(item.id, e.target.value)}
+                onFocus={() => { focusValueRef.current.set(item.id, item.value) }}
+                onBlur={() => {
+                  const before = focusValueRef.current.get(item.id)
+                  focusValueRef.current.delete(item.id)
+                  if (before === undefined || before === item.value) return
+                  // Position re-derived at blur time in case items shifted
+                  // (normally bullets don't reorder while a textarea has
+                  // focus, but the cost of getting it wrong is firing the
+                  // wrong index — this defensive lookup keeps it consistent).
+                  const position = items.findIndex((x) => x.id === item.id)
+                  if (position === -1) return
+                  onItemBlur?.({ itemId: item.id, position, before, after: item.value })
+                }}
                 onRemove={() => removeItem(item.id)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter')                       { e.preventDefault(); addItem() }

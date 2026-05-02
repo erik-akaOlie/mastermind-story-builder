@@ -78,15 +78,20 @@ describe('undoActions — exports + catalog', () => {
     expect(typeof applyForward).toBe('function')
   })
 
-  it('catalogs all ten action types from ADR-0006 §1', () => {
+  it('catalogs the ten action types from ADR-0006 §1 plus phase-7c list-item four', () => {
     expect(KNOWN).toEqual(
       expect.arrayContaining([
+        // ADR §1 baseline ten
         'createCard', 'editCardField', 'moveCard', 'deleteCard',
         'addConnection', 'removeConnection',
         'createTextNode', 'editTextNode', 'moveTextNode', 'deleteTextNode',
+        // Phase 7c additions: list-item granularity for storyNotes /
+        // hiddenLore / dmNotes / media so an undo can never silently
+        // bundle multiple bullets together.
+        'addListItem', 'removeListItem', 'editListItem', 'reorderListItem',
       ]),
     )
-    expect(KNOWN).toHaveLength(10)
+    expect(KNOWN).toHaveLength(14)
   })
 })
 
@@ -885,5 +890,408 @@ describe('undoActions — removeConnection apply*', () => {
     // And filters the edge from local state.
     const updater = setEdges.mock.calls[0][0]
     expect(updater([{ id: 'edge-1' }, { id: 'other' }])).toEqual([{ id: 'other' }])
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// List-item ops — phase 7c. Per-item granularity for the four list-shaped
+// fields (storyNotes / hiddenLore / dmNotes / media). Each entry identifies
+// its target by stable id (bullets via {id, value}; media via storage path).
+// Position is recorded but used only as a hint and a drift check.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const listEntry = (type, overrides = {}) => ({
+  type,
+  campaignId: 'c1',
+  cardId: 'card-1',
+  field: 'storyNotes',
+  ...overrides,
+})
+
+const cardWithBullets = (storyNotes) => ({
+  id: 'card-1',
+  data: {
+    label: 'Strahd',
+    type: 'character',
+    summary: '',
+    avatar: null,
+    storyNotes,
+    hiddenLore: [{ id: 'h1', value: 'secret' }],
+    dmNotes:    [{ id: 'd1', value: 'note' }],
+    media:      [],
+  },
+})
+
+describe('undoActions — addListItem canApply*', () => {
+  it('canApplyInverse passes when the item is still in the list (by id)', () => {
+    expect(canApplyInverse(
+      listEntry(ACTION_TYPES.ADD_LIST_ITEM, {
+        position: 1, item: { id: 'b2', value: 'B' },
+      }),
+      { nodes: [cardWithBullets([
+        { id: 'b1', value: 'A' },
+        { id: 'b2', value: 'B' },
+        { id: 'b3', value: 'C' },
+      ])] },
+    )).toEqual({ ok: true })
+  })
+
+  it('canApplyInverse refuses when the item id is no longer in the list', () => {
+    const result = canApplyInverse(
+      listEntry(ACTION_TYPES.ADD_LIST_ITEM, {
+        position: 1, item: { id: 'b2', value: 'B' },
+      }),
+      { nodes: [cardWithBullets([
+        { id: 'b1', value: 'A' },
+        { id: 'b3', value: 'C' },
+      ])] },
+    )
+    expect(result.ok).toBe(false)
+    expect(result.reason).toMatch(/no longer in this card/i)
+  })
+
+  it('canApplyForward passes when the item is currently absent', () => {
+    expect(canApplyForward(
+      listEntry(ACTION_TYPES.ADD_LIST_ITEM, {
+        position: 1, item: { id: 'b2', value: 'B' },
+      }),
+      { nodes: [cardWithBullets([{ id: 'b1', value: 'A' }])] },
+    )).toEqual({ ok: true })
+  })
+
+  it('canApplyForward refuses when the item id is already present', () => {
+    expect(canApplyForward(
+      listEntry(ACTION_TYPES.ADD_LIST_ITEM, {
+        position: 1, item: { id: 'b2', value: 'B' },
+      }),
+      { nodes: [cardWithBullets([
+        { id: 'b1', value: 'A' },
+        { id: 'b2', value: 'B' },
+      ])] },
+    ).ok).toBe(false)
+  })
+
+  it('refuses entries for unsupported list fields', () => {
+    expect(canApplyInverse(
+      listEntry(ACTION_TYPES.ADD_LIST_ITEM, {
+        field: 'label',
+        item: { id: 'x', value: '' },
+      }),
+      { nodes: [cardWithBullets([])] },
+    ).ok).toBe(false)
+  })
+})
+
+describe('undoActions — addListItem apply*', () => {
+  it('applyInverse removes the item by id (not position) and persists merged sections', async () => {
+    const card = cardWithBullets([
+      { id: 'b1', value: 'A' },
+      { id: 'b2', value: 'B' },
+      { id: 'b3', value: 'C' },
+    ])
+    await applyInverse(
+      listEntry(ACTION_TYPES.ADD_LIST_ITEM, {
+        position: 1, item: { id: 'b2', value: 'B' },
+      }),
+      { nodes: [card] },
+    )
+    expect(updateNodeSections).toHaveBeenCalledWith('card-1', expect.objectContaining({
+      storyNotes: [{ id: 'b1', value: 'A' }, { id: 'b3', value: 'C' }],
+      // Other sections preserved.
+      hiddenLore: [{ id: 'h1', value: 'secret' }],
+      dmNotes:    [{ id: 'd1', value: 'note' }],
+      media:      [],
+    }))
+  })
+
+  it('applyInverse removes by id even when position has shifted', async () => {
+    // Other ops since the original add: 'b2' is now at index 0, not 1.
+    const card = cardWithBullets([
+      { id: 'b2', value: 'B' },
+      { id: 'b1', value: 'A' },
+    ])
+    await applyInverse(
+      listEntry(ACTION_TYPES.ADD_LIST_ITEM, {
+        position: 1, item: { id: 'b2', value: 'B' },
+      }),
+      { nodes: [card] },
+    )
+    expect(updateNodeSections).toHaveBeenCalledWith('card-1', expect.objectContaining({
+      storyNotes: [{ id: 'b1', value: 'A' }],
+    }))
+  })
+
+  it('applyForward inserts the item at the recorded position', async () => {
+    const card = cardWithBullets([
+      { id: 'b1', value: 'A' },
+      { id: 'b3', value: 'C' },
+    ])
+    await applyForward(
+      listEntry(ACTION_TYPES.ADD_LIST_ITEM, {
+        position: 1, item: { id: 'b2', value: 'B' },
+      }),
+      { nodes: [card] },
+    )
+    expect(updateNodeSections).toHaveBeenCalledWith('card-1', expect.objectContaining({
+      storyNotes: [
+        { id: 'b1', value: 'A' },
+        { id: 'b2', value: 'B' },
+        { id: 'b3', value: 'C' },
+      ],
+    }))
+  })
+
+  it('applyForward clamps an out-of-range position to current array length', async () => {
+    const card = cardWithBullets([{ id: 'b1', value: 'A' }])
+    await applyForward(
+      listEntry(ACTION_TYPES.ADD_LIST_ITEM, {
+        position: 99, item: { id: 'b2', value: 'B' },
+      }),
+      { nodes: [card] },
+    )
+    expect(updateNodeSections).toHaveBeenCalledWith('card-1', expect.objectContaining({
+      storyNotes: [{ id: 'b1', value: 'A' }, { id: 'b2', value: 'B' }],
+    }))
+  })
+
+  it('optimistically updates setNodes with the new array', async () => {
+    const card = cardWithBullets([
+      { id: 'b1', value: 'A' },
+      { id: 'b2', value: 'B' },
+    ])
+    const setNodes = vi.fn()
+    await applyInverse(
+      listEntry(ACTION_TYPES.ADD_LIST_ITEM, {
+        position: 1, item: { id: 'b2', value: 'B' },
+      }),
+      { nodes: [card], setNodes },
+    )
+    const updater = setNodes.mock.calls[0][0]
+    const result = updater([card, { id: 'other', data: {} }])
+    expect(result[0].data.storyNotes).toEqual([{ id: 'b1', value: 'A' }])
+    expect(result[1]).toEqual({ id: 'other', data: {} })
+  })
+})
+
+describe('undoActions — removeListItem', () => {
+  // Erik's scenario: distinguishing duplicate-text bullets by id.
+  it('canApplyInverse passes when the recorded id is currently absent (we are about to re-insert)', () => {
+    expect(canApplyInverse(
+      listEntry(ACTION_TYPES.REMOVE_LIST_ITEM, {
+        position: 1, item: { id: 'b-gone', value: 'TODO' },
+      }),
+      { nodes: [cardWithBullets([
+        { id: 'b1', value: 'TODO' },
+        { id: 'b3', value: 'TODO' },
+      ])] },
+    )).toEqual({ ok: true })
+  })
+
+  it("applyInverse re-inserts the recorded item at the recorded position (Erik's duplicate-text scenario)", async () => {
+    // Three bullets all with text 'TODO'; we're restoring the middle one.
+    const card = cardWithBullets([
+      { id: 'b1', value: 'TODO' },
+      { id: 'b3', value: 'TODO' },
+    ])
+    await applyInverse(
+      listEntry(ACTION_TYPES.REMOVE_LIST_ITEM, {
+        position: 1, item: { id: 'b2', value: 'TODO' },
+      }),
+      { nodes: [card] },
+    )
+    expect(updateNodeSections).toHaveBeenCalledWith('card-1', expect.objectContaining({
+      storyNotes: [
+        { id: 'b1', value: 'TODO' },
+        { id: 'b2', value: 'TODO' },
+        { id: 'b3', value: 'TODO' },
+      ],
+    }))
+  })
+
+  // Erik's scenario: deleting the first bullet preserves remaining IDs.
+  it('canApplyForward passes when the recorded id is still present (we are about to remove it)', () => {
+    expect(canApplyForward(
+      listEntry(ACTION_TYPES.REMOVE_LIST_ITEM, {
+        position: 0, item: { id: 'b1', value: 'first' },
+      }),
+      { nodes: [cardWithBullets([
+        { id: 'b1', value: 'first' },
+        { id: 'b2', value: 'middle' },
+        { id: 'b3', value: 'last' },
+      ])] },
+    )).toEqual({ ok: true })
+  })
+
+  it("applyForward removes the first bullet, leaving the survivors with their original IDs (Erik's scenario #2)", async () => {
+    const card = cardWithBullets([
+      { id: 'b1', value: 'first' },
+      { id: 'b2', value: 'middle' },
+      { id: 'b3', value: 'last' },
+    ])
+    await applyForward(
+      listEntry(ACTION_TYPES.REMOVE_LIST_ITEM, {
+        position: 0, item: { id: 'b1', value: 'first' },
+      }),
+      { nodes: [card] },
+    )
+    expect(updateNodeSections).toHaveBeenCalledWith('card-1', expect.objectContaining({
+      storyNotes: [
+        { id: 'b2', value: 'middle' },
+        { id: 'b3', value: 'last' },
+      ],
+    }))
+  })
+})
+
+describe('undoActions — editListItem', () => {
+  const editEntry = listEntry(ACTION_TYPES.EDIT_LIST_ITEM, {
+    itemId: 'b2', before: 'B', after: 'B edited',
+  })
+
+  it('canApplyInverse passes when the item exists and currently holds `after`', () => {
+    expect(canApplyInverse(editEntry, {
+      nodes: [cardWithBullets([
+        { id: 'b1', value: 'A' },
+        { id: 'b2', value: 'B edited' },
+      ])],
+    })).toEqual({ ok: true })
+  })
+
+  it('canApplyInverse refuses when the value drifted', () => {
+    expect(canApplyInverse(editEntry, {
+      nodes: [cardWithBullets([
+        { id: 'b1', value: 'A' },
+        { id: 'b2', value: 'something else' },
+      ])],
+    }).ok).toBe(false)
+  })
+
+  it('canApplyInverse refuses when the item id no longer exists', () => {
+    expect(canApplyInverse(editEntry, {
+      nodes: [cardWithBullets([{ id: 'b1', value: 'A' }])],
+    }).ok).toBe(false)
+  })
+
+  it('applyInverse sets the targeted bullet (by id) to `before`, preserving the id', async () => {
+    const card = cardWithBullets([
+      { id: 'b1', value: 'A' },
+      { id: 'b2', value: 'B edited' },
+    ])
+    await applyInverse(editEntry, { nodes: [card] })
+    expect(updateNodeSections).toHaveBeenCalledWith('card-1', expect.objectContaining({
+      storyNotes: [
+        { id: 'b1', value: 'A' },
+        { id: 'b2', value: 'B' },
+      ],
+    }))
+  })
+
+  it('applyForward sets the targeted bullet to `after`', async () => {
+    const card = cardWithBullets([
+      { id: 'b1', value: 'A' },
+      { id: 'b2', value: 'B' },
+    ])
+    await applyForward(editEntry, { nodes: [card] })
+    expect(updateNodeSections).toHaveBeenCalledWith('card-1', expect.objectContaining({
+      storyNotes: [
+        { id: 'b1', value: 'A' },
+        { id: 'b2', value: 'B edited' },
+      ],
+    }))
+  })
+
+  it('rejects edits to media (no value field on storage entries)', async () => {
+    await expect(applyInverse(
+      listEntry(ACTION_TYPES.EDIT_LIST_ITEM, {
+        field: 'media', itemId: 'm1', before: 'a', after: 'b',
+      }),
+      { nodes: [cardWithBullets([])] },
+    )).rejects.toThrow(/not supported for media/i)
+  })
+})
+
+describe('undoActions — reorderListItem', () => {
+  // Erik's scenario #3: reordering must keep IDs attached to values, not positions.
+  const reorderEntry = listEntry(ACTION_TYPES.REORDER_LIST_ITEM, {
+    itemId: 'b1', from: 0, to: 2,
+  })
+
+  it('canApplyInverse passes when the item is currently at `to`', () => {
+    expect(canApplyInverse(reorderEntry, {
+      nodes: [cardWithBullets([
+        { id: 'b2', value: 'middle' },
+        { id: 'b3', value: 'last' },
+        { id: 'b1', value: 'first' },
+      ])],
+    })).toEqual({ ok: true })
+  })
+
+  it('canApplyInverse refuses when the item moved to a different position elsewhere', () => {
+    expect(canApplyInverse(reorderEntry, {
+      nodes: [cardWithBullets([
+        { id: 'b2', value: 'middle' },
+        { id: 'b1', value: 'first' },
+        { id: 'b3', value: 'last' },
+      ])],
+    }).ok).toBe(false)
+  })
+
+  it('canApplyForward passes when the item is currently at `from`', () => {
+    expect(canApplyForward(reorderEntry, {
+      nodes: [cardWithBullets([
+        { id: 'b1', value: 'first' },
+        { id: 'b2', value: 'middle' },
+        { id: 'b3', value: 'last' },
+      ])],
+    })).toEqual({ ok: true })
+  })
+
+  it('applyInverse moves the item back from `to` to `from`, IDs preserved', async () => {
+    const card = cardWithBullets([
+      { id: 'b2', value: 'middle' },
+      { id: 'b3', value: 'last' },
+      { id: 'b1', value: 'first' },
+    ])
+    await applyInverse(reorderEntry, { nodes: [card] })
+    expect(updateNodeSections).toHaveBeenCalledWith('card-1', expect.objectContaining({
+      storyNotes: [
+        { id: 'b1', value: 'first' },
+        { id: 'b2', value: 'middle' },
+        { id: 'b3', value: 'last' },
+      ],
+    }))
+  })
+
+  it('applyForward moves the item from `from` to `to`', async () => {
+    const card = cardWithBullets([
+      { id: 'b1', value: 'first' },
+      { id: 'b2', value: 'middle' },
+      { id: 'b3', value: 'last' },
+    ])
+    await applyForward(reorderEntry, { nodes: [card] })
+    expect(updateNodeSections).toHaveBeenCalledWith('card-1', expect.objectContaining({
+      storyNotes: [
+        { id: 'b2', value: 'middle' },
+        { id: 'b3', value: 'last' },
+        { id: 'b1', value: 'first' },
+      ],
+    }))
+  })
+
+  it('no-ops on a from===to entry (defensive — should never be recorded)', async () => {
+    // BulletSection's drag-end handler is supposed to filter out
+    // same-position drops before any recordAction; this guard is the
+    // safety net if a malformed entry slips through.
+    const card = cardWithBullets([
+      { id: 'b1', value: 'first' },
+      { id: 'b2', value: 'middle' },
+    ])
+    await applyForward(
+      listEntry(ACTION_TYPES.REORDER_LIST_ITEM, {
+        itemId: 'b1', from: 0, to: 0,
+      }),
+      { nodes: [card] },
+    )
+    expect(updateNodeSections).not.toHaveBeenCalled()
   })
 })
