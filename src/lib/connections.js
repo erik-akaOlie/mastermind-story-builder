@@ -28,16 +28,24 @@ export async function loadConnections(campaignId) {
 
 // ----------------------------------------------------------------------------
 // Create a new connection. Returns the React Flow edge.
+//
+// `id` is optional. Pass it to recreate a connection at a known UUID — used
+// by the undo system when redoing addConnection (after the connection was
+// removed via undo) or undoing removeConnection. Without `id`, Postgres
+// assigns a fresh one.
 // ----------------------------------------------------------------------------
-export async function createConnection({ campaignId, sourceNodeId, targetNodeId }) {
+export async function createConnection({ id, campaignId, sourceNodeId, targetNodeId }) {
   return persistWrite(async () => {
+    const insertRow = {
+      campaign_id:    campaignId,
+      source_node_id: sourceNodeId,
+      target_node_id: targetNodeId,
+    }
+    if (id) insertRow.id = id
+
     const { data, error } = await supabase
       .from('connections')
-      .insert({
-        campaign_id:    campaignId,
-        source_node_id: sourceNodeId,
-        target_node_id: targetNodeId,
-      })
+      .insert(insertRow)
       .select()
       .single()
     if (error) throw error

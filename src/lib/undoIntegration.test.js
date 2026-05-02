@@ -117,6 +117,23 @@ vi.mock('./nodes.js', async () => {
   }
 })
 
+vi.mock('./connections.js', () => ({
+  createConnection: vi.fn(async ({ id, campaignId, sourceNodeId, targetNodeId }) => {
+    const newId = id || `mock-edge-${Math.random().toString(36).slice(2)}`
+    const row = {
+      id:             newId,
+      campaign_id:    campaignId,
+      source_node_id: sourceNodeId,
+      target_node_id: targetNodeId,
+    }
+    mockDb.connections.set(newId, row)
+    return { id: newId, source: sourceNodeId, target: targetNodeId, type: 'floating' }
+  }),
+  deleteConnection: vi.fn(async (id) => {
+    mockDb.connections.delete(id)
+  }),
+}))
+
 // ── REAL imports (post-mock) ──────────────────────────────────────────────
 // The dispatcher under test, plus marshaling helpers, plus the live store.
 
@@ -581,6 +598,89 @@ describe('chained operation through useUndoStore', () => {
 // Drift refusal — real conflicts, not mocked. The dispatcher's canApply*
 // reads context.nodes; if the world has drifted, it refuses.
 // ──────────────────────────────────────────────────────────────────────────
+
+describe('round-trip — addConnection / removeConnection', () => {
+  it('addConnection: connect → undo removes the edge; redo recreates at same id', async () => {
+    const rs = makeReactState()
+    seedCard(rs, { id: 'card-a' })
+    seedCard(rs, { id: 'card-b' })
+
+    const before = snapshotState(rs)
+
+    // Forward: simulate the user adding a connection via EditModal +
+    // App.jsx's onUpdateNode (DB-assigned id).
+    const edge = { id: 'edge-1', source: 'card-a', target: 'card-b', type: 'floating' }
+    rs.setEdges(() => [edge])
+    mockDb.connections.set('edge-1', {
+      id: 'edge-1', campaign_id: CAMPAIGN,
+      source_node_id: 'card-a', target_node_id: 'card-b',
+    })
+
+    const entry = {
+      type: ACTION_TYPES.ADD_CONNECTION,
+      campaignId: CAMPAIGN,
+      connectionId: 'edge-1',
+      sourceNodeId: 'card-a',
+      targetNodeId: 'card-b',
+    }
+
+    await applyInverse(entry, rs.ctx())
+    expect(snapshotState(rs)).toEqual(before)
+
+    await applyForward(entry, rs.ctx())
+    expect(rs.state.edges).toContainEqual(edge)
+    expect(mockDb.connections.has('edge-1')).toBe(true)
+  })
+
+  it('removeConnection: disconnect → undo recreates at same id; redo deletes again', async () => {
+    const rs = makeReactState()
+    seedCard(rs, { id: 'card-a' })
+    seedCard(rs, { id: 'card-b' })
+    seedConnection(rs, { id: 'edge-1', sourceNodeId: 'card-a', targetNodeId: 'card-b' })
+
+    const before = snapshotState(rs)
+
+    // Forward: user removed the connection.
+    rs.setEdges((eds) => eds.filter((e) => e.id !== 'edge-1'))
+    mockDb.connections.delete('edge-1')
+
+    const entry = {
+      type: ACTION_TYPES.REMOVE_CONNECTION,
+      campaignId: CAMPAIGN,
+      connectionId: 'edge-1',
+      sourceNodeId: 'card-a',
+      targetNodeId: 'card-b',
+    }
+
+    await applyInverse(entry, rs.ctx())
+    expect(snapshotState(rs)).toEqual(before)
+
+    await applyForward(entry, rs.ctx())
+    expect(rs.state.edges.find((e) => e.id === 'edge-1')).toBeUndefined()
+    expect(mockDb.connections.has('edge-1')).toBe(false)
+  })
+
+  it('removeConnection inverse refuses when source card has been deleted (FK guard)', async () => {
+    const rs = makeReactState()
+    // Note: only target card exists. If we tried to recreate the edge, the
+    // FK insert would fail. canApplyInverse should refuse before that.
+    seedCard(rs, { id: 'card-b' })
+
+    const entry = {
+      type: ACTION_TYPES.REMOVE_CONNECTION,
+      campaignId: CAMPAIGN,
+      connectionId: 'edge-1',
+      sourceNodeId: 'card-a',     // gone
+      targetNodeId: 'card-b',
+    }
+    useUndoStore.getState().setScope({ userId: 'u1', campaignId: CAMPAIGN })
+    useUndoStore.getState().recordAction(entry)
+
+    const result = await useUndoStore.getState().undo(rs.ctx())
+    expect(result).toMatchObject({ ok: false, conflict: true })
+    expect(result.reason).toMatch(/source/i)
+  })
+})
 
 describe('drift refusal at the dispatcher level', () => {
   it('refuses to undo an editCardField when the field has changed elsewhere', async () => {

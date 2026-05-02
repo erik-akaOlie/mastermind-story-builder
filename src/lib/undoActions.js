@@ -16,14 +16,19 @@
 // lib/*.js API so persistWrite + the Realtime channel + sync chip behave
 // like a normal edit.
 //
-// Phase 5 (this commit): createCard + deleteCard wired. The deleteCard
-// inverse uses restoreCardWithDependents to rebuild card + sections +
-// connections in one optimistic-then-persist pass. createCard's redo path
-// re-creates at the original UUID via createNode({ id, ... }). Remaining
-// skeleton cases (per ADR-0006 §10):
+// Phase 7 (this commit): addConnection + removeConnection wired. They're
+// near-mirror images of each other — both record at the moment the user
+// clicks (chronological logging happens in EditModal, not here), and each
+// side's inverse calls the other's lib helper. canApply* on the recreate
+// path checks BOTH source and target nodes still exist locally, so we don't
+// try to recreate a connection whose endpoint was deleted in another tab.
 //
-//   phase 7 → addConnection, removeConnection
-//   phase 8 → createTextNode, editTextNode, moveTextNode, deleteTextNode
+// Remaining skeleton cases (per ADR-0006 §10):
+//
+//   phase 7b → list-item granularity (addListItem / removeListItem /
+//              editListItem / reorderListItem) — built on stable bullet IDs
+//              in the data model, not position-and-value reconciliation.
+//   phase 8  → createTextNode, editTextNode, moveTextNode, deleteTextNode
 // ============================================================================
 
 import {
@@ -34,19 +39,23 @@ import {
   restoreCardWithDependents,
   dbNodeToReactFlow,
 } from './nodes.js'
+import {
+  createConnection,
+  deleteConnection,
+} from './connections.js'
 import { useTypeStore } from '../store/useTypeStore.js'
 
 export const ACTION_TYPES = Object.freeze({
-  CREATE_CARD:        'createCard',
-  EDIT_CARD_FIELD:    'editCardField',
-  MOVE_CARD:          'moveCard',
-  DELETE_CARD:        'deleteCard',
-  ADD_CONNECTION:     'addConnection',
-  REMOVE_CONNECTION:  'removeConnection',
-  CREATE_TEXT_NODE:   'createTextNode',
-  EDIT_TEXT_NODE:     'editTextNode',
-  MOVE_TEXT_NODE:     'moveTextNode',
-  DELETE_TEXT_NODE:   'deleteTextNode',
+  CREATE_CARD:         'createCard',
+  EDIT_CARD_FIELD:     'editCardField',
+  MOVE_CARD:           'moveCard',
+  DELETE_CARD:         'deleteCard',
+  ADD_CONNECTION:      'addConnection',
+  REMOVE_CONNECTION:   'removeConnection',
+  CREATE_TEXT_NODE:    'createTextNode',
+  EDIT_TEXT_NODE:      'editTextNode',
+  MOVE_TEXT_NODE:      'moveTextNode',
+  DELETE_TEXT_NODE:    'deleteTextNode',
 })
 
 const KNOWN_TYPES = new Set(Object.values(ACTION_TYPES))
@@ -116,12 +125,17 @@ export function canApplyInverse(entry, currentState = {}) {
         : { ok: true }
     }
     case ACTION_TYPES.ADD_CONNECTION:
+      // Inverse = delete the connection we just created. It must still exist.
+      return checkConnectionPresent(entry, currentState)
     case ACTION_TYPES.REMOVE_CONNECTION:
+      // Inverse = recreate the connection we just removed. Source + target
+      // nodes must still exist so the FK insert can land.
+      return checkConnectionRestorable(entry, currentState)
     case ACTION_TYPES.CREATE_TEXT_NODE:
     case ACTION_TYPES.EDIT_TEXT_NODE:
     case ACTION_TYPES.MOVE_TEXT_NODE:
     case ACTION_TYPES.DELETE_TEXT_NODE:
-      // Stubbed — phases 7-8 will replace each with real validation.
+      // Stubbed — phase 8 will replace each with real validation.
       return { ok: true }
     default:
       return { ok: false, reason: `Unknown action type: ${entry.type}` }
@@ -171,7 +185,12 @@ export function canApplyForward(entry, currentState = {}) {
         : { ok: false, reason: 'Card no longer exists' }
     }
     case ACTION_TYPES.ADD_CONNECTION:
+      // Forward (redo) = recreate the connection. Source + target must
+      // still exist; the connection itself must currently be absent.
+      return checkConnectionRestorable(entry, currentState)
     case ACTION_TYPES.REMOVE_CONNECTION:
+      // Forward (redo) = delete the connection again. It must still exist.
+      return checkConnectionPresent(entry, currentState)
     case ACTION_TYPES.CREATE_TEXT_NODE:
     case ACTION_TYPES.EDIT_TEXT_NODE:
     case ACTION_TYPES.MOVE_TEXT_NODE:
@@ -207,8 +226,8 @@ export async function applyInverse(entry, context = {}) {
     case ACTION_TYPES.EDIT_CARD_FIELD:    return editCardFieldSide(entry, context, 'before')
     case ACTION_TYPES.CREATE_CARD:        return createCardInverse(entry, context)
     case ACTION_TYPES.DELETE_CARD:        return deleteCardInverse(entry, context)
-    case ACTION_TYPES.ADD_CONNECTION:     return notWired(entry, 'applyInverse')
-    case ACTION_TYPES.REMOVE_CONNECTION:  return notWired(entry, 'applyInverse')
+    case ACTION_TYPES.ADD_CONNECTION:     return removeConnectionImpl(entry, context)
+    case ACTION_TYPES.REMOVE_CONNECTION:  return restoreConnectionImpl(entry, context)
     case ACTION_TYPES.CREATE_TEXT_NODE:   return notWired(entry, 'applyInverse')
     case ACTION_TYPES.EDIT_TEXT_NODE:     return notWired(entry, 'applyInverse')
     case ACTION_TYPES.MOVE_TEXT_NODE:     return notWired(entry, 'applyInverse')
@@ -233,8 +252,8 @@ export async function applyForward(entry, context = {}) {
     case ACTION_TYPES.EDIT_CARD_FIELD:    return editCardFieldSide(entry, context, 'after')
     case ACTION_TYPES.CREATE_CARD:        return createCardForward(entry, context)
     case ACTION_TYPES.DELETE_CARD:        return deleteCardForward(entry, context)
-    case ACTION_TYPES.ADD_CONNECTION:     return notWired(entry, 'applyForward')
-    case ACTION_TYPES.REMOVE_CONNECTION:  return notWired(entry, 'applyForward')
+    case ACTION_TYPES.ADD_CONNECTION:     return restoreConnectionImpl(entry, context)
+    case ACTION_TYPES.REMOVE_CONNECTION:  return removeConnectionImpl(entry, context)
     case ACTION_TYPES.CREATE_TEXT_NODE:   return notWired(entry, 'applyForward')
     case ACTION_TYPES.EDIT_TEXT_NODE:     return notWired(entry, 'applyForward')
     case ACTION_TYPES.MOVE_TEXT_NODE:     return notWired(entry, 'applyForward')
@@ -458,6 +477,71 @@ async function deleteCardForward(entry, { setNodes, setEdges } = {}) {
     setEdges((eds) => eds.filter((e) => e.source !== cardId && e.target !== cardId))
   }
   await deleteNode(cardId)
+}
+
+// addConnection / removeConnection — phase 7. Symmetric pair: each side's
+// forward action is the other's inverse, so the two implementations below
+// (`removeConnectionImpl` and `restoreConnectionImpl`) cover both action
+// types depending on which direction we're going.
+//
+//   addConnection.applyInverse    → removeConnectionImpl   (delete)
+//   addConnection.applyForward    → restoreConnectionImpl  (recreate)
+//   removeConnection.applyInverse → restoreConnectionImpl  (recreate)
+//   removeConnection.applyForward → removeConnectionImpl   (delete)
+
+function checkConnectionPresent(entry, { edges = [] } = {}) {
+  const { connectionId } = entry
+  if (!connectionId) return { ok: false, reason: 'Malformed connection entry' }
+  return edges.some((e) => e.id === connectionId)
+    ? { ok: true }
+    : { ok: false, reason: 'Connection no longer exists' }
+}
+
+function checkConnectionRestorable(entry, { nodes = [], edges = [] } = {}) {
+  const { connectionId, sourceNodeId, targetNodeId } = entry
+  if (!connectionId || !sourceNodeId || !targetNodeId) {
+    return { ok: false, reason: 'Malformed connection entry' }
+  }
+  if (edges.some((e) => e.id === connectionId)) {
+    return { ok: false, reason: 'A connection with that id already exists' }
+  }
+  if (!nodes.some((n) => n.id === sourceNodeId)) {
+    return { ok: false, reason: 'Source card no longer exists' }
+  }
+  if (!nodes.some((n) => n.id === targetNodeId)) {
+    return { ok: false, reason: 'Target card no longer exists' }
+  }
+  return { ok: true }
+}
+
+async function removeConnectionImpl(entry, { setEdges } = {}) {
+  const { connectionId } = entry
+  if (!connectionId) throw new Error('[undoActions] connection: missing connectionId')
+
+  if (typeof setEdges === 'function') {
+    setEdges((eds) => eds.filter((e) => e.id !== connectionId))
+  }
+  await deleteConnection(connectionId)
+}
+
+async function restoreConnectionImpl(entry, { setEdges } = {}) {
+  const { connectionId, sourceNodeId, targetNodeId, campaignId } = entry
+  if (!connectionId || !sourceNodeId || !targetNodeId) {
+    throw new Error('[undoActions] connection: missing id / source / target')
+  }
+
+  // Persist with the original id so any later undo entry referring to this
+  // connection still finds it. createConnection returns the React Flow edge.
+  const edge = await createConnection({
+    id: connectionId,
+    campaignId,
+    sourceNodeId,
+    targetNodeId,
+  })
+
+  if (typeof setEdges === 'function') {
+    setEdges((eds) => (eds.some((e) => e.id === connectionId) ? eds : [...eds, edge]))
+  }
 }
 
 // Reverse type lookup: useTypeStore exposes idByKey + types but not
