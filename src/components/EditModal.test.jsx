@@ -203,7 +203,7 @@ describe('EditModal — connections', () => {
     expect(screen.getByText('Ireena Kolyana')).toBeInTheDocument()
   })
 
-  it('adds a connection when the user picks one from the picker — onUpdate gets addNodeIds', () => {
+  it('adds a connection — onUpdate gets addConnections with a client-assigned id', () => {
     const { props } = renderModal({
       connectedNodes: [],
       allOtherNodes: [otherNode],
@@ -211,18 +211,19 @@ describe('EditModal — connections', () => {
     flushSave()
     props.onUpdate.mockClear()
 
-    // Open picker
     fireEvent.click(screen.getByText('Add connection'))
-    // Pick Ireena
     fireEvent.click(screen.getByText('Ireena Kolyana'))
 
     flushSave()
 
     const lastCall = props.onUpdate.mock.calls.at(-1)
-    expect(lastCall[2].addNodeIds).toEqual(['node-ireena'])
+    expect(lastCall[2].addConnections).toEqual([
+      { id: expect.any(String), nodeId: 'node-ireena' },
+    ])
+    expect(lastCall[2].addConnections[0].id).not.toBe('')
   })
 
-  it('removes a connection when the user clicks × on a chip — onUpdate gets removeNodeIds', () => {
+  it('removes a connection — onUpdate gets removeConnections carrying the original edge id', () => {
     const { props } = renderModal({
       connectedNodes: [{ edgeId: 'edge-1', nodeId: 'node-ireena', label: 'Ireena Kolyana', type: 'character' }],
     })
@@ -236,7 +237,9 @@ describe('EditModal — connections', () => {
     flushSave()
 
     const lastCall = props.onUpdate.mock.calls.at(-1)
-    expect(lastCall[2].removeNodeIds).toEqual(['node-ireena'])
+    expect(lastCall[2].removeConnections).toEqual([
+      { id: 'edge-1', nodeId: 'node-ireena' },
+    ])
   })
 })
 
@@ -371,6 +374,110 @@ describe('EditModal — undo entries (phase 4)', () => {
       before: '',           // raw — used to be 'Untitled'
       after:  'My Title',
     })
+  })
+
+  it('emits field edits and connection events in chronological order on close (phase 7a)', () => {
+    // Erik's reported issue: edit a bullet, then add a connection, then close.
+    // Expectation: undo step #1 removes the connection (most recent action),
+    // step #2 reverts the bullets. Stack push order must be [field, connection].
+    const otherNode = {
+      id: 'node-ireena',
+      data: { label: 'Ireena Kolyana', type: 'character' },
+    }
+    renderModal({ allOtherNodes: [otherNode] })
+    flushSave()
+    recordActionMock.mockClear()
+
+    // 1) Edit a bullet (storyNotes). Use fake timers' Date.now() so each
+    //    action gets a distinct timestamp.
+    fireEvent.click(screen.getAllByRole('button', { name: /\+\s*add note/i })[0])
+    const newBullet = screen.getAllByPlaceholderText(/narrative beat/i).at(-1)
+    fireEvent.change(newBullet, { target: { value: 'New beat' } })
+
+    act(() => { vi.advanceTimersByTime(50) })
+
+    // 2) Add a connection.
+    fireEvent.click(screen.getByText('Add connection'))
+    fireEvent.click(screen.getByText('Ireena Kolyana'))
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+
+    // Two recordActions: editCardField storyNotes (older) then addConnection (newer).
+    expect(recordActionMock).toHaveBeenCalledTimes(2)
+    expect(recordActionMock.mock.calls[0][0]).toMatchObject({
+      type: 'editCardField',
+      field: 'storyNotes',
+    })
+    expect(recordActionMock.mock.calls[1][0]).toMatchObject({
+      type: 'addConnection',
+      sourceNodeId: 'node-strahd',
+      targetNodeId: 'node-ireena',
+    })
+    // Each addConnection entry carries a connectionId (client-assigned UUID).
+    expect(recordActionMock.mock.calls[1][0].connectionId).toEqual(expect.any(String))
+  })
+
+  it('emits multiple field edits in chronological order by last-dirty time (most recent on top)', () => {
+    renderModal()
+    flushSave()
+    recordActionMock.mockClear()
+
+    // 1) Touch summary first.
+    fireEvent.change(screen.getByDisplayValue('Vampire lord of Barovia'), {
+      target: { value: 'Lord of Barovia' },
+    })
+    act(() => { vi.advanceTimersByTime(50) })
+
+    // 2) Touch title second — its last-dirty is later.
+    fireEvent.change(screen.getByDisplayValue('Strahd von Zarovich'), {
+      target: { value: 'Strahd v2' },
+    })
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+
+    // Push order: summary first (older lastAt), label second.
+    // Stack top = label (most recent action).
+    expect(recordActionMock).toHaveBeenCalledTimes(2)
+    expect(recordActionMock.mock.calls[0][0]).toMatchObject({
+      type: 'editCardField', field: 'summary',
+    })
+    expect(recordActionMock.mock.calls[1][0]).toMatchObject({
+      type: 'editCardField', field: 'label',
+    })
+  })
+
+  it('logs every connection click — add then remove in same session yields two undo entries', () => {
+    // Trust-preserving choice: every click is its own undo step. Even if the
+    // user adds then removes within a session (net no change), they still get
+    // two stack entries — undo once restores intermediate state, twice cancels.
+    const otherNode = {
+      id: 'node-ireena',
+      data: { label: 'Ireena Kolyana', type: 'character' },
+    }
+    renderModal({ allOtherNodes: [otherNode] })
+    flushSave()
+    recordActionMock.mockClear()
+
+    fireEvent.click(screen.getByText('Add connection'))
+    fireEvent.click(screen.getByText('Ireena Kolyana'))
+
+    act(() => { vi.advanceTimersByTime(50) })
+
+    // Find the just-added chip and remove it.
+    const chip = screen.getByText('Ireena Kolyana').closest('div')
+    const removeBtn = chip.querySelector('button')
+    fireEvent.click(removeBtn)
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+
+    expect(recordActionMock).toHaveBeenCalledTimes(2)
+    expect(recordActionMock.mock.calls[0][0]).toMatchObject({ type: 'addConnection' })
+    expect(recordActionMock.mock.calls[1][0]).toMatchObject({ type: 'removeConnection' })
+    // Both entries carry the SAME connectionId (the client-side UUID assigned
+    // at the picker click — it stays stable through the whole session even
+    // though the connection was never persisted long-term).
+    expect(recordActionMock.mock.calls[0][0].connectionId)
+      .toBe(recordActionMock.mock.calls[1][0].connectionId)
   })
 
   it('captures bullet-list edits as a single editCardField action on close', () => {

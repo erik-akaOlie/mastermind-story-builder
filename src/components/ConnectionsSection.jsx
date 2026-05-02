@@ -34,10 +34,14 @@ export default function ConnectionsSection({ localConns, setLocalConns, allOther
     .filter((n) => !localConns.find((c) => c.nodeId === n.id))
     .sort((a, b) => sortKey(a.data.label).localeCompare(sortKey(b.data.label)))
 
+  // We pre-assign the connection's id client-side at click time so EditModal
+  // can log the action immediately for chronological undo ordering. The same
+  // id flows through to dbCreateConnection via createConnection({ id, ... }),
+  // ensuring DB and undo-stack agree on the connectionId.
   const addConnection = (n) => {
     setLocalConns((prev) => [
       ...prev,
-      { edgeId: null, nodeId: n.id, label: n.data.label, type: n.data.type, isNew: true },
+      { id: crypto.randomUUID(), nodeId: n.id, label: n.data.label, type: n.data.type, isNew: true },
     ])
     setShowPicker(false)
   }
