@@ -389,10 +389,10 @@ export default function CampaignNode({ data, selected }) {
       <div className="p-3 flex flex-col gap-2">
         {data.storyNotes && data.storyNotes.length > 0 ? (
           <ul className="flex flex-col gap-2">
-            {data.storyNotes.map((bullet, i) => (
-              <li key={i} className="flex items-start gap-2 text-xs text-gray-700 leading-snug">
+            {data.storyNotes.map((bullet) => (
+              <li key={bullet.id} className="flex items-start gap-2 text-xs text-gray-700 leading-snug">
                 <span className="mt-1.5 w-1 h-1 rounded-full bg-gray-400 flex-shrink-0" />
-                {bullet}
+                {bullet.value}
               </li>
             ))}
           </ul>

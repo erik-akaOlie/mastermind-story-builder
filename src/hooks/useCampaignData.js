@@ -30,7 +30,7 @@ import { useSyncStore } from '../store/useSyncStore.js'
 import { useUndoStore } from '../store/useUndoStore.js'
 import { useAuth } from '../lib/AuthContext.jsx'
 import { ensureBuiltinTypes, getCampaignLastEditedAt } from '../lib/campaigns.js'
-import { loadNodes, dbNodeToReactFlow } from '../lib/nodes.js'
+import { loadNodes, dbNodeToReactFlow, normalizeBullets } from '../lib/nodes.js'
 import { loadConnections } from '../lib/connections.js'
 import { loadTextNodes, dbTextNodeToReactFlow } from '../lib/textNodes.js'
 import { supabase } from '../lib/supabase.js'
@@ -41,6 +41,10 @@ const KIND_TO_FIELD = {
   dm_notes:    'dmNotes',
   media:       'media',
 }
+
+// Bullet kinds use `{id, value}[]` with stable ids (phase 7b). Media stays
+// as the legacy mixed shape.
+const BULLET_KINDS = new Set(['narrative', 'hidden_lore', 'dm_notes'])
 
 export function useCampaignData({ campaignId, setNodes, setEdges }) {
   const { user } = useAuth()
@@ -175,7 +179,12 @@ function subscribeRealtime({ campaignId, keyById, setNodes, setEdges }) {
         if (idx === -1) return nds
         const next = nds.slice()
         const prev = next[idx]
-        const value = (eventType === 'DELETE') ? [] : (row.content ?? [])
+        const raw = (eventType === 'DELETE') ? [] : (row.content ?? [])
+        // Normalize bullet kinds so the {id, value}[] contract holds even
+        // when the broadcasting tab is on legacy code or the DB row is
+        // pre-7b. Media doesn't need this — its items already have natural
+        // identity (storage path).
+        const value = BULLET_KINDS.has(kind) ? normalizeBullets(raw) : raw
         next[idx] = { ...prev, data: { ...prev.data, [field]: value } }
         return next
       })

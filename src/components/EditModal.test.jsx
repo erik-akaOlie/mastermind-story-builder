@@ -164,8 +164,12 @@ describe('EditModal — auto-save', () => {
     flushSave()
 
     const lastCall = props.onUpdate.mock.calls.at(-1)
-    expect(lastCall[1].storyNotes).toContain('New beat')
-    expect(lastCall[1].storyNotes).toContain('Born ~1346') // existing preserved
+    // Phase 7b: persisted form is `{id, value}[]`. Read by `.value` to
+    // avoid pinning to specific UUIDs (which are generated on first read
+    // from the legacy string[] fixture).
+    const values = lastCall[1].storyNotes.map((b) => b.value)
+    expect(values).toContain('New beat')
+    expect(values).toContain('Born ~1346')   // existing preserved
   })
 
   it('saves bullet removal when the user clicks the × on a bullet', () => {
@@ -182,8 +186,9 @@ describe('EditModal — auto-save', () => {
     flushSave()
 
     const lastCall = props.onUpdate.mock.calls.at(-1)
-    expect(lastCall[1].storyNotes).not.toContain('Born ~1346')
-    expect(lastCall[1].storyNotes).toContain('Cursed in 1346')
+    const values = lastCall[1].storyNotes.map((b) => b.value)
+    expect(values).not.toContain('Born ~1346')
+    expect(values).toContain('Cursed in 1346')
   })
 })
 
@@ -499,9 +504,12 @@ describe('EditModal — undo entries (phase 4)', () => {
       type: 'editCardField',
       cardId: 'node-strahd',
       field: 'storyNotes',
-      before: ['Born ~1346', 'Cursed in 1346'],
-      after:  ['Born ~1346', 'Cursed in 1346', 'New beat'],
     })
+    // Phase 7b: bullets persist as {id, value}[]. Compare on `.value` so
+    // the assertion doesn't pin to the IDs generated from the legacy
+    // string[] test fixture.
+    expect(entry.before.map((b) => b.value)).toEqual(['Born ~1346', 'Cursed in 1346'])
+    expect(entry.after.map((b) => b.value)).toEqual(['Born ~1346', 'Cursed in 1346', 'New beat'])
   })
 })
 

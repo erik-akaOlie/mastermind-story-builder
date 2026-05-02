@@ -18,6 +18,49 @@ import { persistWrite } from './errorReporting.js'
 
 const SECTION_KINDS = ['narrative', 'hidden_lore', 'dm_notes', 'media']
 
+// Bullet sections (narrative / hidden_lore / dm_notes) store
+// `[{id, value}, ...]` JSONB so each item has a stable identity. ID stability
+// is the foundation phase 7c builds per-item undo entries on — without it,
+// position-and-value matching would misidentify duplicate-text bullets and
+// fail under concurrent edits.
+//
+// Legacy data is `string[]`. We normalize lazily on read: any item that
+// arrives as a plain string gets a fresh UUID assigned right here. Those IDs
+// are NOT persisted on read alone (would cause a write storm on cold load
+// of a legacy campaign). They get persisted naturally the next time the user
+// makes any edit to that card — auto-save then writes the structured form,
+// from which point IDs are stable across sessions.
+//
+// Trade-off accepted: if a user opens but never edits a legacy card, the
+// in-memory IDs are session-local and regenerate on next read. That matters
+// only for cross-session F5-recovered undo entries built on those IDs in
+// phase 7c. Until the user makes one persisted edit, per-item undo for that
+// card degrades to "refused on F5" — which is the right thing (better than
+// silently re-applying an entry against re-keyed bullets).
+export function normalizeBullets(content) {
+  if (!Array.isArray(content)) return []
+  const out = []
+  for (const item of content) {
+    if (typeof item === 'string') {
+      out.push({ id: crypto.randomUUID(), value: item })
+      continue
+    }
+    if (item && typeof item === 'object' && typeof item.value === 'string') {
+      // Already structured. Defensive: if `id` is missing or non-string
+      // (shouldn't happen with well-formed DB rows but cheap to guard),
+      // mint a fresh one rather than rendering null/undefined as a React key.
+      const id = typeof item.id === 'string' && item.id.length > 0
+        ? item.id
+        : crypto.randomUUID()
+      out.push({ id, value: item.value })
+      continue
+    }
+    // Malformed entry — coerce defensively to preserve user data.
+    out.push({ id: crypto.randomUUID(), value: String(item ?? '') })
+  }
+  return out
+}
+
 // ----------------------------------------------------------------------------
 // Load all card nodes + their sections for a campaign.
 // Returns React-shaped objects: { id, position, data: { label, type, storyNotes, ... } }
@@ -233,6 +276,12 @@ async function writeSections(nodeId, { storyNotes = [], hiddenLore = [], dmNotes
 }
 
 // Exported for unit testing; this is the marshaling boundary the tests cover.
+//
+// Bullet sections (narrative / hidden_lore / dm_notes) pass through
+// normalizeBullets so legacy `string[]` data is promoted in memory to the
+// `{id, value}[]` shape phase 7c's per-item undo depends on. Media stays
+// as-is — its items already have natural identity (the storage `path` for
+// uploaded entries; legacy strings still render via useImageUrl).
 export function dbNodeToReactFlow(n, sections, nodeTypesById) {
   const typeInfo = nodeTypesById?.[n.type_id]
   return {
@@ -245,9 +294,9 @@ export function dbNodeToReactFlow(n, sections, nodeTypesById) {
       type:        typeInfo?.key ?? 'story',
       avatar:      n.avatar_url,
       summary:     n.summary,
-      storyNotes:  sections.narrative ?? [],
-      hiddenLore:  sections.hidden_lore ?? [],
-      dmNotes:     sections.dm_notes ?? [],
+      storyNotes:  normalizeBullets(sections.narrative),
+      hiddenLore:  normalizeBullets(sections.hidden_lore),
+      dmNotes:     normalizeBullets(sections.dm_notes),
       media:       sections.media ?? [],
       locked:      false,
     },

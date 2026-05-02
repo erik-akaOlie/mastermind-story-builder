@@ -678,9 +678,12 @@ describe('undoActions — deleteCard applyInverse (the hard one)', () => {
     expect(restored.position).toEqual({ x: 300, y: 400 })
     expect(restored.data.label).toBe('Strahd')
     expect(restored.data.type).toBe('character')
-    expect(restored.data.storyNotes).toEqual(['born ~1346'])
-    expect(restored.data.hiddenLore).toEqual(['truly believes'])
-    expect(restored.data.dmNotes).toEqual(['voice: slow'])
+    // Phase 7b: bullets restored as structured `{id, value}[]` because
+    // dbNodeToReactFlow normalizes the legacy string[] in dbSectionRows
+    // on the way back into React state.
+    expect(restored.data.storyNotes.map((b) => b.value)).toEqual(['born ~1346'])
+    expect(restored.data.hiddenLore.map((b) => b.value)).toEqual(['truly believes'])
+    expect(restored.data.dmNotes.map((b) => b.value)).toEqual(['voice: slow'])
   })
 
   it('optimistically restores connection edges via setEdges (idempotent on duplicates)', async () => {
