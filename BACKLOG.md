@@ -37,18 +37,12 @@ a handful of items with real dependencies.
 
 ---
 
-## Current sprint candidate — Sprint 2
+## Current sprint candidate — next
 
-Theme: **protect the user, ship visible wins.**
-
-| Item                          | Tier        | Size |
-|-------------------------------|-------------|------|
-| Undo / redo (user-scoped)     | Foundational | L    |
-| Branding (favicon + tab)      | Quick win   | S    |
-| Relative edit timestamps      | Quick win   | S    |
-| Dynamic card width            | Quick win   | M    |
-
-Subject to revision at sprint start.
+Two items from the Sprint 2 candidate shipped: **undo / redo** (closes
+ADR-0006) and **dynamic card width**. **Branding (favicon + tab)** and
+**relative edit timestamps** are still open — see Tier 1 below. The
+next sprint hasn't been picked yet; review the tiers at sprint start.
 
 ---
 
@@ -100,22 +94,6 @@ Subject to revision at sprint start.
 ---
 
 ## Tier 2 — Foundational
-
-### Undo / redo
-- **Problem.** No way to recover from accidental delete, accidental edit,
-  or (eventually) bad AI output. As destructive features grow, the absence
-  of undo becomes higher-stakes.
-- **Success.** Ctrl+Z / Ctrl+Shift+Z reverses recent actions in the active
-  campaign. **Per-action** granularity (create card, edit field, move card,
-  delete card, create / delete connection), not per-keystroke. Scoped to
-  the current user's actions in this tab — does not undo other tabs'
-  Realtime updates.
-- **Notes.** Implementation choice: command pattern (action log + inverse
-  applied on undo) vs. snapshot pattern (full state snapshot per action).
-  Command pattern is leaner and integrates with the existing optimistic-UI
-  pattern but requires writing an inverse for each action type. Worth a
-  brief design sketch before commit.
-- **Size:** L
 
 ### Card-type template management UI
 - **Problem.** Card types currently live in `useTypeStore` (localStorage)

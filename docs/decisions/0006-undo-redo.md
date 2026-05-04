@@ -1,6 +1,6 @@
 # ADR-0006: Undo / redo via command pattern with a per-tab, per-campaign action stack
 Date: 2026-04-29
-Status: Proposed
+Status: Accepted (2026-05-04)
 
 ## Context
 
