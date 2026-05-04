@@ -188,7 +188,7 @@ import {
   ACTION_TYPES,
   applyInverse,
   applyForward,
-} from './undoActions.js'
+} from './undo/index.js'
 import {
   dbNodeToReactFlow,
   buildDeleteCardSnapshot,

@@ -4,11 +4,11 @@
 // The dispatcher (canApplyInverse / applyInverse / canApplyForward / applyForward)
 // is mocked here so these tests stay focused on stack semantics and the store's
 // own conflict + error handling. Real dispatcher behavior is covered in
-// src/lib/undoActions.test.js.
+// src/lib/undo/.
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 
-vi.mock('../lib/undoActions', () => ({
+vi.mock('../lib/undo/index.js', () => ({
   ACTION_TYPES: {
     CREATE_CARD:        'createCard',
     EDIT_CARD_FIELD:    'editCardField',
@@ -33,7 +33,7 @@ import {
   canApplyForward,
   applyInverse,
   applyForward,
-} from '../lib/undoActions'
+} from '../lib/undo/index.js'
 
 const A = { type: 'editCardField', label: 'Edit summary', cardId: 'a' }
 const B = { type: 'moveCard',      label: 'Move card',    cardId: 'b' }

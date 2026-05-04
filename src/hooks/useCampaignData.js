@@ -42,7 +42,7 @@ import { loadNodes, dbNodeToReactFlow, normalizeBullets } from '../lib/nodes.js'
 import { loadConnections } from '../lib/connections.js'
 import { loadTextNodes, dbTextNodeToReactFlow } from '../lib/textNodes.js'
 import { supabase } from '../lib/supabase.js'
-import { deepEqual } from '../lib/undoActions.js'
+import { deepEqual } from '../lib/undo/index.js'
 
 const KIND_TO_FIELD = {
   narrative:   'storyNotes',

@@ -31,7 +31,7 @@ import { useEdgeGeometry } from './hooks/useEdgeGeometry'
 import { useNodeHoverSelection } from './hooks/useNodeHoverSelection'
 import { useUndoShortcuts } from './hooks/useUndoShortcuts'
 import { useUndoStore } from './store/useUndoStore'
-import { ACTION_TYPES } from './lib/undoActions'
+import { ACTION_TYPES } from './lib/undo/index.js'
 import { CanvasOpsProvider } from './lib/CanvasOpsContext.jsx'
 
 const nodeTypes = {

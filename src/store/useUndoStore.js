@@ -13,7 +13,7 @@
 // sessionStorage is per-tab and clears on tab close, which matches V1 lifecycle:
 // F5 mid-session preserves history; closing the tab forgets it.
 //
-// undo() and redo() route through src/lib/undoActions.js (the dispatcher),
+// undo() and redo() route through src/lib/undo/index.js (the dispatcher),
 // which decides whether the inverse/forward can still be applied (state
 // hasn't drifted) and runs it via the existing lib/*.js write path. The
 // store itself only owns stack semantics + persistence.
@@ -30,7 +30,7 @@ import {
   applyForward,
   canApplyInverse,
   canApplyForward,
-} from '../lib/undoActions.js'
+} from '../lib/undo/index.js'
 
 const MAX_STACK = 75
 const KEY_PREFIX = 'mastermind:undo:'

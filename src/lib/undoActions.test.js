@@ -62,7 +62,7 @@ import {
   applyInverse,
   applyForward,
   deepEqual,
-} from './undoActions'
+} from './undo/index.js'
 import {
   createNode,
   deleteNode,
