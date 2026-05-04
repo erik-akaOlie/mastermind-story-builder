@@ -114,3 +114,17 @@ html {
   pointer-events: none;
 }
 
+/* Slide-in for chip-style undo/redo toasts. Used by ChipToast on mount.
+   Implemented as a CSS @keyframes animation rather than a JS-driven
+   two-phase render so the slide starts the moment the element appears —
+   no React re-render ping-pong, no requestAnimationFrame delay. The
+   element settles at translateX(0) (its natural flex position, which is
+   8px past the SyncIndicator chip's right edge); the FROM keyframe puts
+   it 200px to the left so it starts behind the chip. The chip occludes
+   it via z-index AND the FeedbackChipBar's overflow:hidden mask ensures
+   no part of the toast is ever visible left of the chip's left edge. */
+@keyframes chip-toast-slide-in {
+  from { transform: translateX(-200px); }
+  to   { transform: translateX(0); }
+}
+
