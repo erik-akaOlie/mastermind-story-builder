@@ -88,7 +88,7 @@ export const useFeedbackToastStore = create((set, get) => ({
   //
   // For non-sticky pushes, any other currently-visible toasts are kicked
   // into the exiting phase so they fade out as the new one slides in.
-  push({ stickyId, variant, content, durationMs = DEFAULT_DURATION_MS }) {
+  push({ stickyId, variant, icon, content, durationMs = DEFAULT_DURATION_MS }) {
     const { toasts } = get()
     const id = stickyId ?? _generateId()
 
@@ -112,6 +112,7 @@ export const useFeedbackToastStore = create((set, get) => ({
     const newToast = {
       id,
       variant,
+      icon,
       content,
       durationMs,
       paused: false,
