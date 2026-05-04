@@ -197,4 +197,29 @@ export const useUndoStore = create((set, get) => ({
     removeFromStorage(buildKey(userId, campaignId))
     set({ past: [], future: [] })
   },
+
+  // Sign-out cleanup (per ADR-0006 §3). Wipes the in-memory stack AND every
+  // sessionStorage entry under `mastermind:undo:${userId}:*` so a different
+  // user signing in next on this tab can't inherit the prior user's history
+  // (across any campaigns they touched, not just the active one).
+  //
+  // Called from AuthContext.signOut BEFORE supabase.auth.signOut() so the
+  // userId is still available to scope the cleanup.
+  clearAllForUser(userId) {
+    set({ userId: null, campaignId: null, past: [], future: [] })
+    if (!userId) return
+    const prefix = `${KEY_PREFIX}${userId}:`
+    const keysToRemove = []
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const key = sessionStorage.key(i)
+      if (key && key.startsWith(prefix)) keysToRemove.push(key)
+    }
+    for (const key of keysToRemove) {
+      try {
+        sessionStorage.removeItem(key)
+      } catch {
+        // ignore — quota / storage-disabled environments
+      }
+    }
+  },
 }))

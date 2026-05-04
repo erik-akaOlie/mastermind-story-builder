@@ -493,3 +493,109 @@ describe('useUndoStore — toasts on undo / redo outcomes', () => {
     expect(toastRedoConflict).not.toHaveBeenCalled()
   })
 })
+
+// Phase 10: F5 rehydration. sessionStorage survives a tab refresh; the
+// store's in-memory state does not. setScope rehydrates from storage on
+// first run, so a refreshed tab continues with the same undo history.
+describe('useUndoStore — F5 rehydrate end-to-end', () => {
+  it('records actions, simulates a refresh, and undo still works on the rehydrated stack', async () => {
+    // 1. Record two actions while signed in to a campaign.
+    setScope()
+    s().recordAction(A)
+    s().recordAction(B)
+    expect(s().past).toEqual([A, B])
+    // sessionStorage now holds [A, B] under the scoped key.
+    expect(JSON.parse(sessionStorage.getItem(KEY))).toEqual({ past: [A, B], future: [] })
+
+    // 2. Simulate F5: blow away in-memory state. (sessionStorage survives a
+    // refresh; module-level Zustand state does not.) After this point the
+    // store looks the same as it does immediately after the page reloads,
+    // before App.jsx → useCampaignData → setScope runs.
+    useUndoStore.setState({
+      userId: null,
+      campaignId: null,
+      past: [],
+      future: [],
+    })
+    expect(s().past).toEqual([])
+    expect(s().future).toEqual([])
+
+    // 3. App boots back up, useCampaignData calls setScope with the same
+    // (userId, campaignId). The store rehydrates from sessionStorage.
+    setScope()
+    expect(s().past).toEqual([A, B])
+    expect(s().future).toEqual([])
+
+    // 4. Undo on the rehydrated stack works: pops B onto future, runs
+    // applyInverse.
+    const result = await s().undo()
+    expect(result.ok).toBe(true)
+    expect(result.entry).toEqual(B)
+    expect(applyInverse).toHaveBeenCalledWith(B, expect.anything())
+    expect(s().past).toEqual([A])
+    expect(s().future).toEqual([B])
+  })
+})
+
+// Phase 10: sign-out cleanup. Wipes the in-memory stack AND every
+// sessionStorage entry under the signing-out user's prefix so a different
+// user signing in next on this tab can't inherit history.
+describe('useUndoStore — clearAllForUser', () => {
+  it('empties the in-memory stack regardless of current scope', () => {
+    setScope({ userId: 'u1', campaignId: 'c1' })
+    s().recordAction(A)
+    s().recordAction(B)
+
+    s().clearAllForUser('u1')
+
+    expect(s().past).toEqual([])
+    expect(s().future).toEqual([])
+    expect(s().userId).toBeNull()
+    expect(s().campaignId).toBeNull()
+  })
+
+  it('removes EVERY sessionStorage entry for that user across campaigns', () => {
+    // Pre-populate two campaigns' worth of history for u1.
+    sessionStorage.setItem('mastermind:undo:u1:c1', JSON.stringify({ past: [A], future: [] }))
+    sessionStorage.setItem('mastermind:undo:u1:c2', JSON.stringify({ past: [B], future: [] }))
+    sessionStorage.setItem('mastermind:undo:u1:c3', JSON.stringify({ past: [], future: [A] }))
+
+    setScope({ userId: 'u1', campaignId: 'c1' })
+    s().clearAllForUser('u1')
+
+    expect(sessionStorage.getItem('mastermind:undo:u1:c1')).toBeNull()
+    expect(sessionStorage.getItem('mastermind:undo:u1:c2')).toBeNull()
+    expect(sessionStorage.getItem('mastermind:undo:u1:c3')).toBeNull()
+  })
+
+  it('does not touch entries for other users', () => {
+    sessionStorage.setItem('mastermind:undo:u1:c1', JSON.stringify({ past: [A], future: [] }))
+    sessionStorage.setItem('mastermind:undo:u2:c1', JSON.stringify({ past: [B], future: [] }))
+    sessionStorage.setItem('mastermind:undo:u2:c2', JSON.stringify({ past: [B], future: [] }))
+
+    s().clearAllForUser('u1')
+
+    expect(sessionStorage.getItem('mastermind:undo:u1:c1')).toBeNull()
+    expect(sessionStorage.getItem('mastermind:undo:u2:c1')).not.toBeNull()
+    expect(sessionStorage.getItem('mastermind:undo:u2:c2')).not.toBeNull()
+  })
+
+  it('does not touch unrelated sessionStorage keys', () => {
+    sessionStorage.setItem('some-other-app:state', '"hello"')
+    sessionStorage.setItem('mastermind:undo:u1:c1', JSON.stringify({ past: [A], future: [] }))
+
+    s().clearAllForUser('u1')
+
+    expect(sessionStorage.getItem('some-other-app:state')).toBe('"hello"')
+    expect(sessionStorage.getItem('mastermind:undo:u1:c1')).toBeNull()
+  })
+
+  it('is a no-op when called with a falsy userId', () => {
+    sessionStorage.setItem('mastermind:undo:u1:c1', JSON.stringify({ past: [A], future: [] }))
+    s().clearAllForUser(null)
+    s().clearAllForUser(undefined)
+    s().clearAllForUser('')
+    // sessionStorage entries untouched
+    expect(sessionStorage.getItem('mastermind:undo:u1:c1')).not.toBeNull()
+  })
+})
