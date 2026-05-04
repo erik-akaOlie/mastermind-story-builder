@@ -4,12 +4,15 @@
 
 This document captures design decisions — the functional grammar of the interface: visual systems, interaction patterns, and information architecture. Aesthetic decisions (typography choices, specific color values, textures, theming) are intentionally deferred.
 
-**Relationship to other docs:** This document is updated as the design evolves, but source-of-truth for *current implementation* is [`CLAUDE.md`](./CLAUDE.md). Architectural decisions (backend choice, persistence pattern, etc.) are captured as ADRs in [`docs/decisions/`](./docs/decisions/).
+**Scope.** This doc specifies the **canvas + cards** interaction system — the worldbuilding surface of MasterMind. Other surfaces in the long-term Game Master Operating System vision — live session co-pilot, AI campaign generation, lifecycle management (scheduling / session history / party finances), and player view — are not designed in this document. Each will get its own design doc once it enters active design. The product vision and the surfaces still to be designed are described in [`project-brief.md`](./project-brief.md).
+
+**Relationship to other docs:** This document is updated as the design evolves, but source-of-truth for *current implementation* is [`CLAUDE.md`](./CLAUDE.md). Architectural decisions (backend choice, persistence pattern, etc.) are captured as ADRs in [`docs/decisions/`](./docs/decisions/). Current and upcoming work is in [`BACKLOG.md`](./BACKLOG.md).
 
 ---
 
 ## Design Principles
 
+- **The graph is the model.** Campaigns are systems of interconnected entities — characters, locations, items, factions, story threads — not documents. Every interaction in the canvas reinforces the graph structure (entities + typed relationships) rather than flattening it back into prose. A new feature should make the graph more navigable, more queryable, or more legible; if it would shave the graph back down to lists or notes, it's the wrong feature.
 - **Visual systems before aesthetics.** Every design decision is grounded in function and meaning, not style. The system must work correctly before it is made beautiful.
 - **One signifier, one meaning.** No visual cue is reused across different concepts. Each treatment has exactly one meaning in the system.
 - **Content is the signal.** Where possible, the state of a thing is readable from the thing itself — not from a separate indicator added on top of it.
@@ -214,6 +217,8 @@ When zoom makes individual media items too small to be useful, content fades out
 
 ## 4. Discovery Layer (DM View)
 
+*Status: **Designed, deferred to Phase 2 with Player View.** The two-layer (DM world vs. player-discovered) model is captured here as design intent because it shapes the data model, but the visual treatment (dashed-vs-solid lines, the bullet-checking discovery mechanic, the DM toggle) won't be implemented until Player View enters active design. Until then, all cards and edges render as discovered. When Player View is built, this section moves to a dedicated `design/player-view.md` and gets reviewed against current product reality.*
+
 ### 4.1 Two-Layer System
 
 The map holds two simultaneous states:
@@ -369,14 +374,14 @@ Single **scrolling panel**. Sections in order:
 
 ### 7.2 Toolbar / Node Creation
 
-**No persistent toolbar exists.** Node creation, text tools, and related controls are exposed via canvas right-click. Undo/redo is planned but not yet built.
+**No persistent toolbar exists.** Node creation, text tools, and related controls are exposed via canvas right-click.
 
 **Implemented:**
 - Canvas right-click menu: "Add card" (with type submenu) and "Add text"
+- Undo / redo: Ctrl+Z and Ctrl+Shift+Z (Cmd on macOS, Ctrl+Y also accepted on Windows). Per-tab, per-(user × campaign) action stack capped at 75 entries. Word-style typing exemption: Ctrl+Z while focused inside an input / textarea / contenteditable is browser-native; outside of those, it reverses the last campaign action. See [ADR-0006](./docs/decisions/0006-undo-redo.md) for the command-pattern architecture and the trade-offs against snapshot pattern.
 
 **Still planned:**
 - Shift+1: fit all (zoom and pan to fit all nodes)
-- Snapshot-based undo/redo: Ctrl+Z / Ctrl+Shift+Z, 50-snapshot limit
 
 ### 7.3 Text Tool
 
@@ -462,8 +467,8 @@ Font sizes use `rem`. The `html { font-size: 100% }` declaration in `index.css` 
 ### 10.4 Key Architectural Notes
 
 - All layout is free-form — physics/collision was built and then reverted. Nodes go where you put them.
-- `App.jsx` owns the canvas state, loads from Supabase on mount, and persists every mutation back optimistically (fire-and-forget). Refactor into custom hooks (`useEdgeRouting`, `useCanvasInteraction`, `useNodeActions`) is still pending.
-- Persistent vs. UI state in `node.data` is now split: persistent fields flow from Supabase via `lib/nodes.js`; UI-only fields (`isEditing`, `connectionDots`, `anySelected`, `anyHovered`, `hoveredEdgeNodeIds`) are derived and passed through render.
+- `App.jsx` orchestrates canvas state via focused hooks under `src/hooks/`: `useCampaignData` (load lifecycle + Supabase Realtime), `useEdgeGeometry` (recompute spread border points + connection dots), `useNodeHoverSelection` (hover/select handlers backed by `useCanvasUiStore`), `useSpacebarPan` (pan keyboard state), `useUndoShortcuts` (Ctrl+Z / Ctrl+Shift+Z). Persistence is optimistic + fire-and-forget per [ADR-0003](./docs/decisions/0003-optimistic-ui-persistence.md).
+- Persistent vs. UI state in `node.data` is split: persistent fields flow from Supabase via `lib/nodes.js`; UI-only fields (`isEditing`, `connectionDots`) are derived per render. Hover/select flags (`anySelected`, `anyHovered`, `hoveredEdgeNodeIds`) live in `useCanvasUiStore` so a hover event mutates one atomic value instead of forcing every card to re-render.
 - The sample Curse of Strahd data now lives in Supabase as a real campaign seeded via the (now-deleted) `seedStrahd.js` utility. Avatar images are still self-hosted in `public/avatars/`.
 
 ### 10.5 Utility Files
@@ -475,30 +480,17 @@ Font sizes use `rem`. The `html { font-size: 100% }` declaration in `index.css` 
 
 ## 11. Roadmap
 
-Authoritative roadmap lives in [`README.md`](./README.md) and [`Market Research/mastermind-build-plan.md`](./Market%20Research/mastermind-build-plan.md). Summary:
-
-### Built (Sprint 1)
-
-Custom type color picker · canvas right-click menu (Add card / Add text) · text annotation tool · data persistence to Supabase · auth + campaigns CRUD · RLS policies · hidden-lore + DM-notes + inspiration-images sections · drag-to-reorder bullets and images · node+section marshaling · separation of persistent vs UI state in `node.data` · dynamic type-icon visibility on card headers.
-
-### Designed, pending build
-
-| Sprint | Feature |
-|---|---|
-| 1.5 | Realtime cross-tab sync via Supabase Realtime |
-| 2 | Snapshot-based undo/redo (Ctrl+Z / Ctrl+Shift+Z, 50-step limit); card templates per type |
-| 3 | Modular card sections UI (reorder / add / remove); template editor |
-| 4 | Search panel (right-side slide-out); canvas drag to create connections; relationship type labels + popup on edges; Shift+1 fit-all |
-| 5 | AI copilot grounded in campaign data |
+The numbered sprint roadmap that previously lived here is retired in favor of a tier-ranked backlog reviewed at the start of each sprint. See [`BACKLOG.md`](./BACKLOG.md) for current and upcoming work, [`CHANGELOG.md`](./CHANGELOG.md) for what's shipped, and [`docs/decisions/`](./docs/decisions/) for architectural decisions.
 
 ### Cut from V1
 
 - Lock / unlock cards (state remains in-memory only; no UI)
 - Duplicate-with-connections (plain duplicate is sufficient)
 
-### Deferred (Phase 2)
+### Deferred to Phase 2
 
-- Player view interface — how players access and navigate their filtered view (data logic is designed; UI deferred)
+- Player view interface — how players access and navigate their filtered view. The two-layer data model is captured in §4 of this doc; the UI is deferred and will be specified in a dedicated `design/player-view.md` when it enters active design.
 - Collaboration indicators — cursors, display names, active users
 - Campaign sharing / multi-user permissions
 - Settings panel (discovery toggle, undo limit)
+- Other surfaces in the long-term GMOS vision (live session co-pilot, AI campaign generation, lifecycle management) are described in [`project-brief.md`](./project-brief.md) and will get their own design docs as they enter active design.
