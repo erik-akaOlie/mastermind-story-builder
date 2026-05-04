@@ -3,16 +3,18 @@
 // ----------------------------------------------------------------------------
 // Public API for firing chip-styled toasts in the bottom-left feedback bar.
 // Implemented on top of useFeedbackToastStore (custom queue + lifecycle).
-// Sonner is no longer used for these — the horizontal-stack-with-32px-shift
-// + slide-from-behind-chip pattern doesn't fit Sonner's defaults; see
-// useFeedbackToastStore + ChipToast for the implementation.
+// Sonner is no longer used for these — the slide-from-behind-chip pattern
+// doesn't fit Sonner's defaults; see useFeedbackToastStore + ChipToast for
+// the implementation.
 //
-// Variants:
-//   - info  (gray)  — undo / redo success
-//   - warn  (amber) — undo / redo conflict (state drifted before apply)
-//   - error (red)   — persist-write final failure (after retries gave up)
+// Variants & visual treatment:
+//   All toasts share a dark + white-text chip body (FeedbackChip) so they
+//   visually stand out from the SyncIndicator's light/frosted ambient chip.
+//   Undo/redo success toasts lead with a curved-arrow icon instead of a
+//   "Undid:" / "Redid:" word prefix; conflict and save-fail toasts read
+//   text-only since the message itself names the action.
 //
-// Per ADR-0006 §6 + Erik's interaction spec:
+// Durations (per ADR-0006 §6 + Erik's interaction spec):
 //   - Undo/redo success  → 2s visible, 300ms fadeout
 //   - Undo/redo conflict → 5s visible, 300ms fadeout
 //   - Persist-fail       → 8s visible, sticky id so repeated failures replace
@@ -22,6 +24,7 @@
 // fall back to the generic word so the toast still reads naturally.
 // ============================================================================
 
+import { ArrowUUpLeft, ArrowUUpRight } from '@phosphor-icons/react'
 import { useFeedbackToastStore } from '../store/useFeedbackToastStore.js'
 
 const SUCCESS_DURATION_MS   = 2000
@@ -39,12 +42,22 @@ function push(args) {
 
 export function toastUndoSuccess(entry) {
   const label = labelOr(entry, 'last action')
-  push({ variant: 'info', content: `Undid: ${label}`, durationMs: SUCCESS_DURATION_MS })
+  push({
+    variant: 'info',
+    icon: ArrowUUpLeft,
+    content: label,
+    durationMs: SUCCESS_DURATION_MS,
+  })
 }
 
 export function toastRedoSuccess(entry) {
   const label = labelOr(entry, 'last action')
-  push({ variant: 'info', content: `Redid: ${label}`, durationMs: SUCCESS_DURATION_MS })
+  push({
+    variant: 'info',
+    icon: ArrowUUpRight,
+    content: label,
+    durationMs: SUCCESS_DURATION_MS,
+  })
 }
 
 export function toastUndoConflict() {
