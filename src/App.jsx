@@ -461,7 +461,28 @@ export default function App() {
   // ── Duplicate (DB-backed) ───────────────────────────────────────────────
   const onDuplicate = useCallback(async (nodeId) => {
     const source = nodes.find((n) => n.id === nodeId)
-    if (!source || source.type !== 'campaignNode') return
+    if (!source) return
+
+    if (source.type === 'textNode') {
+      try {
+        const duplicate = await dbCreateTextNode({
+          campaignId:  activeCampaignId,
+          contentHtml: source.data.text,
+          positionX:   source.position.x + 40,
+          positionY:   source.position.y + 40,
+          width:       source.data.width,
+          height:      source.data.height,
+          fontSize:    source.data.fontSize,
+          align:       source.data.align,
+        })
+        setNodes((nds) => [...nds, duplicate])
+      } catch (err) {
+        console.error('Failed to duplicate text node:', err)
+      }
+      return
+    }
+
+    if (source.type !== 'campaignNode') return
     const typeId = useTypeStore.getState().idByKey[source.data.type]
     if (!typeId) {
       console.error(`No type_id for key: ${source.data.type}`)
