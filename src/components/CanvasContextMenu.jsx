@@ -37,16 +37,46 @@ export default function CanvasContextMenu({ x, y, onAddCard, onAddText, onClose 
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
+  // 16px keeps the drop shadow visible; matches the spacing on other
+  // floating UI (bottom-left feedback chip).
+  const VIEWPORT_MARGIN = 16
   const menuWidth  = 192
-  const menuHeight = 120
-  const left = x + menuWidth  > window.innerWidth  ? x - menuWidth  : x
-  const top  = y + menuHeight > window.innerHeight ? y - menuHeight : y
+  // Calibrated against the actual rendered menu (verified via DOM measurement):
+  //   Parent: 4px py-top + 27px section header + 36px Add card + 9px divider
+  //         + 36px Add text + 4px py-bottom + 2px borders = 118px
+  //   Wrapper offsetTop: 4px py-top + 27px section header = 31px
+  //   Each submenu row: 14px line-height + 16px py-2 padding = 36px
+  //   Submenu chrome: 8px py-1 container + 2px borders = 10px
+  const menuHeight = 118
+  const WRAPPER_OFFSET_TOP = 31
+
+  // Parent menu: prefer click position; flip above when it'd overflow downward,
+  // then clamp on all four sides so the panel (plus margin for the shadow)
+  // always sits fully inside the viewport.
+  const flippedLeft = x + menuWidth  + VIEWPORT_MARGIN > window.innerWidth  ? x - menuWidth  : x
+  const flippedTop  = y + menuHeight + VIEWPORT_MARGIN > window.innerHeight ? y - menuHeight : y
+  const left = Math.max(VIEWPORT_MARGIN, Math.min(flippedLeft, window.innerWidth  - VIEWPORT_MARGIN - menuWidth))
+  const top  = Math.max(VIEWPORT_MARGIN, Math.min(flippedTop,  window.innerHeight - VIEWPORT_MARGIN - menuHeight))
 
   const typeEntries = Object.entries(NODE_TYPES)
-  const subHeight   = typeEntries.length * 40 + 8
+  const subHeight   = typeEntries.length * 36 + 10
   const subLeft     = left + menuWidth + 4
-  const subOverflow = subLeft + menuWidth > window.innerWidth
+  const subOverflow = subLeft + menuWidth + VIEWPORT_MARGIN > window.innerWidth
   const subRight    = subOverflow ? -(menuWidth + 4) : menuWidth + 4
+
+  // Submenu vertical anchoring:
+  // - Default: top-aligned with parent (subTop = 0). Submenu grows downward
+  //   from parent's top edge — the natural reading direction.
+  // - If that would extend past the viewport bottom: bottom-align with parent
+  //   instead. The submenu's `top` is relative to the .relative wrapper, which
+  //   sits WRAPPER_OFFSET_TOP px below the parent's outer top edge — so the
+  //   formula subtracts that offset to land the submenu's bottom on the
+  //   parent's bottom (not WRAPPER_OFFSET_TOP px below it).
+  // - Floor: never let submenu's top go above the viewport. Belt-and-suspenders
+  //   for the degenerate case where subHeight > viewport height.
+  const wouldOverflowDownward = top + subHeight + VIEWPORT_MARGIN > window.innerHeight
+  const desiredSubTop = wouldOverflowDownward ? menuHeight - WRAPPER_OFFSET_TOP - subHeight : 0
+  const subTop = Math.max(VIEWPORT_MARGIN - top, desiredSubTop)
 
   return (
     <>
@@ -89,7 +119,7 @@ export default function CanvasContextMenu({ x, y, onAddCard, onAddText, onClose 
               <div
                 className="absolute"
                 style={{
-                  top: 0,
+                  top: subTop,
                   left: subOverflow ? -BRIDGE_WIDTH + 6 : menuWidth - 6,
                   width: BRIDGE_WIDTH,
                   height: subHeight,
@@ -99,8 +129,8 @@ export default function CanvasContextMenu({ x, y, onAddCard, onAddText, onClose 
                 onMouseLeave={scheduleCloseSub}
               />
               <div
-                className="absolute top-0 bg-white border border-gray-200 rounded-lg shadow-xl py-1 z-[10000]"
-                style={{ left: subRight, width: menuWidth, minHeight: subHeight }}
+                className="absolute bg-white border border-gray-200 rounded-lg shadow-xl py-1 z-[10000]"
+                style={{ left: subRight, top: subTop, width: menuWidth, minHeight: subHeight }}
                 onMouseEnter={openSub}
                 onMouseLeave={scheduleCloseSub}
               >
