@@ -46,15 +46,16 @@ Write this week's update as a publishable markdown draft. Save it to `weekly-upd
 4. **`weekly-updates/`** folder — the previous week's post (if any). Critical for continuity: reference it, don't repeat it, pick up where it left off.
 5. **Git log from the past 7 days** — `git log --since="7 days ago" --pretty=format:"%ad %s" --date=short` — for the day-by-day texture. Also `git diff --stat HEAD@{7.days.ago}` for a sense of how much code actually changed.
 6. **`docs/decisions/`** — any new ADRs written this week are worth calling out.
-7. **`Market Research/`** — if any strategic documents were created or updated, skim them for context on why this week's work was prioritized the way it was.
+7. **`docs/strategy/`** — if any strategic documents were created or updated, skim them for context on why this week's work was prioritized the way it was. Skip the `archive/` subfolder unless you have a specific reason.
+8. **`docs/product/roadmap.md`** — if scope decisions changed (V1 / V2 / V3 boundaries), the change usually surfaces here first.
 
 **If you're running in Claude Cowork (not Claude Code):**
 
-8. Use the `mcp__session_info__list_sessions` and `mcp__session_info__read_transcript` tools to surface transcripts from the past 7 days. These hold the texture of what Erik actually tried, how decisions were made, and where he got stuck. Mine them for stories — especially the moments where something failed before it worked.
+9. Use the `mcp__session_info__list_sessions` and `mcp__session_info__read_transcript` tools to surface transcripts from the past 7 days. These hold the texture of what Erik actually tried, how decisions were made, and where he got stuck. Mine them for stories — especially the moments where something failed before it worked.
 
 **For voice anchoring:**
 
-9. Read `Market Research/my-thinking-on-the-dm-tool-idea.md` once. This is Erik's voice when he's thinking out loud: first person, grounded, willing to say "I was wrong," not overselling, occasionally self-deprecating, genuinely curious about what works. Match this voice in the post. Do not write in a corporate-blog-post voice. Do not lead with triumphant hook-sentences. Do not use the word "journey" unironically.
+10. Read `docs/strategy/founder-notes.md` once. This is Erik's voice when he's thinking out loud: first person, grounded, willing to say "I was wrong," not overselling, occasionally self-deprecating, genuinely curious about what works. Match this voice in the post. Do not write in a corporate-blog-post voice. Do not lead with triumphant hook-sentences. Do not use the word "journey" unironically.
 
 ---
 

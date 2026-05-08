@@ -154,4 +154,4 @@ I think that's the version of the idea that has a real chance.
 
 ---
 
-*Related: [the deeper market analysis](computer:///sessions/stoic-cool-pasteur/mnt/DnD Campaign Mind Map/Market Research/dm-os-competitive-analysis.md) if I want to dig back into specifics later.*
+*Related: [the deeper market analysis](./competitive-analysis.md) if I want to dig back into specifics later.*

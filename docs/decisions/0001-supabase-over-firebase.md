@@ -35,6 +35,6 @@ Candidates considered:
 **Firebase cleanup:** the `firebase` npm package was uninstalled. Do not reintroduce it.
 
 ## References
-- Project Roadmap: `Market Research/project-structure-and-roadmap.md`
+- Original strategic memo (archived): [`docs/strategy/archive/original-roadmap-memo.md`](../strategy/archive/original-roadmap-memo.md). Current roadmap: [`docs/product/roadmap.md`](../product/roadmap.md).
 - Schema: `supabase/schema.sql`
 - Client setup: `src/lib/supabase.js`

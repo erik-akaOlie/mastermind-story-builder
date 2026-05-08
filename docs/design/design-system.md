@@ -1,12 +1,12 @@
-# MasterMind: Story Builder — Design Document
+# MasterMind: Story Builder — Design System
 
 ## Overview
 
 This document captures design decisions — the functional grammar of the interface: visual systems, interaction patterns, and information architecture. Aesthetic decisions (typography choices, specific color values, textures, theming) are intentionally deferred.
 
-**Scope.** This doc specifies the **canvas + cards** interaction system — the worldbuilding surface of MasterMind. Other surfaces in the long-term Game Master Operating System vision — live session co-pilot, AI campaign generation, lifecycle management (scheduling / session history / party finances), and player view — are not designed in this document. Each will get its own design doc once it enters active design. The product vision and the surfaces still to be designed are described in [`project-brief.md`](./project-brief.md).
+**Scope.** This doc specifies the **canvas + cards** interaction system — the worldbuilding surface of MasterMind. Other surfaces in the long-term Game Master Operating System vision — live session co-pilot, AI campaign generation, lifecycle management (scheduling / session history / party finances), and player view — are not designed in this document. Each will get its own design doc once it enters active design. The product vision and the surfaces still to be designed are described in [`docs/product/vision.md`](../product/vision.md).
 
-**Relationship to other docs:** This document is updated as the design evolves, but source-of-truth for *current implementation* is [`CLAUDE.md`](./CLAUDE.md). Architectural decisions (backend choice, persistence pattern, etc.) are captured as ADRs in [`docs/decisions/`](./docs/decisions/). Current and upcoming work is in [`BACKLOG.md`](./BACKLOG.md).
+**Relationship to other docs:** This document is updated as the design evolves, but source-of-truth for *current implementation* is [`CLAUDE.md`](../../CLAUDE.md). Architectural decisions (backend choice, persistence pattern, etc.) are captured as ADRs in [`docs/decisions/`](../decisions/). Current and upcoming work is in [`BACKLOG.md`](../../BACKLOG.md).
 
 ---
 
@@ -378,7 +378,7 @@ Single **scrolling panel**. Sections in order:
 
 **Implemented:**
 - Canvas right-click menu: "Add card" (with type submenu) and "Add text"
-- Undo / redo: Ctrl+Z and Ctrl+Shift+Z (Cmd on macOS, Ctrl+Y also accepted on Windows). Per-tab, per-(user × campaign) action stack capped at 75 entries. Word-style typing exemption: Ctrl+Z while focused inside an input / textarea / contenteditable is browser-native; outside of those, it reverses the last campaign action. See [ADR-0006](./docs/decisions/0006-undo-redo.md) for the command-pattern architecture and the trade-offs against snapshot pattern.
+- Undo / redo: Ctrl+Z and Ctrl+Shift+Z (Cmd on macOS, Ctrl+Y also accepted on Windows). Per-tab, per-(user × campaign) action stack capped at 75 entries. Word-style typing exemption: Ctrl+Z while focused inside an input / textarea / contenteditable is browser-native; outside of those, it reverses the last campaign action. See [ADR-0006](../decisions/0006-undo-redo.md) for the command-pattern architecture and the trade-offs against snapshot pattern.
 
 **Still planned:**
 - Shift+1: fit all (zoom and pan to fit all nodes)
@@ -477,7 +477,7 @@ Settings panel contains at minimum:
 | State management | Zustand v5 (wired for the node-type store) |
 | Auth + Database | Supabase (Postgres + Auth + RLS) |
 
-See [ADR-0001](./docs/decisions/0001-supabase-over-firebase.md) for the backend decision rationale.
+See [ADR-0001](../decisions/0001-supabase-over-firebase.md) for the backend decision rationale.
 
 ### 10.2 CSS Import Order
 
@@ -495,7 +495,7 @@ Font sizes use `rem`. The `html { font-size: 100% }` declaration in `index.css` 
 ### 10.4 Key Architectural Notes
 
 - All layout is free-form — physics/collision was built and then reverted. Nodes go where you put them.
-- `App.jsx` orchestrates canvas state via focused hooks under `src/hooks/`: `useCampaignData` (load lifecycle + Supabase Realtime), `useEdgeGeometry` (recompute spread border points + connection dots), `useNodeHoverSelection` (hover/select handlers backed by `useCanvasUiStore`), `useSpacebarPan` (pan keyboard state), `useUndoShortcuts` (Ctrl+Z / Ctrl+Shift+Z). Persistence is optimistic + fire-and-forget per [ADR-0003](./docs/decisions/0003-optimistic-ui-persistence.md).
+- `App.jsx` orchestrates canvas state via focused hooks under `src/hooks/`: `useCampaignData` (load lifecycle + Supabase Realtime), `useEdgeGeometry` (recompute spread border points + connection dots), `useNodeHoverSelection` (hover/select handlers backed by `useCanvasUiStore`), `useSpacebarPan` (pan keyboard state), `useUndoShortcuts` (Ctrl+Z / Ctrl+Shift+Z). Persistence is optimistic + fire-and-forget per [ADR-0003](../decisions/0003-optimistic-ui-persistence.md).
 - Persistent vs. UI state in `node.data` is split: persistent fields flow from Supabase via `lib/nodes.js`; UI-only fields (`isEditing`, `connectionDots`) are derived per render. Hover/select flags (`anySelected`, `anyHovered`, `hoveredEdgeNodeIds`) live in `useCanvasUiStore` so a hover event mutates one atomic value instead of forcing every card to re-render.
 - The sample Curse of Strahd data now lives in Supabase as a real campaign seeded via the (now-deleted) `seedStrahd.js` utility. Avatar images are still self-hosted in `public/avatars/`.
 
@@ -508,7 +508,7 @@ Font sizes use `rem`. The `html { font-size: 100% }` declaration in `index.css` 
 
 ## 11. Roadmap
 
-The numbered sprint roadmap that previously lived here is retired in favor of a tier-ranked backlog reviewed at the start of each sprint. See [`BACKLOG.md`](./BACKLOG.md) for current and upcoming work, [`CHANGELOG.md`](./CHANGELOG.md) for what's shipped, and [`docs/decisions/`](./docs/decisions/) for architectural decisions.
+The numbered sprint roadmap that previously lived here is retired in favor of a Value-Add-ranked backlog reviewed at the start of each sprint. See [`BACKLOG.md`](../../BACKLOG.md) for current and upcoming work, [`CHANGELOG.md`](../../CHANGELOG.md) for what's shipped, [`docs/product/roadmap.md`](../product/roadmap.md) for V1 / V2+ scope, and [`docs/decisions/`](../decisions/) for architectural decisions.
 
 ### Cut from V1
 
@@ -521,4 +521,4 @@ The numbered sprint roadmap that previously lived here is retired in favor of a 
 - Collaboration indicators — cursors, display names, active users
 - Campaign sharing / multi-user permissions
 - Settings panel (discovery toggle, undo limit)
-- Other surfaces in the long-term GMOS vision (live session co-pilot, AI campaign generation, lifecycle management) are described in [`project-brief.md`](./project-brief.md) and will get their own design docs as they enter active design.
+- Other surfaces in the long-term GMOS vision (live session co-pilot, AI campaign generation, lifecycle management) are described in [`docs/product/roadmap.md`](../product/roadmap.md) and will get their own design docs as they enter active design.

@@ -1,16 +1,54 @@
 # MasterMind: Story Builder
 
-A visual, interactive continuity database for Dungeon Masters and Game Masters. Think investigator's case board — characters, locations, items, factions, and story threads as connected cards on an infinite canvas, backed by a real database so your world persists across sessions.
-
-See [`project-brief.md`](./project-brief.md) for the problem statement and success criteria.
-See [`design-document.md`](./design-document.md) for design decisions and interaction patterns (some diverged — see CLAUDE.md for the current reality).
-See [`CLAUDE.md`](./CLAUDE.md) for the source-of-truth implementation guide.
-See [`BACKLOG.md`](./BACKLOG.md) for the tier-ranked backlog of upcoming work.
-See [`Market Research/`](./Market%20Research/) for the competitive analysis and strategic roadmap.
+A visual, interactive continuity database for Dungeon Masters and Game Masters. Cards on an infinite canvas, backed by a real database, with the relationships between them as first-class as the cards themselves. Think investigator's case board for D&D.
 
 ---
 
-## Running Locally
+## For new contributors (and AI sessions)
+
+If you're a new Claude Code / Cowork session or a new contributor, read in this order. The goal: ~15 minutes of reading gets you 80% of what you need.
+
+**Always read first:**
+
+1. [`CLAUDE.md`](./CLAUDE.md) — implementation reality, conventions, current state. The longest doc but the most current.
+2. [`docs/product/roadmap.md`](./docs/product/roadmap.md) — what's in V1, V2+, V3+, and explicitly out.
+3. [`docs/product/glossary.md`](./docs/product/glossary.md) — vocabulary (Version, Value Add, Effort Size, Impact, Depth Level). Read if any term in a doc looks ambiguous.
+
+**Read when relevant to the task:**
+
+- [`BACKLOG.md`](./BACKLOG.md) — for prioritization or sprint planning
+- [`docs/design/design-system.md`](./docs/design/design-system.md) — for design or UI work
+- [`docs/decisions/`](./docs/decisions/) — read the ADRs that touch the area you're working on
+- [`CHANGELOG.md`](./CHANGELOG.md) — for "what shipped recently and why"
+
+**Read when revisiting strategy:**
+
+- [`docs/product/vision.md`](./docs/product/vision.md) — what the product is and who it's for
+- [`docs/product/tenets.md`](./docs/product/tenets.md) — guiding principles
+- [`docs/strategy/`](./docs/strategy/) — competitive analysis, plain-English summary, founder notes
+
+---
+
+## Source-of-truth hierarchy
+
+When two docs disagree, the source of truth wins; the other gets updated.
+
+| Topic | Source of truth |
+|---|---|
+| Product vision | [`docs/product/vision.md`](./docs/product/vision.md) |
+| Version scope (V1, V2, V3, out) | [`docs/product/roadmap.md`](./docs/product/roadmap.md) |
+| Tenets / principles | [`docs/product/tenets.md`](./docs/product/tenets.md) |
+| Vocabulary | [`docs/product/glossary.md`](./docs/product/glossary.md) |
+| Design intent | [`docs/design/design-system.md`](./docs/design/design-system.md) |
+| Implementation reality | [`CLAUDE.md`](./CLAUDE.md) |
+| Architectural / product decisions | [`docs/decisions/`](./docs/decisions/) (ADRs) |
+| What's queued | [`BACKLOG.md`](./BACKLOG.md) |
+| What shipped | [`CHANGELOG.md`](./CHANGELOG.md) |
+| Strategic context | [`docs/strategy/`](./docs/strategy/) (read for context, not authoritative) |
+
+---
+
+## Running locally
 
 ### Prerequisites
 
@@ -43,81 +81,7 @@ Opens at `http://localhost:5173`. Sign up with an email on first visit (Supabase
 
 ---
 
-## What's Built
-
-### Auth + Campaigns
-
-- Email + password authentication via Supabase Auth
-- Multi-campaign support: create, rename, delete, switch between campaigns
-- Row Level Security ensures each user only sees their own campaigns
-- Campaign picker is the landing screen after sign-in; profile avatar (top-right) opens a menu with sign-out
-
-### Canvas
-
-- Infinite canvas with pan (spacebar + drag), zoom (Ctrl+scroll / pinch), and marquee selection
-- Shift+click multi-select
-- Right-click canvas → Add card (with type submenu) or Add text
-- Right-click any card → Edit, Duplicate, Delete
-
-### Campaign Cards
-
-- Five built-in types per campaign: Character, Location, Item, Faction, Story — each with its own color and Phosphor icon
-- Custom type creation (design exists, color picker + icon picker)
-- Card header: type-colored background, D-shaped avatar, title, type icon — all with luminance-adaptive text color
-- Card body: summary line + story note bullets + connection dots on card borders
-- Zoom-compensated titles (readable at any zoom level)
-- Dynamic icon visibility: the type icon hides automatically if the title would otherwise overlap it at extreme zoom-out
-- Hover, selected, and dimmed states
-
-### Edit Modal
-
-- Opens with a morph animation from the card's canvas position
-- Auto-saves 400ms after any change; flushes immediately on close — no Save button
-- Sections: title, type selector, avatar/thumbnail, summary, story notes, hidden lore (DM-only), DM notes, inspiration images, connections
-- Drag-to-reorder bullets and images
-- Image lightbox
-- Connection management: add via dropdown picker (alphabetical, strips "The " prefix), remove individually
-
-### Text Annotations
-
-- Freestanding text blocks on the canvas (not connected to any card)
-- Double-click to edit; blur to save
-- Floating toolbar: font size (S/M/L/XL), alignment (L/C/R), bold, italic, delete
-- Bold and italic are per-selection (highlight text, then apply)
-- 8 resize handles (corners resize both axes; edges resize one axis)
-- Grip icon in toolbar to drag the block while in edit mode
-
-### Connections
-
-- Created inside the edit modal (Connections section)
-- Straight lines, border-to-border, no arrows
-- Colored dots on card borders show connection count and type of connected cards
-- Multiple connections on the same side spread automatically (16px minimum gap)
-
-### Persistence
-
-- All campaign data (cards, connections, sections, text annotations, positions) persists to Supabase
-- Optimistic UI: changes appear instantly, write to the database in the background
-- Refreshing or closing the browser preserves all work
-
-### Image Storage
-
-- Avatars and inspiration images upload to a private **Supabase Storage** bucket (`card-media`)
-- Two variants generated client-side at upload: a 256px thumb for canvas/list use and a 1920px full-size for the lightbox — both WebP
-- The database stores only the path; renderers fetch a fresh signed URL each render via `useImageUrl`
-- Bucket access is RLS-gated to the campaign owner via a `SECURITY DEFINER` helper. See [ADR-0005](./docs/decisions/0005-image-storage.md).
-
----
-
-## What's Not Built Yet
-
-See [`BACKLOG.md`](./BACKLOG.md) for the current, tier-ranked backlog. Each item carries a problem statement, success criteria, and dependencies; what's in any given sprint is decided at sprint start.
-
-Deferred work — player view interface, sharing / collaboration, D&D Beyond integration, native mobile apps — lives in [`project-brief.md`](./project-brief.md) and the [Market Research roadmap](./Market%20Research/).
-
----
-
-## Tech Stack
+## Tech stack
 
 | Layer | Choice |
 |---|---|
@@ -130,26 +94,25 @@ Deferred work — player view interface, sharing / collaboration, D&D Beyond int
 | Auth + DB | Supabase (Postgres + Auth + RLS) |
 | Image storage | Supabase Storage (`card-media` bucket, signed URLs) |
 
+For the full file map, conventions, architectural notes, and current implementation reality, see [`CLAUDE.md`](./CLAUDE.md).
+
 ---
 
-## Project Structure
+## Repository layout
 
 ```
-├── src/
-│   ├── App.jsx           Canvas orchestration (composes hooks; renders ReactFlow + menus + modal)
-│   ├── lib/              Data access + Supabase client + image storage helpers
-│   ├── hooks/            useSpacebarPan, useCampaignData, useEdgeGeometry, useNodeHoverSelection
-│   ├── store/            useTypeStore, useCanvasUiStore, useSyncStore (Zustand)
-│   ├── components/       Login, CampaignPicker, EditModal, Lightbox, MigrateImages, ...
-│   ├── nodes/            CampaignNode, TextNode (React Flow node types)
-│   ├── edges/            FloatingEdge
-│   └── utils/            edgeRouting, labelUtils
-├── supabase/
-│   ├── schema.sql        Initial database schema + RLS policies
-│   └── migrations/       Incremental migrations (run after schema.sql, in numeric order)
-├── docs/decisions/       ADRs covering architecture calls (Supabase, image storage, etc.)
-├── Market Research/      Competitive analysis, strategic roadmap, founder memos
-├── public/avatars/       Static avatar images for the sample Strahd data
-├── .env.example          Template — copy to .env and fill in your Supabase credentials
-└── CLAUDE.md             Source of truth for AI sessions
+├── src/                         React + React Flow application
+├── supabase/                    Schema + migrations (run once per project)
+├── public/avatars/              Static avatar images for sample data
+├── docs/
+│   ├── product/                 Vision, roadmap, tenets, glossary (source of truth)
+│   ├── design/                  Design system (interaction patterns, visual grammar)
+│   ├── decisions/               Architecture Decision Records (ADRs)
+│   └── strategy/                Competitive analysis, founder notes (context, not authoritative)
+│       └── archive/             Superseded strategy docs (banner-marked)
+├── weekly-updates/              Public progress posts + the prompt that generates them
+├── CLAUDE.md                    Implementation reality (entry point for AI sessions)
+├── BACKLOG.md                   Living backlog
+├── CHANGELOG.md                 What shipped
+└── README.md                    This file — orientation and navigation
 ```

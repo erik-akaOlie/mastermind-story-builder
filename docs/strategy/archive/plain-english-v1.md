@@ -1,6 +1,8 @@
-# Your DM Tool Idea — Explained Like You're 12 (But In A Good Way)
+> **Archived 2026-05-05.** Superseded by [`docs/strategy/plain-english.md`](../plain-english.md). This is an earlier draft of the same content. Retained for historical reference only.
 
-*A friendly, no-jargon version of the big report. Same conclusions, way fewer fancy words.*
+---
+
+# DM Tool Idea — Explained simply
 
 ---
 
@@ -11,6 +13,7 @@ You want to build **one app that does everything a Dungeon Master needs** — li
 Think about your phone. You probably have separate apps for: texting, calendar, photos, music, games, and so on. That's fine because they all live on one phone and they kind of talk to each other.
 
 Now imagine if you were running a D&D game and you needed:
+
 - One app to roll dice
 - A different app to look up the rules
 - A third app for the battle map
@@ -113,12 +116,14 @@ Other people have tried to do what you're thinking about. They lost.
 **Yes, but you have to be careful about which version you build.**
 
 The good news:
+
 - The fragmentation is real. DMs really are juggling 5–8 tools.
 - No one owns the most painful problems (prep time, finding the right note at the right moment, professional DM business operations).
 - The market is big. Millions of people play D&D, and it's growing. D&D itself made an estimated $460 million in 2025.
 - AI is a genuine new lever. None of the existing tools have figured it out. There's an opening.
 
 The scary news:
+
 - DMs are *opinionated*. They don't just use one tool — they pick favorites and defend them. Telling a Foundry diehard "stop using Foundry, use my thing instead" will not work.
 - Hasbro just lit $30+ million on fire trying exactly this. They had the brand, the money, the IP rights, and they still failed.
 - Building a battle map app from scratch is *very* expensive. Foundry has a 5-year lead. You won't beat them at being Foundry.
@@ -141,6 +146,7 @@ On top of that, you put two killer features:
 2. **A "running the session" mode.** When you press the "I'm running tonight's game" button, the app surfaces the right notes at the right moment. It tracks initiative, has the right statblocks ready, and remembers what the players asked about so you can update your notes after.
 
 Then for **paid DMs specifically** (your easiest first paying customers), you add:
+
 - Track who showed up and who didn't
 - Auto-bill people based on attendance
 - Send recap emails after each session
@@ -148,6 +154,7 @@ Then for **paid DMs specifically** (your easiest first paying customers), you ad
 - Manage your "client list" (which players are in which campaign)
 
 And you **integrate with everything else** instead of replacing it:
+
 - Pull character data from D&D Beyond (don't reinvent the rulebook)
 - Push to Foundry / Roll20 (don't build a battle map)
 - Talk to Discord (don't try to replace voice chat)

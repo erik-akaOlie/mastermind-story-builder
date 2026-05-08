@@ -1,3 +1,7 @@
+> **Archived 2026-05-05.** Superseded by [`docs/product/roadmap.md`](../../product/roadmap.md) and [`docs/product/vision.md`](../../product/vision.md). Retained for historical context — many decisions in this memo (Supabase, modular sections, Phase 1 data foundation) were ratified and shipped; later phase ordering (wiki view as Phase 2) was revised. Do not treat as current guidance.
+
+---
+
 # Reclaiming the Plan — A Structural Breakdown and Roadmap
 
 *A candid, opinionated restructuring pass. Written as a working memo, not a pitch deck.*

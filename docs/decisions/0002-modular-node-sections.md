@@ -35,4 +35,4 @@ Sprint 1 UI still renders the same four fixed sections, but the data layer write
 ## References
 - Schema: `supabase/schema.sql`
 - Marshaling: `src/lib/nodes.js`
-- Roadmap: `Market Research/mastermind-build-plan.md` (Sprint 3)
+- Original build plan (archived): [`docs/strategy/archive/original-build-plan.md`](../strategy/archive/original-build-plan.md) — Sprint 3 referred to the modular sections UI work, now tracked in [`BACKLOG.md`](../../BACKLOG.md) as Foundational Progress.

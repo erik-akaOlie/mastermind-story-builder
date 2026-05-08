@@ -1,3 +1,7 @@
+> **Archived 2026-05-05.** Superseded by [`docs/product/roadmap.md`](../../product/roadmap.md) and the living [`BACKLOG.md`](../../../BACKLOG.md). The original 6-sprint plan is mostly shipped (Sprints 1–2) or pending (3–5); see CHANGELOG.md for what actually landed. Retained for historical context. Do not treat as current sprint planning.
+
+---
+
 # MasterMind: Story Builder — Build Plan
 
 *Synthesized from the full conversation: competitive analysis, project evaluation, roadmap, rename decision, Supabase commitment, and the collaborative working model Erik and Claude agreed on.*

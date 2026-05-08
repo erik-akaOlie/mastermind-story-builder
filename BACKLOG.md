@@ -5,22 +5,27 @@ lived in CLAUDE.md / README.md is retired in favor of this doc — sequential
 sprint plans don't survive contact with reality once the backlog grows past
 a handful of items with real dependencies.
 
+Items are organized by **Value Add** band — the kind of value the work
+delivers (Quick Win, Foundational Progress, Strategic Bet, Exploration). See
+[`docs/product/glossary.md`](./docs/product/glossary.md) for vocabulary.
+Version-level scope (V1, V2+, V3+, out) lives in [`docs/product/roadmap.md`](./docs/product/roadmap.md).
+
 ---
 
 ## How this works
 
 - **Living doc.** Items get added, dropped, and re-ranked sprint over sprint.
-  The ranking captures *current* belief, not a contract.
+  The current band placement captures *current* belief, not a contract.
 - **Reviewed at the start of each sprint.** What's in the next sprint is
   decided then, with the latest information — not weeks in advance.
 - **A "sprint" = 1–2 weeks of working sessions.** Not a strict timebox — a
   unit of planning.
-- **Each sprint mixes size.** One Tier 2 / Tier 3 item + 2–3 Tier 1 / polish
-  items. Pure-big sprints stall mid-feature; pure-small sprints lose
-  momentum on foundational work.
-- **Tier 3 items get a spike first.** A spike is 1–2 days max — prototype
-  the riskiest piece, write findings, *then* decide whether to commit the
-  rest of the sprint to it.
+- **Each sprint mixes size.** One Foundational Progress / Strategic Bet
+  item + 2–3 Quick Win / Exploration items. Pure-big sprints stall
+  mid-feature; pure-small sprints lose momentum on foundational work.
+- **Strategic Bet items get a spike first.** A spike is 1–2 days max —
+  prototype the riskiest piece, write findings, *then* decide whether to
+  commit the rest of the sprint to it.
 - **Each item has a problem statement, success criteria, and dependencies.**
   No code until those three exist (per project process preference).
 - **Done items live in CHANGELOG.md, not here.** This doc is forward-looking
@@ -41,12 +46,12 @@ a handful of items with real dependencies.
 
 Two items from the Sprint 2 candidate shipped: **undo / redo** (closes
 ADR-0006) and **dynamic card width**. **Branding (favicon + tab)** and
-**relative edit timestamps** are still open — see Tier 1 below. The
+**relative edit timestamps** are still open — see Quick Win below. The
 next sprint hasn't been picked yet; review the tiers at sprint start.
 
 ---
 
-## Tier 1 — Quick wins
+## Quick Win
 
 ### Branding update — favicon + tab title
 - **Problem.** Default Vite favicon and "Vite + React" tab title don't
@@ -93,7 +98,7 @@ next sprint hasn't been picked yet; review the tiers at sprint start.
 
 ---
 
-## Tier 2 — Foundational
+## Foundational Progress
 
 ### Card-type template management UI
 - **Problem.** Card types currently live in `useTypeStore` (localStorage)
@@ -133,7 +138,7 @@ next sprint hasn't been picked yet; review the tiers at sprint start.
 
 ---
 
-## Tier 3 — Big features (spike first)
+## Strategic Bet
 
 > Each of these items needs a 1–2 day spike before being committed to a
 > sprint. The spike's job: prototype the hardest piece, write findings,
@@ -199,7 +204,7 @@ next sprint hasn't been picked yet; review the tiers at sprint start.
 
 ---
 
-## Tier 4 — Polish / D&D-specific
+## Exploration
 
 ### Character alignment field
 - **Problem.** Character cards have no consistent place to display

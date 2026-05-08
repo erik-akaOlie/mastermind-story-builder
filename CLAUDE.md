@@ -1,6 +1,6 @@
 # CLAUDE.md — Implementation Context for AI Sessions
 
-Source of truth for any AI session working on this codebase. When this file conflicts with `design-document.md`, **this file wins** — the design doc captures original intent; this file captures current reality. When `project-brief.md` differs, this file wins for implementation specifics.
+Source of truth for any AI session working on this codebase. When this file conflicts with [`docs/design/design-system.md`](./docs/design/design-system.md), **this file wins** — the design doc captures original intent; this file captures current reality. When [`docs/product/vision.md`](./docs/product/vision.md), [`docs/product/roadmap.md`](./docs/product/roadmap.md), or [`docs/product/tenets.md`](./docs/product/tenets.md) differ, this file wins for implementation specifics.
 
 ---
 
@@ -177,9 +177,11 @@ public/
   avatars/                         static avatar images for the sample Strahd data
 
 docs/
+  product/                         vision, roadmap, tenets, glossary (source of truth for product narrative)
+  design/                          design-system.md (interaction patterns, visual grammar)
   decisions/                       ADRs covering architecture calls (Supabase, modular sections, image storage, etc.)
-
-Market Research/                   competitive analysis, roadmap, founder memos, this sprint's build plan
+  strategy/                        competitive analysis, plain-English summary, founder notes (context, not authoritative)
+    archive/                       superseded strategy docs (banner-marked)
 ```
 
 ---
@@ -476,16 +478,17 @@ Custom user-created types are scoped per campaign in Supabase but the UI flow fo
 
 ## What Is NOT Built (roadmap)
 
-See [`BACKLOG.md`](./BACKLOG.md) for the current backlog. It's tier-ranked
-(Tier 1 quick wins, Tier 2 foundational, Tier 3 big features that need a
-spike, Tier 4 polish), reviewed at the start of each sprint, and each item
-carries a problem statement, success criteria, and dependencies. The
-numbered Sprint 2 / 3 / 4 / 5 roadmap that previously lived here is retired
-— sequential sprint plans don't survive contact with reality once the
-backlog grows past a handful of items with real dependencies. Deferred
-work (player view, sharing/collaboration, D&D Beyond integration, native
-mobile apps) is captured in `project-brief.md` and the Market Research
-roadmap.
+See [`BACKLOG.md`](./BACKLOG.md) for the current backlog. It's organized by
+**Value Add** band (Quick Win, Foundational Progress, Strategic Bet,
+Exploration — see [`docs/product/glossary.md`](./docs/product/glossary.md)),
+reviewed at the start of each sprint, and each item carries a problem
+statement, success criteria, and dependencies. Version-level scope (V1,
+V2+, V3+, out) lives in [`docs/product/roadmap.md`](./docs/product/roadmap.md).
+The numbered Sprint 2 / 3 / 4 / 5 roadmap that previously lived here is
+retired — sequential sprint plans don't survive contact with reality once
+the backlog grows past a handful of items with real dependencies. Deferred
+work (AI features, wiki view, player view, pro-DM ops, integrations,
+native mobile apps) is captured in `roadmap.md` with rationale.
 
 ## Cut from V1
 
@@ -504,13 +507,13 @@ roadmap.
 
 ---
 
-## Relationship to `design-document.md`
+## Relationship to `docs/design/design-system.md`
 
-As of the Sprint 1 hygiene pass, `design-document.md` has been updated to reflect current reality (Phosphor icons, Supabase backend, sections that are now built, lock feature cut, etc.).
+As of the Sprint 1 hygiene pass, the design system doc was updated to reflect current reality (Phosphor icons, Supabase backend, sections that are now built, lock feature cut, etc.). The 2026-05-05 doc reorganization renamed `design-document.md` → [`docs/design/design-system.md`](./docs/design/design-system.md).
 
 Going forward:
 
-- When a new divergence between design intent and implementation arises, **prefer updating the design doc** to keep the two in sync.
+- When a new divergence between design intent and implementation arises, **prefer updating the design system doc** to keep the two in sync.
 - When the divergence is a deliberate design decision worth preserving with context, write an ADR in [`docs/decisions/`](./docs/decisions/) and link to it from both files.
 - If a divergence is a tactical hack that'll be revisited, note it in this file under a "Known Divergences" table and document it precisely.
 
@@ -520,6 +523,6 @@ Going forward:
 |---|---|---|---|
 | Custom node types | Persisted per-browser in `localStorage` via `useTypeStore` (key `dnd-node-types`) | Described as per-campaign rows in `node_types` | Tactical: the DB already supports it; the UI write path wasn't migrated. Revisit before custom types become user-facing to anyone besides Erik. Cross-ref: "Cut Scope Notes" above. |
 | Top-left breadcrumb + campaign switcher (`UserMenu.jsx`) | Collapsible house-icon chip that expands on hover to reveal `Campaigns / <name> v`; chevron opens a dropdown that switches campaigns in place | Design doc still describes a top-right UserMenu with separate Campaigns button + avatar | New UX, shipped after the design-doc Sprint 1 sync. Design doc should be updated to match (preferred path per policy). |
-| Sync status chip (`SyncIndicator.jsx`) + lock overlay (`LockOverlay.jsx`) + 3-strike auto-retry (`persistWrite` + `useProbeLoop`) | Ambient bottom-left "Edited just now" chip; lock modal freezes edits on offline / 3 consecutive failures; 3s probe loop unlocks on reconnect; chip-style `toastSaveFailed` on final failure (same chip family as undo/redo toasts via `feedbackToasts.jsx`) | Bottom-left feedback strip is now documented in `design-document.md`; the probe / 3-failure / lock-overlay specifics still aren't | The chip vs lock-overlay split is the operational answer to the "loss of trust" risk in `project-brief.md`. The probe-vs-requeue tradeoff and the 3-failure threshold remain a candidate for a future ADR. |
+| Sync status chip (`SyncIndicator.jsx`) + lock overlay (`LockOverlay.jsx`) + 3-strike auto-retry (`persistWrite` + `useProbeLoop`) | Ambient bottom-left "Edited just now" chip; lock modal freezes edits on offline / 3 consecutive failures; 3s probe loop unlocks on reconnect; chip-style `toastSaveFailed` on final failure (same chip family as undo/redo toasts via `feedbackToasts.jsx`) | Bottom-left feedback strip is documented in `docs/design/design-system.md`; the probe / 3-failure / lock-overlay specifics still aren't | The chip vs lock-overlay split is the operational answer to the "loss of trust" failure signal in `docs/product/vision.md`. The probe-vs-requeue tradeoff and the 3-failure threshold remain a candidate for a future ADR. |
 
-These last two divergences should be resolved either by updating `design-document.md` or writing ADRs — they're not hacks, they're design decisions that happened after the most recent doc sync.
+These last two divergences should be resolved either by updating `docs/design/design-system.md` or writing ADRs — they're not hacks, they're design decisions that happened after the most recent doc sync.
