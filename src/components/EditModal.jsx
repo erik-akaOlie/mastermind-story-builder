@@ -12,6 +12,7 @@ import ConnectionsSection from './ConnectionsSection'
 import EditModalHeader from './EditModalHeader'
 import { useAutoSave } from '../hooks/useAutoSave'
 import { useMorphAnimation } from '../hooks/useMorphAnimation'
+import { UploadImageProvider } from './UploadImageProvider'
 
 const MODAL_WIDTH = '41.25rem'
 
@@ -487,7 +488,7 @@ export default function EditModal({
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <>
+    <UploadImageProvider>
       {showCreateTypeModal && (
         <CreateTypeModal
           onClose={() => setShowCreateTypeModal(false)}
@@ -602,6 +603,6 @@ export default function EditModal({
 
         </div>
       </div>
-    </>
+    </UploadImageProvider>
   )
 }
