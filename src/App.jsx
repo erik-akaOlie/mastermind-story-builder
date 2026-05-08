@@ -28,6 +28,9 @@ import { useSpacebarPan } from './hooks/useSpacebarPan'
 import { useCampaignData } from './hooks/useCampaignData'
 import { useEdgeGeometry } from './hooks/useEdgeGeometry'
 import { useNodeHoverSelection } from './hooks/useNodeHoverSelection'
+import { useUndoShortcuts } from './hooks/useUndoShortcuts'
+import { useUndoStore } from './store/useUndoStore'
+import { ACTION_TYPES } from './lib/undoActions'
 import { CanvasOpsProvider } from './lib/CanvasOpsContext.jsx'
 
 const nodeTypes = {
@@ -75,20 +78,121 @@ export default function App() {
     onEdgeMouseLeave,
   } = useNodeHoverSelection({ setEdges })
 
+  // Ctrl+Z / Ctrl+Shift+Z (Cmd on macOS, Ctrl+Y also accepted on Windows).
+  // The hook captures nodes/edges/setters in a ref so the keydown listener
+  // always sees fresh values without re-attaching every render.
+  useUndoShortcuts({ nodes, edges, setNodes, setEdges })
+
   // ── Persist node position on drag end ────────────────────────────────────
-  const onNodeDragStop = useCallback((_, node) => {
-    if (node.type === 'campaignNode') {
-      dbUpdateNode(node.id, {
-        positionX: node.position.x,
-        positionY: node.position.y,
-      }).catch(console.error)
-    } else if (node.type === 'textNode') {
-      dbUpdateTextNode(node.id, {
-        positionX: node.position.x,
-        positionY: node.position.y,
-      }).catch(console.error)
+  // Per-node start positions captured at drag start drive (a) the 4px-jitter
+  // filter on the undo entry and (b) the entry's `before` snapshot. Stored
+  // in a Map keyed by node id.
+  //
+  // RF v11 fires different events depending on how the selection was made:
+  //   - shift+click multi-select drag → onNodeDragStart/Stop (the third arg
+  //     `nodes` is the full dragged set; the second arg `node` is just the
+  //     primary)
+  //   - marquee multi-select drag     → onSelectionDragStart/Stop (the
+  //     second arg `nodes` is the full dragged set)
+  // Wiring both, iterating the full set in each, and de-duping via a
+  // per-drag Set covers all cases — including the rare double-fire if both
+  // events end up dispatching for the same drag.
+  const dragStartPosRef  = useRef(new Map())
+  const finalizedDragRef = useRef(new Set())
+
+  const captureDragStart = useCallback((dragNodes) => {
+    finalizedDragRef.current.clear()
+    for (const n of dragNodes ?? []) {
+      if (!n) continue
+      dragStartPosRef.current.set(n.id, { x: n.position.x, y: n.position.y })
     }
   }, [])
+
+  const finalizeDragStop = useCallback((dragNodes) => {
+    // Collect every card from this drag into one moveCard entry so Ctrl+Z
+    // reverts the whole drag in a single step (vs N steps for N cards).
+    // Persist promises for THESE same cards are tracked so we can roll the
+    // entry back as a unit if any of the writes fail.
+    const cardMoves = []
+    const cardPersists = []
+
+    for (const n of dragNodes ?? []) {
+      if (!n || finalizedDragRef.current.has(n.id)) continue
+      finalizedDragRef.current.add(n.id)
+
+      const start = dragStartPosRef.current.get(n.id)
+      dragStartPosRef.current.delete(n.id)
+
+      // 4px threshold filters out mouse-jitter "moves" that aren't real drags
+      // (per ADR-0006 §"Action set covered" — moveCard fires only if Δ ≥ 4px).
+      const movedFar =
+        start &&
+        Math.hypot(n.position.x - start.x, n.position.y - start.y) >= 4
+
+      if (n.type === 'campaignNode') {
+        const persist = dbUpdateNode(n.id, {
+          positionX: n.position.x,
+          positionY: n.position.y,
+        })
+        if (movedFar) {
+          cardMoves.push({
+            cardId: n.id,
+            before: { x: start.x, y: start.y },
+            after:  { x: n.position.x, y: n.position.y },
+          })
+          cardPersists.push(persist)
+        } else {
+          // Sub-threshold nudge — still persist, just no undo entry.
+          persist.catch(console.error)
+        }
+      } else if (n.type === 'textNode') {
+        // moveTextNode recordAction lands in phase 8 per ADR-0006 §10.
+        dbUpdateTextNode(n.id, {
+          positionX: n.position.x,
+          positionY: n.position.y,
+        }).catch(console.error)
+      }
+    }
+
+    if (cardMoves.length === 0) return
+
+    useUndoStore.getState().recordAction({
+      type: ACTION_TYPES.MOVE_CARD,
+      campaignId: activeCampaignId,
+      label: cardMoves.length === 1 ? 'Move card' : `Move ${cardMoves.length} cards`,
+      timestamp: new Date().toISOString(),
+      cards: cardMoves,
+    })
+
+    // Roll back the grouped entry if any of its card persists fails
+    // (ADR-0006 §4). One pop is correct here — the entry is a single unit.
+    Promise.allSettled(cardPersists).then((results) => {
+      const failures = results.filter((r) => r.status === 'rejected')
+      if (failures.length > 0) {
+        failures.forEach((r) => console.error(r.reason))
+        useUndoStore.getState().popLastAction()
+      }
+    })
+  }, [activeCampaignId])
+
+  const onNodeDragStart = useCallback((_event, node, nodes) => {
+    // Fall back to [node] in case `nodes` is undefined (defensive — RF v11
+    // documents the third arg, but a single-node drag may pass it as the
+    // 1-element array or omit it depending on the path).
+    captureDragStart(nodes?.length ? nodes : [node])
+  }, [captureDragStart])
+
+  const onNodeDragStop = useCallback((_event, node, nodes) => {
+    finalizeDragStop(nodes?.length ? nodes : [node])
+  }, [finalizeDragStop])
+
+  const onSelectionDragStart = useCallback((_event, nodes) => {
+    captureDragStart(nodes)
+  }, [captureDragStart])
+
+  const onSelectionDragStop = useCallback((_event, nodes) => {
+    finalizeDragStop(nodes)
+  }, [finalizeDragStop])
 
   // ── Context menu plumbing ────────────────────────────────────────────────
   const onNodeContextMenu = useCallback((event, node) => {
@@ -375,7 +479,10 @@ export default function App() {
         edges={edges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
+        onNodeDragStart={onNodeDragStart}
         onNodeDragStop={onNodeDragStop}
+        onSelectionDragStart={onSelectionDragStart}
+        onSelectionDragStop={onSelectionDragStop}
         onSelectionChange={onSelectionChange}
         onNodeMouseEnter={onNodeMouseEnter}
         onNodeMouseLeave={onNodeMouseLeave}
