@@ -30,6 +30,8 @@ import { useCampaignData } from './hooks/useCampaignData'
 import { useEdgeGeometry } from './hooks/useEdgeGeometry'
 import { useNodeHoverSelection } from './hooks/useNodeHoverSelection'
 import { useUndoShortcuts } from './hooks/useUndoShortcuts'
+import { useCustomMarquee } from './hooks/useCustomMarquee'
+import MarqueeRect from './components/MarqueeRect'
 import { useUndoStore } from './store/useUndoStore'
 import { ACTION_TYPES } from './lib/undo/index.js'
 import { CanvasOpsProvider } from './lib/CanvasOpsContext.jsx'
@@ -108,6 +110,18 @@ export default function App() {
   const [editingNode, setEditingNode] = useState(null)
 
   useEdgeGeometry({ nodes, edges, setNodes, setEdges })
+
+  // Custom marquee that replaces React Flow v11's selectionOnDrag — needed
+  // because RF v11's marquee terminates when the cursor leaves the pane,
+  // which makes auto-pan impossible. Our implementation tracks pointer
+  // events at the document level so the cursor can leave the viewport
+  // without breaking the in-flight selection.
+  const marqueeOverlay = useCustomMarquee({
+    rfInstanceRef,
+    nodes,
+    setNodes,
+    isPanning,
+  })
 
   // Hover / selection UI (not persisted; backed by useCanvasUiStore so a
   // hover event mutates one atomic value instead of every node's data).
@@ -696,13 +710,23 @@ export default function App() {
         zoomOnScroll={false}
         zoomActivationKeyCode="Control"
         zoomOnPinch={true}
-        selectionOnDrag={!isPanning}
+        // React Flow's built-in selectionOnDrag is disabled in favor of our
+        // useCustomMarquee hook (which survives the cursor leaving the
+        // viewport — RF v11's doesn't). selectionKeyCode is also nulled out
+        // so Shift+drag on empty canvas doesn't activate React Flow's own
+        // selection mode and conflict with our marquee. Shift is still the
+        // multiSelectionKeyCode for additive *click* selection on nodes;
+        // additive *marquee* selection is handled inside useCustomMarquee.
+        selectionOnDrag={false}
+        selectionKeyCode={null}
         selectionMode="partial"
         multiSelectionKeyCode="Shift"
         fitView
       >
         <Background color="#1f2937" />
       </ReactFlow>
+
+      <MarqueeRect marquee={marqueeOverlay} rfInstanceRef={rfInstanceRef} />
 
       {contextMenu && (() => {
         const node = nodes.find((n) => n.id === contextMenu.nodeId)
