@@ -165,6 +165,18 @@ export default function App() {
     )
   }, [setNodes])
 
+  const onNodeMouseEnter = useCallback(() => {
+    setNodes((nds) =>
+      nds.map((n) => ({ ...n, data: { ...n.data, anyHovered: true } }))
+    )
+  }, [setNodes])
+
+  const onNodeMouseLeave = useCallback(() => {
+    setNodes((nds) =>
+      nds.map((n) => ({ ...n, data: { ...n.data, anyHovered: false } }))
+    )
+  }, [setNodes])
+
   const onEdgeMouseEnter = useCallback((_, edge) => {
     const connectedIds = new Set([edge.source, edge.target])
     setNodes((nds) =>
@@ -221,6 +233,8 @@ export default function App() {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onSelectionChange={onSelectionChange}
+        onNodeMouseEnter={onNodeMouseEnter}
+        onNodeMouseLeave={onNodeMouseLeave}
         onEdgeMouseEnter={onEdgeMouseEnter}
         onEdgeMouseLeave={onEdgeMouseLeave}
         nodeTypes={nodeTypes}
