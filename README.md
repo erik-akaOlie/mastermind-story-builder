@@ -5,6 +5,7 @@ A visual, interactive continuity database for Dungeon Masters and Game Masters. 
 See [`project-brief.md`](./project-brief.md) for the problem statement and success criteria.
 See [`design-document.md`](./design-document.md) for design decisions and interaction patterns (some diverged — see CLAUDE.md for the current reality).
 See [`CLAUDE.md`](./CLAUDE.md) for the source-of-truth implementation guide.
+See [`BACKLOG.md`](./BACKLOG.md) for the tier-ranked backlog of upcoming work.
 See [`Market Research/`](./Market%20Research/) for the competitive analysis and strategic roadmap.
 
 ---
@@ -110,36 +111,9 @@ Opens at `http://localhost:5173`. Sign up with an email on first visit (Supabase
 
 ## What's Not Built Yet
 
-### Sprint 1.5 (planned next)
+See [`BACKLOG.md`](./BACKLOG.md) for the current, tier-ranked backlog. Each item carries a problem statement, success criteria, and dependencies; what's in any given sprint is decided at sprint start.
 
-- Realtime cross-tab / cross-device sync via Supabase Realtime
-
-### Sprint 2
-
-- Undo / redo (Ctrl+Z / Ctrl+Shift+Z)
-- Card templates per node type (pre-populated default sections)
-
-### Sprint 3
-
-- Modular card sections UI (reorder, add, remove sections; edit templates)
-
-### Sprint 4
-
-- Search panel (right-side slide-out)
-- Canvas drag to create connections (hover border → drag → snap)
-- Relationship type labels on edges
-- Shift+1 fit-all
-
-### Sprint 5
-
-- AI copilot grounded in campaign data (semantic search, draft assistance, gap analysis, session recaps)
-
-### Deferred
-
-- Player view interface
-- Sharing / collaboration
-- D&D Beyond integration
-- Native mobile apps
+Deferred work — player view interface, sharing / collaboration, D&D Beyond integration, native mobile apps — lives in [`project-brief.md`](./project-brief.md) and the [Market Research roadmap](./Market%20Research/).
 
 ---
 
