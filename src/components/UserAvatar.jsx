@@ -24,7 +24,7 @@ function initialFor(user) {
   return first ? first.toUpperCase() : '?'
 }
 
-export default function UserAvatar() {
+export default function UserAvatar({ menuAlign = 'right' }) {
   const { user, signOut } = useAuth()
   const [open, setOpen] = useState(false)
   const wrapperRef = useRef(null)
@@ -77,7 +77,7 @@ export default function UserAvatar() {
       {open && (
         <div
           role="menu"
-          className="absolute top-full right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-1 text-sm z-50"
+          className={`absolute top-full mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-1 text-sm z-50 ${menuAlign === 'left' ? 'left-0' : 'right-0'}`}
         >
           <div className="px-3 py-2 border-b border-gray-100">
             <div className="text-[0.6875rem] uppercase tracking-wide text-gray-500">
