@@ -80,7 +80,7 @@ function _clearTimer(id) {
 export const useFeedbackToastStore = create((set, get) => ({
   toasts: [],
 
-  // push({ stickyId?, variant, content, durationMs? }) → toast id
+  // push({ stickyId?, variant, content, durationMs?, target? }) → toast id
   //
   // stickyId is for "only one of these at a time" toasts (persist-fail).
   // If a toast with that id already exists, it's replaced — the old one
@@ -88,7 +88,12 @@ export const useFeedbackToastStore = create((set, get) => ({
   //
   // For non-sticky pushes, any other currently-visible toasts are kicked
   // into the exiting phase so they fade out as the new one slides in.
-  push({ stickyId, variant, icon, content, durationMs = DEFAULT_DURATION_MS }) {
+  //
+  // `target` (optional) — pan-to descriptor consumed by ChipToast's click
+  // handler via lib/cameraOps.panToTarget. Shape: { ids: string[],
+  // fallbackPosition?: {x, y} }. When present, the toast renders as
+  // clickable; when absent (conflict / save-fail toasts) it's passive.
+  push({ stickyId, variant, icon, content, durationMs = DEFAULT_DURATION_MS, target = null }) {
     const { toasts } = get()
     const id = stickyId ?? _generateId()
 
@@ -115,6 +120,7 @@ export const useFeedbackToastStore = create((set, get) => ({
       icon,
       content,
       durationMs,
+      target,
       paused: false,
       exiting: false,
     }

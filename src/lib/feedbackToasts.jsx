@@ -40,6 +40,79 @@ function push(args) {
   useFeedbackToastStore.getState().push(args)
 }
 
+// Derive a pan-to descriptor from an undo/redo entry. Returns null when the
+// entry has no meaningful canvas target (shouldn't happen for the 14 known
+// types, but the toast layer treats null as "passive, no click").
+//
+// `fallbackPosition` is included for the two delete cases (deleteCard,
+// deleteTextNode) so a redo of a delete can still pan the camera to where
+// the content used to live — letting the user undo again to inspect what
+// was just removed.
+//
+// Where each id field comes from in the entry shapes (verified against
+// lib/undo/*.js):
+//   createCard / editCardField / *ListItem      → entry.cardId
+//   moveCard                                    → entry.cards[].cardId
+//                                                 (legacy fallback: entry.cardId)
+//   deleteCard                                  → entry.dbCardRow.id
+//   addConnection / removeConnection            → entry.sourceNodeId,
+//                                                 entry.targetNodeId
+//   createTextNode / editTextNode / moveTextNode → entry.textNodeId
+//   deleteTextNode                              → entry.textNodeId (+ dbRow)
+function targetForEntry(entry) {
+  if (!entry || typeof entry.type !== 'string') return null
+  const t = entry.type
+
+  // Card-family (single card, exists when toast fires)
+  if (t === 'createCard' || t === 'editCardField' ||
+      t === 'addListItem' || t === 'removeListItem' ||
+      t === 'editListItem' || t === 'reorderListItem') {
+    return entry.cardId ? { ids: [entry.cardId] } : null
+  }
+
+  // moveCard — possibly multi-card via entry.cards[]
+  if (t === 'moveCard') {
+    if (Array.isArray(entry.cards) && entry.cards.length > 0) {
+      const ids = entry.cards.map((c) => c.cardId).filter(Boolean)
+      return ids.length > 0 ? { ids } : null
+    }
+    return entry.cardId ? { ids: [entry.cardId] } : null
+  }
+
+  // deleteCard — cardId may be gone after redo; carry fallback position
+  if (t === 'deleteCard') {
+    const id = entry.dbCardRow?.id
+    if (!id) return null
+    const x = Number(entry.dbCardRow?.position_x)
+    const y = Number(entry.dbCardRow?.position_y)
+    const fallbackPosition = Number.isFinite(x) && Number.isFinite(y) ? { x, y } : undefined
+    return { ids: [id], fallbackPosition }
+  }
+
+  // Connection-family — fit both endpoint cards in view
+  if (t === 'addConnection' || t === 'removeConnection') {
+    const ids = [entry.sourceNodeId, entry.targetNodeId].filter(Boolean)
+    return ids.length > 0 ? { ids } : null
+  }
+
+  // Text-node-family
+  if (t === 'createTextNode' || t === 'editTextNode' || t === 'moveTextNode') {
+    return entry.textNodeId ? { ids: [entry.textNodeId] } : null
+  }
+
+  // deleteTextNode — id may be gone after redo; carry fallback position
+  if (t === 'deleteTextNode') {
+    const id = entry.textNodeId
+    if (!id) return null
+    const x = Number(entry.dbRow?.position_x)
+    const y = Number(entry.dbRow?.position_y)
+    const fallbackPosition = Number.isFinite(x) && Number.isFinite(y) ? { x, y } : undefined
+    return { ids: [id], fallbackPosition }
+  }
+
+  return null
+}
+
 export function toastUndoSuccess(entry) {
   const label = labelOr(entry, 'last action')
   push({
@@ -47,6 +120,7 @@ export function toastUndoSuccess(entry) {
     icon: ArrowUUpLeft,
     content: label,
     durationMs: SUCCESS_DURATION_MS,
+    target: targetForEntry(entry),
   })
 }
 
@@ -57,6 +131,7 @@ export function toastRedoSuccess(entry) {
     icon: ArrowUUpRight,
     content: label,
     durationMs: SUCCESS_DURATION_MS,
+    target: targetForEntry(entry),
   })
 }
 

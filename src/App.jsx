@@ -33,6 +33,7 @@ import { useUndoShortcuts } from './hooks/useUndoShortcuts'
 import { useUndoStore } from './store/useUndoStore'
 import { ACTION_TYPES } from './lib/undo/index.js'
 import { CanvasOpsProvider } from './lib/CanvasOpsContext.jsx'
+import { setPanToTargetImpl } from './lib/cameraOps.js'
 
 const nodeTypes = {
   campaignNode: CampaignNode,
@@ -63,6 +64,45 @@ export default function App() {
   const [contextMenu, setContextMenu] = useState(null)  // { nodeId, x, y }
   const [canvasMenu,  setCanvasMenu]  = useState(null)  // { x, y, flowPos }
   const rfInstanceRef = useRef(null)
+
+  // Mirror `nodes` into a ref so the panToTarget impl (registered once below)
+  // always reads the current array without stale-closure issues.
+  const nodesRef = useRef(nodes)
+  useEffect(() => { nodesRef.current = nodes }, [nodes])
+
+  // Register the camera-pan implementation that ChipToast click handlers
+  // will invoke when the user clicks an undo/redo toast. Lives outside
+  // CanvasOpsContext because the toast layer (FeedbackChipBar) is a sibling
+  // of <App />, not a descendant — see lib/cameraOps.js for rationale.
+  useEffect(() => {
+    setPanToTargetImpl((target) => {
+      const rf = rfInstanceRef.current
+      if (!rf || !target) return
+      const ids = Array.isArray(target.ids) ? target.ids : []
+      const existingIds = ids.filter((id) => nodesRef.current.some((n) => n.id === id))
+      if (existingIds.length > 0) {
+        rf.fitView({
+          nodes: existingIds.map((id) => ({ id })),
+          duration: 500,
+          // padding ≈ inverse of zoom: at p=0.5 content fills ~67% of the
+          // viewport; at p=2.0 it fills ~33%. Tuned to Erik's "feels like
+          // too much zoom" feedback — keeps surrounding context visible
+          // instead of zooming aggressively into a single card.
+          padding: 2.0,
+        })
+        return
+      }
+      // Every target node is gone (redo of a delete) — pan to where it was,
+      // preserving current zoom so the user just sees the spot, not a forced
+      // zoom change.
+      if (target.fallbackPosition) {
+        const { x, y } = target.fallbackPosition
+        const zoom = rf.getViewport().zoom
+        rf.setCenter(x, y, { zoom, duration: 500 })
+      }
+    })
+    return () => setPanToTargetImpl(null)
+  }, [])
 
   // { node, connectedNodes, allOtherNodes, originRect }
   const [editingNode, setEditingNode] = useState(null)

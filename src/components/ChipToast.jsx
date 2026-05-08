@@ -34,6 +34,7 @@
 import { useRef } from 'react'
 import FeedbackChip from './FeedbackChip.jsx'
 import { useFeedbackToastStore, FADEOUT_MS } from '../store/useFeedbackToastStore.js'
+import { panToTarget } from '../lib/cameraOps.js'
 
 const SLIDE_DURATION_MS = 250
 
@@ -93,7 +94,16 @@ export default function ChipToast({ toast, stackIndex }) {
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
-      <FeedbackChip variant={toast.variant} icon={toast.icon}>{toast.content}</FeedbackChip>
+      <FeedbackChip
+        variant={toast.variant}
+        icon={toast.icon}
+        // Per Erik's spec: clicking the toast pans the camera but does NOT
+        // dismiss the toast — it finishes its normal display time. The
+        // existing mouseenter/mouseleave pause + resume continue to apply.
+        onClick={toast.target ? () => panToTarget(toast.target) : undefined}
+      >
+        {toast.content}
+      </FeedbackChip>
     </div>
   )
 }
