@@ -202,6 +202,14 @@ function snapshotState(rs) {
 
 // Seed a card straight into the DB + React state. Bypasses createNode to
 // avoid muddying createNode's call count for tests that care about it.
+//
+// Phase 7b: bullets are stored as `{id, value}[]` going forward. Callers
+// can pass either legacy `string[]` or structured input; seedCard runs
+// the same normalize-on-read path production uses (via dbNodeToReactFlow)
+// and writes the resulting structured form back into mockDb so both sides
+// agree from the start. This way the round-trip equality assertions
+// (which compare both React state AND mockDb contents) don't see a fake
+// shape diff just because seedCard's inputs were legacy.
 function seedCard(rs, {
   id, label = '', summary = '', avatarUrl = null,
   positionX = 0, positionY = 0,
@@ -212,10 +220,18 @@ function seedCard(rs, {
     label, summary, avatar_url: avatarUrl,
     position_x: positionX, position_y: positionY,
   }
-  const sections = { narrative: storyNotes, hidden_lore: hiddenLore, dm_notes: dmNotes, media }
+  const reactNode = dbNodeToReactFlow(
+    dbRow,
+    { narrative: storyNotes, hidden_lore: hiddenLore, dm_notes: dmNotes, media },
+    { [TYPE_ID]: { key: TYPE_KEY } },
+  )
   mockDb.nodes.set(id, dbRow)
-  mockDb.node_sections.set(id, sections)
-  const reactNode = dbNodeToReactFlow(dbRow, sections, { [TYPE_ID]: { key: TYPE_KEY } })
+  mockDb.node_sections.set(id, {
+    narrative:   reactNode.data.storyNotes,
+    hidden_lore: reactNode.data.hiddenLore,
+    dm_notes:    reactNode.data.dmNotes,
+    media:       reactNode.data.media,
+  })
   rs.setNodes((nds) => [...nds, reactNode])
   return reactNode
 }
@@ -289,16 +305,27 @@ describe('round-trip — editCardField', () => {
   // Each field family — we want one test per field type to catch shape
   // drift if (e.g.) someone changes the typeId lookup or section persist
   // path without updating the dispatcher.
+  // Bullet kinds (storyNotes / hiddenLore / dmNotes) carry stable ids in
+  // their entries — the structured form the dispatcher reads from React
+  // state. We use fixed ids in the fixtures so the round-trip assertion
+  // can compare exactly without flakiness from generated UUIDs.
   const fields = [
     ['label',      'Strahd',        'Strahd the Damned'],
     ['summary',    'Vampire lord',  'Lord of Castle Ravenloft'],
     ['avatar',     'old.webp',      'new.webp'],
-    ['storyNotes', ['beat 1'],      ['beat 1', 'beat 2']],
-    ['hiddenLore', ['secret 1'],    ['secret 1', 'secret 2']],
-    ['dmNotes',    ['note 1'],      ['note 2']],
-    ['media',      [{ path: 'p1.webp', alt: '', uploaded_at: 'iso-1' }],
-                   [{ path: 'p1.webp', alt: '', uploaded_at: 'iso-1' },
-                    { path: 'p2.webp', alt: '', uploaded_at: 'iso-2' }]],
+    ['storyNotes',
+      [{ id: 'sn-1', value: 'beat 1' }],
+      [{ id: 'sn-1', value: 'beat 1' }, { id: 'sn-2', value: 'beat 2' }]],
+    ['hiddenLore',
+      [{ id: 'hl-1', value: 'secret 1' }],
+      [{ id: 'hl-1', value: 'secret 1' }, { id: 'hl-2', value: 'secret 2' }]],
+    ['dmNotes',
+      [{ id: 'dm-1', value: 'note 1' }],
+      [{ id: 'dm-2', value: 'note 2' }]],
+    ['media',
+      [{ path: 'p1.webp', alt: '', uploaded_at: 'iso-1' }],
+      [{ path: 'p1.webp', alt: '', uploaded_at: 'iso-1' },
+       { path: 'p2.webp', alt: '', uploaded_at: 'iso-2' }]],
   ]
 
   it.each(fields)('%s: edit → undo restores; redo replays', async (field, before, after) => {

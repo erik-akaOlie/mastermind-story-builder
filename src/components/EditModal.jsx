@@ -3,8 +3,9 @@ import { useNodeTypes } from '../store/useTypeStore'
 import { useCampaign } from '../lib/CampaignContext.jsx'
 import { useUndoStore } from '../store/useUndoStore'
 import { ACTION_TYPES, deepEqual } from '../lib/undoActions'
+import { normalizeBullets } from '../lib/nodes.js'
 import CreateTypeModal from './CreateTypeModal'
-import BulletSection, { newItem } from './BulletSection'
+import BulletSection from './BulletSection'
 import SectionLabel from './SectionLabel'
 import MediaSection from './MediaSection'
 import ConnectionsSection from './ConnectionsSection'
@@ -61,16 +62,22 @@ export default function EditModal({
   const [type,       setType]       = useState(node.data.type    || 'character')
   const [summary,    setSummary]    = useState(node.data.summary || '')
   const [thumbnail,  setThumbnail]  = useState(node.data.avatar  || null)
+  // Bullet sections arrive from dbNodeToReactFlow already normalized to
+  // `{id, value}[]`. Defensive normalize here too — the modal might be
+  // mounted with data from any source (Realtime, optimistic update, test
+  // fixture) and a single shape contract avoids per-call-site bugs.
   const [storyNotes, setStoryNotes] = useState(() =>
-    (node.data.storyNotes || node.data.narrative || []).map(newItem)
+    normalizeBullets(node.data.storyNotes ?? node.data.narrative)
   )
   const [hiddenLore, setHiddenLore] = useState(() =>
-    (node.data.hiddenLore || []).map(newItem)
+    normalizeBullets(node.data.hiddenLore)
   )
   const [dmNotes, setDmNotes] = useState(() => {
+    // dmNotes had a one-time legacy shape where it was a single string
+    // instead of an array; coerce that into a 1-element list before normalizing.
     const d = node.data.dmNotes
     const arr = Array.isArray(d) ? d : (typeof d === 'string' && d.trim() ? [d] : [])
-    return arr.map(newItem)
+    return normalizeBullets(arr)
   })
   const [media,      setMedia]      = useState(() =>
     (node.data.media || []).map((src) => ({ id: crypto.randomUUID(), src }))
@@ -125,9 +132,13 @@ export default function EditModal({
     label:      title.trim(),
     type,
     summary,
-    storyNotes: storyNotes.filter((b) => b.value.trim()).map((b) => b.value),
-    hiddenLore: hiddenLore.filter((b) => b.value.trim()).map((b) => b.value),
-    dmNotes:    dmNotes.filter((b) => b.value.trim()).map((b) => b.value),
+    // Phase 7b: bullets persist as `{id, value}[]` so identity is stable
+    // across reads / writes / Realtime echoes. Filter empties (the user
+    // can leave a half-typed bullet behind on close), but keep the id —
+    // an empty bullet that gets dropped doesn't need to survive anyway.
+    storyNotes: storyNotes.filter((b) => b.value.trim()),
+    hiddenLore: hiddenLore.filter((b) => b.value.trim()),
+    dmNotes:    dmNotes.filter((b) => b.value.trim()),
     media:      media.map((m) => m.src),
     avatar:     thumbnail || null,
   }
@@ -221,6 +232,14 @@ export default function EditModal({
   // each entry { id, nodeId }. The id is generated client-side at picker
   // click and threads through to dbCreateConnection({ id, ... }) so the
   // DB row, the React Flow edge, and the undo entry all agree.
+  //
+  // Skip-on-no-change (phase 7b): the auto-save fires on mount because its
+  // useEffect deps go from undefined → defined. Without a guard, opening
+  // any card triggers one DB write even when the user touches nothing.
+  // We compare livePersistedRef.current against sessionStartRef.current
+  // (snapshotted on mount in the same shape) and skip if they're equal AND
+  // there are no pending connection changes. The first real edit produces
+  // a diff and the save fires normally.
   const flushSave = useAutoSave({
     doSave: () => {
       const currentIds = new Set(localConns.map((c) => c.id))
@@ -233,6 +252,12 @@ export default function EditModal({
           removeConnections.push({ id: syncedId, nodeId: syncedNodeId })
         }
       }
+      const hasConnectionChanges = addConnections.length > 0 || removeConnections.length > 0
+      const fieldsUnchanged =
+        sessionStartRef.current &&
+        deepEqual(sessionStartRef.current, livePersistedRef.current)
+      if (fieldsUnchanged && !hasConnectionChanges) return
+
       onUpdate(node.id, livePersistedRef.current, { addConnections, removeConnections })
       addConnections.forEach(({ id, nodeId }) => syncedConnsRef.current.set(id, nodeId))
       removeConnections.forEach(({ id }) => syncedConnsRef.current.delete(id))
