@@ -44,26 +44,21 @@ Version-level scope (V1, V2+, V3+, out) lives in [`docs/product/roadmap.md`](./d
 
 ## Current sprint candidate — next
 
-**Recommended:** *Paste-images warm-up → Templates plumbing*
+**Recommended:** *Image upload + cropper as the sprint's big thing*
 
 | Item | Band | Size |
 |---|---|---|
-| Paste images into cards | Quick Win | M |
-| Manage Card Templates | Foundational Progress | M |
-| Markdown export | Foundational Progress | S–M |
+| Image upload + cropper | Foundational Progress | L |
+| Markdown export *(if room remains)* | Foundational Progress | S–M |
 
-**Why this mix.** Paste images is a warm-up: small, well-bounded, builds
-directly on the existing image-storage infrastructure. Manage Card
-Templates is the sprint's "big thing" — it closes the localStorage-only
-custom-types divergence flagged in CLAUDE.md *and* unblocks Tailor Card
-Types → itself a prerequisite for V2's AI Card Creation. Markdown export
-is small but also a V2 prerequisite (data ownership lands before AI
-lock-in concerns surface).
+**Why this mix.** Image upload + cropper is L on its own — likely most
+of a sprint by itself. Markdown export is the small companion if there's
+room after the cropper lands; it's a V2 prerequisite (data ownership
+before AI lock-in concerns surface) and well-bounded. Manage Card
+Templates moves to the next sprint.
 
-**Alternative if user-visible value matters more this sprint.** Swap
-Manage Card Templates + Markdown export for **Typed Connections** (L) —
-ships meaningful canvas semantics (edge labels, relationship dropdowns)
-in one sprint without touching contenteditable.
+**Alternative — single-focus sprint.** Image upload + cropper alone.
+Reduces context-switching at the cost of small-item momentum.
 
 Final pick lands at sprint start.
 
@@ -81,18 +76,6 @@ Final pick lands at sprint start.
   interacts with React Flow layout. Doesn't change persistence shape.
 - **Size:** M
 
-### Paste images into cards
-- **Problem.** Users have to use the file picker for every image; pasting
-  from clipboard would be dramatically faster.
-- **Success.** Ctrl+V / Cmd+V in the EditModal media section uploads the
-  pasted image through the existing imageStorage flow. Same end state as a
-  file-picker upload.
-- **Notes.** Builds on existing image storage infrastructure. Auto-generated
-  filenames already handled by `imageStorage.uploadCardImage`. Edge cases
-  to nail down: non-image clipboard content, multiple images at once, paste
-  outside the modal.
-- **Size:** M
-
 ---
 
 ## Foundational Progress
@@ -100,6 +83,74 @@ Final pick lands at sprint start.
 > All items in this section target **V1** unless otherwise noted. Order
 > within the band reflects current sequencing intent, but is reviewed
 > sprint-by-sprint.
+
+### Image upload + cropper
+- **Problem.** Adding images today is a one-shot file-picker upload with
+  default centering — no clipboard paste, no way to control framing, and
+  the same flow is used for both card thumbnails and Image Section
+  content even though the two surfaces have different needs. Users want
+  to (a) paste images directly from the clipboard, (b) choose how the
+  image is cropped before it's saved, and (c) replace existing images
+  cleanly.
+- **Success.** A new **Upload Image** modal — opened from "Add image"
+  affordances and from the card thumbnail's cameraswitch icon —
+  supporting two modes:
+  - **Thumbnail mode:** fixed 5:4 frame (default rendered size 280×224).
+    User scales and repositions only.
+  - **Image Section mode:** free-form aspect ratio between 1:3 (tall) and
+    3:1 (wide). User shapes, scales, and repositions.
+
+  Both modes share the same modal frame, the same input methods (file
+  picker + clipboard paste), and the same lifecycle:
+  - Image is held in browser memory after upload/paste; nothing persists
+    until the user presses **Save**.
+  - **Cancel** discards everything cleanly — no Storage files written,
+    no database rows created.
+  - On Save, the cropped output is enforced to the **1920×1080 strict
+    box** (width ≤ 1920 *and* height ≤ 1080). 5:4 thumbnails cap at
+    1350×1080; portrait Image Section images cap at 810×1080. Original
+    full-resolution sources are not retained.
+
+  Surface integration:
+  - **Image-section tiles.** Clicking the image opens the lightbox
+    (today's behavior). The Upload Image modal is reached only via the
+    existing **+** button on the grid, in fresh-upload mode. To swap a
+    tile's image, the user removes it (existing **×** button) and
+    uploads a new one (**+** button) — no in-place replace.
+  - **Card thumbnail.** Click the image opens the lightbox. A new
+    **cameraswitch** icon (Material Symbols) replaces today's pencil
+    edit-button. Click cameraswitch → Upload Image modal opens with the
+    existing image already loaded; Save replaces (writes new path →
+    deletes old image's two variants), Cancel preserves the old image.
+  - **Replace asymmetry.** The card thumbnail supports single-click
+    replace via cameraswitch; image-section tiles do not. The
+    thumbnail's exception is justified by frequency — swapping a card's
+    avatar is a routine action, while replacing an image-section tile
+    is rare and the existing × → + flow is two single clicks anyway.
+  - V1 does **not support re-cropping** a previously-saved image
+    without supplying a new file. The cropper is reached only via
+    fresh upload (image-section tiles) or via cameraswitch (thumbnail).
+- **Notes.**
+  - **Deferred-save pattern is new for this app.** Today's image flow
+    uploads to Storage immediately on file pick. The new flow keeps the
+    file in browser memory and only writes to Storage on Save. This is a
+    meaningful behavior shift and gets its own ADR (architectural
+    decision note) in `docs/decisions/`.
+  - **Cropper is the largest single piece** of the work — drag-to-position,
+    scale, free-form aspect-ratio frame with 1:3 / 3:1 bounds,
+    cover-scaled on initial load. Real UI surface, not a small drop-in.
+  - **Scope intentionally rules out** drag-and-drop, web-address uploads,
+    multi-image batch upload (clipboards with multiple images take the
+    first silently), and re-cropping previously-saved images.
+  - **Mac users** see "Cmd+V" in the empty-state copy; everyone else
+    sees "Ctrl+V".
+  - **System CTA color** stays at sky-600 / `#0284C7`. The mockup's
+    darker navy was a placeholder.
+- **Dependencies.** None — purely additive. Re-uses the existing Storage
+  + signed-URL pipeline; the Canvas-based transcoding already does
+  long-edge resizing and metadata stripping (we adjust the cap formula
+  to enforce the strict-box rule).
+- **Size:** L
 
 ### Manage Card Templates
 - **Problem.** Custom card types live in `useTypeStore` (localStorage)
