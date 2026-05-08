@@ -1,10 +1,16 @@
 import { useEffect, useState, useCallback } from 'react'
 import ReactFlow, { Background, useNodesState, useEdgesState } from 'reactflow'
+import { getNodeCenter, getBorderIntersection } from './utils/edgeRouting'
+import FloatingEdge from './edges/FloatingEdge'
 import 'reactflow/dist/style.css'
 import CampaignNode from './nodes/CampaignNode'
 
 const nodeTypes = {
   campaignNode: CampaignNode,
+}
+
+const edgeTypes = {
+  floating: FloatingEdge,
 }
 
 const initialNodes = [
@@ -140,15 +146,15 @@ const initialNodes = [
 ]
 
 const initialEdges = [
-  { id: 'e1-2', source: '1', target: '2' },
-  { id: 'e1-3', source: '1', target: '3' },
-  { id: 'e1-5', source: '1', target: '5' },
-  { id: 'e1-4', source: '1', target: '4' },
-  { id: 'e2-5', source: '2', target: '5' },
-  { id: 'e3-7', source: '3', target: '7' },
-  { id: 'e4-2', source: '4', target: '2' },
-  { id: 'e6-1', source: '6', target: '1' },
-  { id: 'e8-1', source: '8', target: '1' },
+  { id: 'e1-2', source: '1', target: '2', type: 'floating' },
+  { id: 'e1-3', source: '1', target: '3', type: 'floating' },
+  { id: 'e1-5', source: '1', target: '5', type: 'floating' },
+  { id: 'e1-4', source: '1', target: '4', type: 'floating' },
+  { id: 'e2-5', source: '2', target: '5', type: 'floating' },
+  { id: 'e3-7', source: '3', target: '7', type: 'floating' },
+  { id: 'e4-2', source: '4', target: '2', type: 'floating' },
+  { id: 'e6-1', source: '6', target: '1', type: 'floating' },
+  { id: 'e8-1', source: '8', target: '1', type: 'floating' },
 ]
 
 export default function App() {
@@ -157,6 +163,24 @@ export default function App() {
   )
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
   const [isPanning, setIsPanning] = useState(false)
+
+  // Recompute floating edge border intersection points whenever nodes move
+  useEffect(() => {
+    setEdges((eds) =>
+      eds.map((edge) => {
+        const sourceNode = nodes.find((n) => n.id === edge.source)
+        const targetNode = nodes.find((n) => n.id === edge.target)
+        if (!sourceNode || !targetNode) return edge
+
+        const sourceCenter = getNodeCenter(sourceNode)
+        const targetCenter = getNodeCenter(targetNode)
+        const sourcePoint = getBorderIntersection(sourceNode, targetCenter)
+        const targetPoint = getBorderIntersection(targetNode, sourceCenter)
+
+        return { ...edge, type: 'floating', data: { ...edge.data, sourcePoint, targetPoint } }
+      })
+    )
+  }, [nodes, setEdges])
 
   const onSelectionChange = useCallback(({ nodes: selected }) => {
     const anySelected = selected.length > 0
@@ -238,6 +262,7 @@ export default function App() {
         onEdgeMouseEnter={onEdgeMouseEnter}
         onEdgeMouseLeave={onEdgeMouseLeave}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         panOnDrag={isPanning}
         panOnScroll={false}
         zoomOnScroll={true}
