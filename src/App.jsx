@@ -338,9 +338,15 @@ export default function App() {
   // to React state, persists to Supabase in parallel, and handles connection
   // add/remove by updating the DB edges in the background.
   //
-  // `addNodeIds`    - node IDs to connect TO this node.
-  // `removeNodeIds` - node IDs to disconnect FROM this node.
-  const onUpdateNode = useCallback((nodeId, updatedData, { addNodeIds = [], removeNodeIds = [] } = {}) => {
+  // Connection payloads carry the connection's id (assigned client-side in
+  // ConnectionsSection at picker click). EditModal owns the `recordAction`
+  // calls for connections — App.jsx just persists. This lets EditModal
+  // emit all undo entries for a session in chronological order at close,
+  // mixing field edits and connection clicks correctly.
+  //
+  // `addConnections`    - [{ id, nodeId }] connections to create.
+  // `removeConnections` - [{ id, nodeId }] connections to delete.
+  const onUpdateNode = useCallback((nodeId, updatedData, { addConnections = [], removeConnections = [] } = {}) => {
     // --- Optimistic React update -------------------------------------------
     setNodes((nds) =>
       nds.map((n) =>
@@ -379,38 +385,27 @@ export default function App() {
     }
 
     // --- Connection adds / removes -----------------------------------------
-    if (addNodeIds.length === 0 && removeNodeIds.length === 0) return
+    // EditModal owns the recordAction calls (chronological ordering across
+    // field edits and connection clicks). This block is purely persistence.
+    if (addConnections.length === 0 && removeConnections.length === 0) return
 
-    // Work from the CURRENT edges snapshot.
-    const edgesToRemove = edges.filter((e) => {
-      const other = e.source === nodeId ? e.target : e.source
-      return (e.source === nodeId || e.target === nodeId) && removeNodeIds.includes(other)
-    })
-    const existingOthers = new Set(
-      edges
-        .filter((e) => e.source === nodeId || e.target === nodeId)
-        .map((e) => (e.source === nodeId ? e.target : e.source))
-    )
-    const trulyNewTargets = addNodeIds.filter((tid) => !existingOthers.has(tid))
-
-    // Optimistic edge removal
-    if (edgesToRemove.length > 0) {
-      const removeIds = new Set(edgesToRemove.map((e) => e.id))
+    if (removeConnections.length > 0) {
+      const removeIds = new Set(removeConnections.map((c) => c.id))
       setEdges((eds) => eds.filter((e) => !removeIds.has(e.id)))
-      edgesToRemove.forEach((e) => {
-        dbDeleteConnection(e.id).catch(console.error)
+      removeConnections.forEach(({ id }) => {
+        dbDeleteConnection(id).catch(console.error)
       })
     }
 
-    // Persist + append new edges
-    trulyNewTargets.forEach((targetId) => {
+    addConnections.forEach(({ id, nodeId: targetId }) => {
       dbCreateConnection({
+        id,
         campaignId: activeCampaignId,
         sourceNodeId: nodeId,
         targetNodeId: targetId,
       })
         .then((edge) => {
-          setEdges((eds) => [...eds, edge])
+          setEdges((eds) => (eds.some((e) => e.id === edge.id) ? eds : [...eds, edge]))
         })
         .catch(console.error)
     })

@@ -14,10 +14,15 @@ import { useMorphAnimation } from '../hooks/useMorphAnimation'
 
 const MODAL_WIDTH = '41.25rem'
 
-// editCardField undo entries are emitted on modal close, one per field that
-// drifted from its session-start snapshot. The order here is the order the
-// entries are pushed onto the undo stack, so consecutive Ctrl+Z's revert in
-// this order. Field labels are user-facing (toast in phase 9).
+// Card fields that emit `editCardField` undo entries on modal close. Phase 7a
+// emits them in CHRONOLOGICAL order (sorted by per-field last-dirty timestamp,
+// interleaved with connection events from the same session) instead of the
+// fixed array order used in phases 4–6 — see the dirty-tracking refs below.
+//
+// Phase 7b will split storyNotes/hiddenLore/dmNotes/media into per-item
+// `addListItem`/`removeListItem`/`editListItem`/`reorderListItem` entries.
+// For now they stay collapsed at the field level; the chronological ordering
+// across fields and connections is what 7a fixes.
 const EDITABLE_FIELDS = [
   'label', 'type', 'summary',
   'storyNotes', 'hiddenLore', 'dmNotes',
@@ -77,11 +82,24 @@ export default function EditModal({
   const { activeCampaignId } = useCampaign()
 
   // ── Connection state ──────────────────────────────────────────────────────
+  // localConns shape: { id, nodeId, label, type, isNew }. `id` is the
+  // connection's UUID — the existing edge id for pre-existing connections,
+  // or a client-side-generated UUID for newly-added ones (assigned in
+  // ConnectionsSection at picker click). Carrying a stable id from click
+  // through to dbCreateConnection means EditModal can log addConnection
+  // events into the chronological action log immediately, without waiting
+  // for the persist round-trip.
   const [localConns, setLocalConns] = useState(
-    () => connectedNodes.map((c) => ({ ...c, isNew: false }))
+    () => connectedNodes.map((c) => ({
+      id: c.edgeId, nodeId: c.nodeId, label: c.label, type: c.type, isNew: false,
+    }))
   )
-  // Tracks nodeIds whose edges currently exist in the graph (updated after each sync)
-  const syncedNodeIds = useRef(new Set(connectedNodes.map((c) => c.nodeId)))
+  // Map of connectionId → nodeId for connections currently persisted in DB.
+  // doSave updates this after each successful add/remove; used to compute
+  // the addConnections / removeConnections payloads sent to onUpdate.
+  const syncedConnsRef = useRef(
+    new Map(connectedNodes.map((c) => [c.edgeId, c.nodeId])),
+  )
   const [showCreateTypeModal, setShowCreateTypeModal] = useState(false)
 
   // ── Morph animation (refs + entry/exit transitions) ─────────────────────
@@ -116,23 +134,108 @@ export default function EditModal({
 
   // Per-field session start snapshot (ADR-0006 §7). Captured ONCE on mount
   // from the same persisted-shape projection the close-time diff uses, so
-  // a no-op open/close doesn't generate spurious undo entries. handleClose
-  // diffs this against livePersistedRef.current and emits one editCardField
-  // per changed field.
+  // a no-op open/close doesn't generate spurious undo entries.
   const sessionStartRef = useRef(null)
   useEffect(() => {
     sessionStartRef.current = livePersistedRef.current
   }, [])  // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Chronological action log (phase 7a) ──────────────────────────────────
+  // Two trackers feed `handleClose`'s ordered emission of recordActions:
+  //
+  // 1. fieldDirtyAtRef — per-field { firstAt, lastAt } timestamps. We use
+  //    `lastAt` for emission ordering, so re-editing a field after touching
+  //    others moves it up the stack ("most recent edit on top"). Reverting
+  //    a field back to its session-start value drops the tracker so the
+  //    field is treated as clean.
+  //
+  // 2. connectionLogRef — every connection add/remove the user clicks during
+  //    the session, in click order, with timestamps. We log every click
+  //    rather than diffing at close so add-X then remove-X within a session
+  //    becomes two undo steps (the user did two things) instead of one
+  //    collapsed entry.
+  //
+  // At close we merge both into a chronological list and emit recordActions
+  // sorted by timestamp. Connection events that have a matching same-id
+  // opposite-kind event later in the log still both get emitted — each
+  // click is its own undo step (this is the trust-preserving choice;
+  // de-duping would lose intent).
+  const fieldDirtyAtRef = useRef({})       // field → { firstAt, lastAt }
+  const prevLiveRef     = useRef(null)
+  const connectionLogRef = useRef([])      // [{ kind, connectionId, nodeId, timestamp }]
+  const prevLocalConnsRef = useRef(localConns)
+
+  useEffect(() => {
+    const start = sessionStartRef.current
+    if (!start) {
+      prevLiveRef.current = livePersistedRef.current
+      return
+    }
+    const prev = prevLiveRef.current
+    const curr = livePersistedRef.current
+    const now = Date.now()
+
+    for (const field of EDITABLE_FIELDS) {
+      if (deepEqual(prev?.[field], curr[field])) continue
+      const dirtyNow = !deepEqual(start[field], curr[field])
+      if (dirtyNow) {
+        const existing = fieldDirtyAtRef.current[field]
+        fieldDirtyAtRef.current[field] = {
+          firstAt: existing?.firstAt ?? now,
+          lastAt: now,
+        }
+      } else {
+        // Reverted to session start — clear so the field doesn't emit.
+        delete fieldDirtyAtRef.current[field]
+      }
+    }
+    prevLiveRef.current = curr
+  })  // every render; cheap, just ref reads + deepEqual
+
+  useEffect(() => {
+    const prev = prevLocalConnsRef.current
+    const curr = localConns
+    const prevIds = new Set(prev.map((c) => c.id))
+    const currIds = new Set(curr.map((c) => c.id))
+    const ts = Date.now()
+
+    for (const c of curr) {
+      if (!prevIds.has(c.id)) {
+        connectionLogRef.current.push({
+          kind: 'addConnection', connectionId: c.id, nodeId: c.nodeId, timestamp: ts,
+        })
+      }
+    }
+    for (const c of prev) {
+      if (!currIds.has(c.id)) {
+        connectionLogRef.current.push({
+          kind: 'removeConnection', connectionId: c.id, nodeId: c.nodeId, timestamp: ts,
+        })
+      }
+    }
+    prevLocalConnsRef.current = curr
+  }, [localConns])
+
   // ── Auto-save ─────────────────────────────────────────────────────────────
+  // Payload shape for connections is { addConnections, removeConnections },
+  // each entry { id, nodeId }. The id is generated client-side at picker
+  // click and threads through to dbCreateConnection({ id, ... }) so the
+  // DB row, the React Flow edge, and the undo entry all agree.
   const flushSave = useAutoSave({
     doSave: () => {
-      const currentNodeIds = new Set(localConns.map((c) => c.nodeId))
-      const addNodeIds    = localConns.filter((c) => !syncedNodeIds.current.has(c.nodeId)).map((c) => c.nodeId)
-      const removeNodeIds = [...syncedNodeIds.current].filter((id) => !currentNodeIds.has(id))
-      onUpdate(node.id, livePersistedRef.current, { addNodeIds, removeNodeIds })
-      addNodeIds.forEach((id) => syncedNodeIds.current.add(id))
-      removeNodeIds.forEach((id) => syncedNodeIds.current.delete(id))
+      const currentIds = new Set(localConns.map((c) => c.id))
+      const addConnections    = localConns
+        .filter((c) => !syncedConnsRef.current.has(c.id))
+        .map((c) => ({ id: c.id, nodeId: c.nodeId }))
+      const removeConnections = []
+      for (const [syncedId, syncedNodeId] of syncedConnsRef.current) {
+        if (!currentIds.has(syncedId)) {
+          removeConnections.push({ id: syncedId, nodeId: syncedNodeId })
+        }
+      }
+      onUpdate(node.id, livePersistedRef.current, { addConnections, removeConnections })
+      addConnections.forEach(({ id, nodeId }) => syncedConnsRef.current.set(id, nodeId))
+      removeConnections.forEach(({ id }) => syncedConnsRef.current.delete(id))
     },
     deps: [title, type, summary, storyNotes, hiddenLore, dmNotes, media, thumbnail, localConns],
   })
@@ -140,23 +243,66 @@ export default function EditModal({
   const animateClose = useMorphAnimation({ modalRef, backdropRef, originRect, onClose })
   const handleClose = useCallback(() => {
     flushSave()
-    // Per-field diff vs session start. Each changed field becomes one
-    // editCardField undo entry; outside the modal, Ctrl+Z reverts them in
-    // this push order (most recently pushed first).
+
     const start = sessionStartRef.current
     if (start) {
       const current = livePersistedRef.current
+
+      // Build a unified chronological emission list: scalar field changes
+      // (sorted by last-dirty time) plus connection events from the click
+      // log. Sort by timestamp so the recordAction calls happen in user-
+      // action order — most recent ends up on top of the undo stack.
+      const emissions = []
+
       for (const field of EDITABLE_FIELDS) {
         if (!deepEqual(start[field], current[field])) {
+          const dirty = fieldDirtyAtRef.current[field]
+          emissions.push({
+            kind: 'editCardField',
+            field,
+            before: start[field],
+            after:  current[field],
+            timestamp: dirty?.lastAt ?? Date.now(),
+          })
+        }
+      }
+      for (const ev of connectionLogRef.current) {
+        emissions.push(ev)
+      }
+      emissions.sort((a, b) => a.timestamp - b.timestamp)
+
+      for (const e of emissions) {
+        const isoTs = new Date(e.timestamp).toISOString()
+        if (e.kind === 'editCardField') {
           useUndoStore.getState().recordAction({
             type: ACTION_TYPES.EDIT_CARD_FIELD,
             campaignId: activeCampaignId,
-            label: `Edit ${FIELD_LABELS[field]}`,
-            timestamp: new Date().toISOString(),
+            label: `Edit ${FIELD_LABELS[e.field]}`,
+            timestamp: isoTs,
             cardId: node.id,
-            field,
-            before: start[field],
-            after: current[field],
+            field:  e.field,
+            before: e.before,
+            after:  e.after,
+          })
+        } else if (e.kind === 'addConnection') {
+          useUndoStore.getState().recordAction({
+            type: ACTION_TYPES.ADD_CONNECTION,
+            campaignId: activeCampaignId,
+            label: 'Add connection',
+            timestamp: isoTs,
+            connectionId: e.connectionId,
+            sourceNodeId: node.id,
+            targetNodeId: e.nodeId,
+          })
+        } else if (e.kind === 'removeConnection') {
+          useUndoStore.getState().recordAction({
+            type: ACTION_TYPES.REMOVE_CONNECTION,
+            campaignId: activeCampaignId,
+            label: 'Remove connection',
+            timestamp: isoTs,
+            connectionId: e.connectionId,
+            sourceNodeId: node.id,
+            targetNodeId: e.nodeId,
           })
         }
       }
