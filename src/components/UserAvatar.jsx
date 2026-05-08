@@ -14,7 +14,7 @@
 // ============================================================================
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { SignOut } from '@phosphor-icons/react'
+import { SignOut, UserCircle } from '@phosphor-icons/react'
 import { useAuth } from '../lib/AuthContext.jsx'
 
 // Derive the placeholder initial from the user's email.
@@ -85,6 +85,18 @@ export default function UserAvatar({ menuAlign = 'right' }) {
             </div>
             <div className="text-xs text-gray-900 truncate">{user.email}</div>
           </div>
+
+          <button
+            role="menuitem"
+            onClick={() => {
+              close()
+              window.location.hash = '#profile'
+            }}
+            className="w-full text-left px-3 py-2 flex items-center gap-2 text-gray-700 hover:bg-gray-50"
+          >
+            <UserCircle size={14} weight="bold" />
+            View profile
+          </button>
 
           <button
             role="menuitem"

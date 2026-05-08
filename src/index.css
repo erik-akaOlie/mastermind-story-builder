@@ -11,6 +11,13 @@ html {
   font-size: 100%;
 }
 
+/* Hide Edge / IE's built-in password reveal eye on every password field —
+   we render our own toggle via <PasswordInput> for cross-browser parity. */
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear {
+  display: none;
+}
+
 /* Canvas background — dark theme exploration */
 .react-flow {
   background-color: #031a15;

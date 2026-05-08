@@ -52,6 +52,19 @@ export function AuthProvider({ children }) {
       useUndoStore.getState().clearAllForUser(session?.user?.id)
       return supabase.auth.signOut()
     },
+    // Verify current password (Supabase's updateUser doesn't require it),
+    // then update. Returns { error: Error | null } in Supabase's idiomatic
+    // shape so callers can branch cleanly. The verification step uses the
+    // same email already on the session — re-signing-in here just refreshes
+    // the same session, no token rotation visible to other listeners.
+    updatePassword: async (currentPassword, newPassword) => {
+      const email = session?.user?.email
+      if (!email) return { error: new Error('Not signed in') }
+      const verify = await supabase.auth.signInWithPassword({ email, password: currentPassword })
+      if (verify.error) return { error: new Error('Current password is incorrect') }
+      const { error } = await supabase.auth.updateUser({ password: newPassword })
+      return { error }
+    },
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

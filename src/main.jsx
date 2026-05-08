@@ -12,6 +12,7 @@ import UserMenu from './components/UserMenu.jsx'
 import LockOverlay from './components/LockOverlay.jsx'
 import FeedbackChipBar from './components/FeedbackChipBar.jsx'
 import MigrateImages from './components/MigrateImages.jsx'
+import Profile from './components/Profile.jsx'
 
 // Tiny hash-based router. We don't need React Router for one ad-hoc page;
 // the `#migrate` route is temporary and gets removed once Phase 5 lands.
@@ -48,6 +49,7 @@ function Root() {
   if (loading) return null
   if (!session) return <Login />
   if (hash === '#migrate') return <MigrateImages />
+  if (hash === '#profile') return <Profile />
   if (!activeCampaignId) return <CampaignPicker />
 
   return (
