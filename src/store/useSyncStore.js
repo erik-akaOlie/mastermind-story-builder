@@ -41,6 +41,20 @@ export const useSyncStore = create((set) => ({
     })),
 
   setOffline: (offline) => set({ isOffline: offline }),
+
+  // Sets lastSavedAt from any truthful source (campaign load, Realtime event
+  // from another tab, etc.) without touching inFlight or failure state.
+  // Pass null to clear (used on campaign switch — every campaign owns its
+  // own edit history and we don't want the chip leaking across switches).
+  // Pass a Date to overwrite. Out-of-order older Realtime events overwriting
+  // a newer value isn't a real concern because Realtime callers pass
+  // new Date(), which is monotonic relative to their own arrival.
+  setLastSavedAt: (date) =>
+    set(() => {
+      if (date === null) return { lastSavedAt: null }
+      if (!(date instanceof Date) || Number.isNaN(date.getTime())) return {}
+      return { lastSavedAt: date }
+    }),
 }))
 
 // Lock is a derivation, not raw state — computed from isOffline + failure count.

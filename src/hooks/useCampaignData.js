@@ -26,7 +26,8 @@
 
 import { useEffect, useState } from 'react'
 import { useTypeStore } from '../store/useTypeStore'
-import { ensureBuiltinTypes } from '../lib/campaigns.js'
+import { useSyncStore } from '../store/useSyncStore.js'
+import { ensureBuiltinTypes, getCampaignLastEditedAt } from '../lib/campaigns.js'
 import { loadNodes, dbNodeToReactFlow } from '../lib/nodes.js'
 import { loadConnections } from '../lib/connections.js'
 import { loadTextNodes, dbTextNodeToReactFlow } from '../lib/textNodes.js'
@@ -60,16 +61,18 @@ export function useCampaignData({ campaignId, setNodes, setEdges }) {
           keyById[t.id] = { key: t.key, color: t.color, label: t.label, iconName: t.icon_name }
         }
 
-        const [campaignNodes, campaignConnections, campaignTextNodes] = await Promise.all([
+        const [campaignNodes, campaignConnections, campaignTextNodes, lastEditedAt] = await Promise.all([
           loadNodes(campaignId, keyById),
           loadConnections(campaignId),
           loadTextNodes(campaignId),
+          getCampaignLastEditedAt(campaignId),
         ])
 
         if (cancelled) return
 
         setNodes([...campaignNodes, ...campaignTextNodes])
         setEdges(campaignConnections)
+        if (lastEditedAt) useSyncStore.getState().setLastSavedAt(lastEditedAt)
 
         channel = subscribeRealtime({ campaignId, keyById, setNodes, setEdges })
       } catch (err) {
@@ -83,6 +86,10 @@ export function useCampaignData({ campaignId, setNodes, setEdges }) {
     return () => {
       cancelled = true
       if (channel) supabase.removeChannel(channel)
+      // Each campaign owns its own edit history. Clear lastSavedAt on
+      // campaign switch / unmount so the chip never carries a previous
+      // campaign's timestamp into a new view.
+      useSyncStore.getState().setLastSavedAt(null)
     }
   }, [campaignId, setNodes, setEdges])
 
@@ -94,15 +101,21 @@ export function useCampaignData({ campaignId, setNodes, setEdges }) {
 // ----------------------------------------------------------------------------
 // One channel per campaign with four postgres_changes listeners. Each handler
 // translates a DB event back into the React/React Flow shape used on the canvas.
+// Every incoming event also bumps the sync store's lastSavedAt so the "Edited
+// Nm ago" chip reflects activity from other tabs / sessions in real time.
+// (Self-writes also bump via writeSucceeded; setLastSavedAt only rolls
+// forward, so the double-bump is harmless.)
 // ============================================================================
 function subscribeRealtime({ campaignId, keyById, setNodes, setEdges }) {
   const channel = supabase.channel(`campaign:${campaignId}`)
+  const bumpLastSaved = () => useSyncStore.getState().setLastSavedAt(new Date())
 
   // --- nodes -----------------------------------------------------------------
   channel.on(
     'postgres_changes',
     { event: '*', schema: 'public', table: 'nodes', filter: `campaign_id=eq.${campaignId}` },
     (payload) => {
+      bumpLastSaved()
       const { eventType, new: row, old } = payload
       if (eventType === 'INSERT') {
         setNodes((nds) => {
@@ -146,6 +159,7 @@ function subscribeRealtime({ campaignId, keyById, setNodes, setEdges }) {
       const kind   = targetRow?.kind
       const field  = KIND_TO_FIELD[kind]
       if (!nodeId || !field) return
+      bumpLastSaved()
 
       setNodes((nds) => {
         const idx = nds.findIndex((n) => n.id === nodeId)
@@ -164,6 +178,7 @@ function subscribeRealtime({ campaignId, keyById, setNodes, setEdges }) {
     'postgres_changes',
     { event: '*', schema: 'public', table: 'connections', filter: `campaign_id=eq.${campaignId}` },
     (payload) => {
+      bumpLastSaved()
       const { eventType, new: row, old } = payload
       if (eventType === 'INSERT') {
         setEdges((eds) => {
@@ -194,6 +209,7 @@ function subscribeRealtime({ campaignId, keyById, setNodes, setEdges }) {
     'postgres_changes',
     { event: '*', schema: 'public', table: 'text_nodes', filter: `campaign_id=eq.${campaignId}` },
     (payload) => {
+      bumpLastSaved()
       const { eventType, new: row, old } = payload
       if (eventType === 'INSERT') {
         setNodes((nds) => {
