@@ -339,11 +339,18 @@ export default function CampaignNode({ data, selected }) {
               src={avatarUrl}
               alt={data.label || ''}
               className="w-full h-full object-cover cursor-zoom-in"
+              // pointerdown is stopped because React Flow registers node selection
+              // on its pointerdown listener (which fires BEFORE onClick / onMouseDown).
+              // Without this, opening the lightbox via the avatar would silently
+              // select the card, leaving it highlighted after the lightbox closes.
+              // Mousedown + click are also stopped for legacy event paths and to
+              // keep the avatar from triggering canvas-level pan/select.
+              onPointerDown={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
               onClick={(e) => {
                 e.stopPropagation()
                 lightbox.open(data.avatar)
               }}
-              onMouseDown={(e) => e.stopPropagation()}
               draggable={false}
             />
           ) : (

@@ -1,0 +1,26 @@
+<!--
+  MasterMind OS favicon — abstract knowledge-graph hub.
+
+  Inspired by Material's "hub" icon: a central node with five satellite
+  nodes connected by spokes. Tuned to read at 16×16 by using bolder strokes
+  and larger node radii than the strict Material proportions.
+
+  Color: #0284c7 (Tailwind sky-600), matching the app's system CTA color.
+  Single-color so it stays recognizable against either a light or dark
+  browser-tab background.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="#0284c7">
+  <g stroke="#0284c7" stroke-width="20" stroke-linecap="round" fill="none">
+    <line x1="128" y1="128" x2="128" y2="48"/>
+    <line x1="128" y1="128" x2="204" y2="104"/>
+    <line x1="128" y1="128" x2="175" y2="200"/>
+    <line x1="128" y1="128" x2="81"  y2="200"/>
+    <line x1="128" y1="128" x2="52"  y2="104"/>
+  </g>
+  <circle cx="128" cy="128" r="32"/>
+  <circle cx="128" cy="48"  r="22"/>
+  <circle cx="204" cy="104" r="22"/>
+  <circle cx="175" cy="200" r="22"/>
+  <circle cx="81"  cy="200" r="22"/>
+  <circle cx="52"  cy="104" r="22"/>
+</svg>
