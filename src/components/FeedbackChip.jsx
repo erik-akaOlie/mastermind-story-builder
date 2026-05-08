@@ -1,41 +1,37 @@
 // ============================================================================
 // FeedbackChip
 // ----------------------------------------------------------------------------
-// Pill-shaped notification body that visually mirrors the SyncIndicator chip,
-// so the bottom-left corner reads as one cohesive feedback system: the
-// SyncIndicator reports ambient save status, and toast-rendered chips report
-// transient events (undid/redid/save-failed). Same shape, same materials,
-// just different text colors per variant.
+// Pill-shaped toast body. Pairs with the SyncIndicator chip in the bottom-
+// left feedback bar but is visually distinct: where the SyncIndicator is
+// light/frosted (ambient "edited Nm ago" status), the toast is dark with
+// white text — a transient action event (undid / redid / couldn't save).
+// The contrast separates "what just happened" from "where things stand."
+//
+// Optional `icon` (a Phosphor component reference, e.g. ArrowUUpLeft)
+// renders before the text. Used to replace the verbose "Undid:" / "Redid:"
+// prefix in success toasts with a glyph; warn / error toasts pass no icon
+// and lead with their text directly.
+//
+// `variant` is retained as a prop for future variant-specific accents
+// (e.g. tinting the icon amber for conflict toasts) but currently all
+// variants share the dark+white treatment.
 //
 // Used by:
-//   - src/lib/undoToasts.jsx — undo / redo / conflict notifications
-//   - src/lib/errorReporting.js — persist-write final-failure notification
-//
-// Pair with SyncIndicator's class string (currently lives in
-// src/components/SyncIndicator.jsx). If the chip aesthetic ever shifts, both
-// places should change together.
+//   - src/lib/feedbackToasts.jsx — undo / redo / conflict / save-fail
+//   - rendered inside src/components/ChipToast.jsx (which owns animation)
 // ============================================================================
 
-const VARIANT_TEXT_COLORS = {
-  // Subtle gray — same family as SyncIndicator's text-gray-500 but slightly
-  // darker to signal "an event just happened" vs "ongoing status."
-  info:  'text-gray-700',
-  // Amber — drift / conflict warning (something didn't apply because the
-  // world changed). Visible without screaming.
-  warn:  'text-amber-700',
-  // Red — outright failure (e.g. persist write that didn't recover after
-  // retries). Strongest urgency in the family.
-  error: 'text-red-600',
-}
-
-export default function FeedbackChip({ variant = 'info', children }) {
-  const textColor = VARIANT_TEXT_COLORS[variant] ?? VARIANT_TEXT_COLORS.info
+export default function FeedbackChip({ variant = 'info', icon: Icon, children }) {
+  // Reserved for future per-variant accents. Kept here (not stripped) so
+  // adding a tint later is a one-line change that doesn't break callers.
+  void variant
   return (
     <div
-      className={`px-3 py-1.5 bg-white/90 backdrop-blur rounded-full shadow-sm border border-gray-200 text-xs ${textColor} select-none whitespace-nowrap`}
+      className="px-3 py-1.5 bg-gray-900/95 backdrop-blur rounded-full shadow-md text-xs text-white select-none whitespace-nowrap inline-flex items-center gap-1.5"
       role="status"
     >
-      {children}
+      {Icon && <Icon size={14} weight="bold" className="shrink-0" />}
+      <span>{children}</span>
     </div>
   )
 }

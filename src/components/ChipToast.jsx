@@ -93,7 +93,7 @@ export default function ChipToast({ toast, stackIndex }) {
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
-      <FeedbackChip variant={toast.variant}>{toast.content}</FeedbackChip>
+      <FeedbackChip variant={toast.variant} icon={toast.icon}>{toast.content}</FeedbackChip>
     </div>
   )
 }
