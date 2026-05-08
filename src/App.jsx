@@ -279,7 +279,14 @@ export default function App() {
         },
       })
 
-      setEditingNode({ node: newNode, connectedNodes: [], allOtherNodes: nodes, originRect: null })
+      // Connections only apply to cards (campaignNode); filter out text nodes
+      // so they don't surface as "Untitled" entries in the connections picker.
+      setEditingNode({
+        node: newNode,
+        connectedNodes: [],
+        allOtherNodes: nodes.filter((n) => n.type === 'campaignNode'),
+        originRect: null,
+      })
     } catch (err) {
       console.error('Failed to create card:', err)
     }
@@ -350,7 +357,11 @@ export default function App() {
         }
       })
       .filter(Boolean)
-    const allOtherNodes = nodes.filter((n) => n.id !== nodeId)
+    // Connections only apply to cards (campaignNode); text nodes are excluded
+    // so they don't surface as "Untitled" entries in the connections picker.
+    const allOtherNodes = nodes.filter(
+      (n) => n.id !== nodeId && n.type === 'campaignNode'
+    )
     const originRect    = getNodeOriginRect(nodeId)
     return { node, connectedNodes, allOtherNodes, originRect }
   }, [nodes, edges])
