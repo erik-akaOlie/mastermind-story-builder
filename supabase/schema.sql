@@ -64,12 +64,14 @@ create policy "Owner can delete their campaigns"
 
 -- ============================================================================
 -- TABLE: node_types
--- The card types in a campaign. Built-in types seeded at campaign creation.
--- Users can add custom types (is_system = false).
+-- Card types belong to a USER (not a campaign), so a user's "Character" type
+-- is the same thing across every campaign they own. Built-in types are seeded
+-- on first sign-in (see lib/campaigns.js#ensureBuiltinTypes). Users can add
+-- custom types (is_system = false). Custom types are never shared across users.
 -- ============================================================================
 create table public.node_types (
   id          uuid        primary key default gen_random_uuid(),
-  campaign_id uuid        not null references public.campaigns(id) on delete cascade,
+  owner_id    uuid        not null references auth.users(id) on delete cascade,
   key         text        not null,
   label       text        not null,
   color       text        not null,
@@ -77,40 +79,28 @@ create table public.node_types (
   is_system   boolean     not null default false,
   sort_order  integer     not null default 0,
   created_at  timestamptz not null default now(),
-  unique (campaign_id, key)
+  unique (owner_id, key)
 );
 
-create index node_types_campaign_id_idx on public.node_types(campaign_id);
+create index node_types_owner_id_idx on public.node_types(owner_id);
 
 alter table public.node_types enable row level security;
 
-create policy "Owner can read types in their campaigns"
+create policy "Owner can read their types"
   on public.node_types for select
-  using (exists (
-    select 1 from public.campaigns c
-    where c.id = node_types.campaign_id and c.owner_id = auth.uid()
-  ));
+  using (owner_id = auth.uid());
 
-create policy "Owner can insert types in their campaigns"
+create policy "Owner can insert their types"
   on public.node_types for insert
-  with check (exists (
-    select 1 from public.campaigns c
-    where c.id = node_types.campaign_id and c.owner_id = auth.uid()
-  ));
+  with check (owner_id = auth.uid());
 
-create policy "Owner can update types in their campaigns"
+create policy "Owner can update their types"
   on public.node_types for update
-  using (exists (
-    select 1 from public.campaigns c
-    where c.id = node_types.campaign_id and c.owner_id = auth.uid()
-  ));
+  using (owner_id = auth.uid());
 
-create policy "Owner can delete types in their campaigns"
+create policy "Owner can delete their types"
   on public.node_types for delete
-  using (exists (
-    select 1 from public.campaigns c
-    where c.id = node_types.campaign_id and c.owner_id = auth.uid()
-  ));
+  using (owner_id = auth.uid());
 
 
 -- ============================================================================
