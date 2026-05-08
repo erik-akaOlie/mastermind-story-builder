@@ -10,14 +10,12 @@ export default function FloatingEdge({ data, style, selected }) {
     targetY: data.targetPoint.y,
   })
 
+  const stroke = style?.stroke || '#94a3b8'
+
   return (
     <BaseEdge
       path={path}
-      style={{
-        stroke: '#94a3b8',
-        strokeWidth: selected ? 2 : 1.5,
-        ...style,
-      }}
+      style={{ stroke, strokeWidth: selected ? 2 : 1.5, ...style }}
     />
   )
 }
