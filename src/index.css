@@ -1,0 +1,16 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Override React Flow's default hand cursor on the canvas pane */
+.react-flow__pane {
+  cursor: default !important;
+}
+
+.is-panning .react-flow__pane {
+  cursor: grab !important;
+}
+
+.is-panning .react-flow__pane:active {
+  cursor: grabbing !important;
+}

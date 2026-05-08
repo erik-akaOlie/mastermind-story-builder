@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:medium.com)",
+      "WebFetch(domain:www.nngroup.com)",
+      "WebFetch(domain:m3.material.io)",
+      "WebFetch(domain:uxdesign.cc)",
+      "WebFetch(domain:www.eleken.co)",
+      "WebFetch(domain:community.atlassian.com)",
+      "WebFetch(domain:m1.material.io)",
+      "Bash(npm --version)"
+    ]
+  }
+}
