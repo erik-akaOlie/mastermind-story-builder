@@ -44,21 +44,21 @@ Version-level scope (V1, V2+, V3+, out) lives in [`docs/product/roadmap.md`](./d
 
 ## Current sprint candidate — next
 
-**Recommended:** *Templates plumbing + leftover Quick Wins*
+**Recommended:** *Paste-images warm-up → Templates plumbing*
 
 | Item | Band | Size |
 |---|---|---|
+| Paste images into cards | Quick Win | M |
 | Manage Card Templates | Foundational Progress | M |
 | Markdown export | Foundational Progress | S–M |
-| Branding (favicon + tab) | Quick Win | S |
-| Relative edit timestamps | Quick Win | S |
 
-**Why this mix.** Manage Card Templates is the cleanest "big thing" of the
-batch: it closes the localStorage-only custom-types divergence flagged in
-CLAUDE.md *and* unblocks Tailor Card Types → which is itself a prerequisite
-for V2's AI Card Creation. Markdown export is small but also a V2
-prerequisite (data ownership lands before AI lock-in concerns surface).
-Branding and relative edit timestamps are leftover from the prior sprint.
+**Why this mix.** Paste images is a warm-up: small, well-bounded, builds
+directly on the existing image-storage infrastructure. Manage Card
+Templates is the sprint's "big thing" — it closes the localStorage-only
+custom-types divergence flagged in CLAUDE.md *and* unblocks Tailor Card
+Types → itself a prerequisite for V2's AI Card Creation. Markdown export
+is small but also a V2 prerequisite (data ownership lands before AI
+lock-in concerns surface).
 
 **Alternative if user-visible value matters more this sprint.** Swap
 Manage Card Templates + Markdown export for **Typed Connections** (L) —
@@ -70,27 +70,6 @@ Final pick lands at sprint start.
 ---
 
 ## Quick Win
-
-### Branding update — favicon + tab title
-- **Problem.** Default Vite favicon and "Vite + React" tab title don't
-  reflect the product.
-- **Success.** Favicon and tab title reflect the "Webmaster" branding
-  direction.
-- **Notes.** Bounded by needing the actual favicon asset + final brand name
-  confirmed.
-- **Size:** S
-
-### Relative edit timestamps
-- **Problem.** The "last edited" indicator only reflects edits in the
-  current session, so opening a campaign tomorrow shows nothing about
-  whether it's been touched recently.
-- **Success.** Indicator shows: "Edited just now" → "1 minute ago" → "N
-  minutes ago" → "N hours ago" → switches to absolute date once past
-  midnight. Persists across sessions.
-- **Notes.** Cheapest path: derive from `max(updated_at)` across the
-  campaign's tables — no schema change. If we want per-campaign edit
-  tracking decoupled from individual rows, add `campaigns.last_edited_at`.
-- **Size:** S
 
 ### Dynamic card width
 - **Problem.** Long words and long titles in card headers either overflow
@@ -252,6 +231,30 @@ Final pick lands at sprint start.
   if the type doesn't exist in the target campaign, do we create it?
   Image references: re-upload or copy by reference?
 - **Size:** M
+
+### Profile V2 — username + profile image
+- **Problem.** The Profile page that shipped only covers email
+  (read-only) and password change. As soon as the product reaches users
+  beyond the V1 user, those users will want to (a) be addressed as
+  something other than the first letter of their email and (b) put a
+  face to their account. The breadcrumb and avatar both fall back to
+  email-derived initials today.
+- **Success.** Two new sections on the Profile page:
+  - **Username** field with uniqueness constraint, max length, allowed
+    characters. Persisted via a new `profiles` table with a Supabase
+    Auth trigger that auto-creates the row on signup. Breadcrumb +
+    UserAvatar render the username when set.
+  - **Profile image** upload (one image per user, replaces if present).
+    Reuses the existing image-storage pipeline with a new path scheme
+    (e.g., `users/{userId}/avatar.full.webp`). Renders in `UserAvatar`
+    when set, falls back to initial otherwise.
+- **Notes.** The Profile page shell is already in place
+  (`Profile.jsx` + `#profile` route) so the runway is short. Each piece
+  is M individually; together L. Worth splitting if a partial ship
+  would be valuable — username alone delivers most of the
+  user-identity benefit.
+- **Dependencies.** None.
+- **Size:** L (or two Ms if split)
 
 ---
 
