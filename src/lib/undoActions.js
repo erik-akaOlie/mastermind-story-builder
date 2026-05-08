@@ -16,18 +16,18 @@
 // lib/*.js API so persistWrite + the Realtime channel + sync chip behave
 // like a normal edit.
 //
-// Phase 3 (this commit): moveCard is wired end-to-end. The other nine cases
-// are still skeleton — canApply* permissively return { ok: true }; apply*
-// throw notWired. Subsequent phases (per ADR-0006 §10) replace each case
-// body in place:
+// Phase 4 (this commit): editCardField joins moveCard as fully wired. The
+// remaining cases are still skeleton — canApply* permissively return
+// { ok: true }; apply* throw notWired. Subsequent phases (per ADR-0006 §10)
+// replace each case body in place:
 //
-//   phase 4 → editCardField
 //   phase 5 → createCard, deleteCard
 //   phase 7 → addConnection, removeConnection
 //   phase 8 → createTextNode, editTextNode, moveTextNode, deleteTextNode
 // ============================================================================
 
-import { updateNode } from './nodes.js'
+import { updateNode, updateNodeSections } from './nodes.js'
+import { useTypeStore } from '../store/useTypeStore.js'
 
 export const ACTION_TYPES = Object.freeze({
   CREATE_CARD:        'createCard',
@@ -87,8 +87,9 @@ export function canApplyInverse(entry, currentState = {}) {
         ? { ok: true }
         : { ok: false, reason: 'One or more cards no longer exist' }
     }
-    case ACTION_TYPES.CREATE_CARD:
     case ACTION_TYPES.EDIT_CARD_FIELD:
+      return checkEditCardField(entry, currentState, 'after')
+    case ACTION_TYPES.CREATE_CARD:
     case ACTION_TYPES.DELETE_CARD:
     case ACTION_TYPES.ADD_CONNECTION:
     case ACTION_TYPES.REMOVE_CONNECTION:
@@ -124,8 +125,9 @@ export function canApplyForward(entry, currentState = {}) {
         ? { ok: true }
         : { ok: false, reason: 'One or more cards no longer exist' }
     }
-    case ACTION_TYPES.CREATE_CARD:
     case ACTION_TYPES.EDIT_CARD_FIELD:
+      return checkEditCardField(entry, currentState, 'before')
+    case ACTION_TYPES.CREATE_CARD:
     case ACTION_TYPES.DELETE_CARD:
     case ACTION_TYPES.ADD_CONNECTION:
     case ACTION_TYPES.REMOVE_CONNECTION:
@@ -161,8 +163,8 @@ export async function applyInverse(entry, context = {}) {
   }
   switch (entry.type) {
     case ACTION_TYPES.MOVE_CARD:          return moveCardInverse(entry, context)
+    case ACTION_TYPES.EDIT_CARD_FIELD:    return editCardFieldSide(entry, context, 'before')
     case ACTION_TYPES.CREATE_CARD:        return notWired(entry, 'applyInverse')
-    case ACTION_TYPES.EDIT_CARD_FIELD:    return notWired(entry, 'applyInverse')
     case ACTION_TYPES.DELETE_CARD:        return notWired(entry, 'applyInverse')
     case ACTION_TYPES.ADD_CONNECTION:     return notWired(entry, 'applyInverse')
     case ACTION_TYPES.REMOVE_CONNECTION:  return notWired(entry, 'applyInverse')
@@ -187,8 +189,8 @@ export async function applyForward(entry, context = {}) {
   }
   switch (entry.type) {
     case ACTION_TYPES.MOVE_CARD:          return moveCardForward(entry, context)
+    case ACTION_TYPES.EDIT_CARD_FIELD:    return editCardFieldSide(entry, context, 'after')
     case ACTION_TYPES.CREATE_CARD:        return notWired(entry, 'applyForward')
-    case ACTION_TYPES.EDIT_CARD_FIELD:    return notWired(entry, 'applyForward')
     case ACTION_TYPES.DELETE_CARD:        return notWired(entry, 'applyForward')
     case ACTION_TYPES.ADD_CONNECTION:     return notWired(entry, 'applyForward')
     case ACTION_TYPES.REMOVE_CONNECTION:  return notWired(entry, 'applyForward')
@@ -249,4 +251,107 @@ async function applyMoveCardSide(entry, { setNodes } = {}, side /* 'before' | 'a
       updateNode(c.cardId, { positionX: c[side].x, positionY: c[side].y }),
     ),
   )
+}
+
+// editCardField — one entry per changed field per modal session (see ADR-0006
+// §7). Two field families:
+//
+//   NODE_FIELDS:    label, summary, avatar, type → updateNode
+//   SECTION_FIELDS: storyNotes, hiddenLore, dmNotes, media → updateNodeSections
+//
+// updateNodeSections rewrites all four sections in one call, so the dispatcher
+// merges current local state for the three unchanged sections with the
+// recorded value for the changed one. canApply* compare against the live
+// node's React-shape data using deep equality.
+
+const NODE_FIELDS    = new Set(['label', 'summary', 'avatar', 'type'])
+const SECTION_FIELDS = new Set(['storyNotes', 'hiddenLore', 'dmNotes', 'media'])
+
+function checkEditCardField(entry, { nodes = [] } = {}, side /* 'before' | 'after' */) {
+  const { cardId, field } = entry
+  if (!cardId || !field) {
+    return { ok: false, reason: 'Malformed editCardField entry' }
+  }
+  if (!NODE_FIELDS.has(field) && !SECTION_FIELDS.has(field)) {
+    return { ok: false, reason: `Unsupported field: ${field}` }
+  }
+  const target = nodes.find((n) => n.id === cardId)
+  if (!target) return { ok: false, reason: 'Card no longer exists' }
+  const currentValue = target.data?.[field]
+  return deepEqual(currentValue, entry[side])
+    ? { ok: true }
+    : { ok: false, reason: `${field} changed elsewhere` }
+}
+
+async function editCardFieldSide(entry, { nodes = [], setNodes } = {}, side /* 'before' | 'after' */) {
+  const { cardId, field } = entry
+  const value = entry[side]
+
+  if (!NODE_FIELDS.has(field) && !SECTION_FIELDS.has(field)) {
+    throw new Error(`[undoActions] editCardField: unsupported field "${field}"`)
+  }
+
+  // Optimistic local update — same shape as App.jsx's onUpdateNode does for a
+  // normal edit. Realtime would echo this back anyway; the optimistic write
+  // makes the canvas snap immediately rather than wait for the round-trip.
+  if (typeof setNodes === 'function') {
+    setNodes((nds) =>
+      nds.map((n) =>
+        n.id === cardId ? { ...n, data: { ...n.data, [field]: value } } : n,
+      ),
+    )
+  }
+
+  if (NODE_FIELDS.has(field)) {
+    if (field === 'type') {
+      const typeId = useTypeStore.getState().idByKey?.[value]
+      if (!typeId) {
+        throw new Error(`[undoActions] editCardField: no typeId for type key "${value}"`)
+      }
+      await updateNode(cardId, { typeId })
+    } else if (field === 'avatar') {
+      await updateNode(cardId, { avatarUrl: value })
+    } else {
+      await updateNode(cardId, { [field]: value })
+    }
+    return
+  }
+
+  // SECTION_FIELDS — updateNodeSections replaces all four, so merge current
+  // state for the unchanged three with the recorded value for the changed one.
+  const target = nodes.find((n) => n.id === cardId)
+  const data = target?.data || {}
+  await updateNodeSections(cardId, {
+    storyNotes: data.storyNotes || [],
+    hiddenLore: data.hiddenLore || [],
+    dmNotes:    data.dmNotes    || [],
+    media:      data.media      || [],
+    [field]:    value,
+  })
+}
+
+// Small structural deep-equal good enough for the React-shape values we
+// snapshot: strings, nulls, arrays of strings, arrays of plain objects
+// (e.g. media entries `{ path, alt, uploaded_at }`). Avoids JSON.stringify's
+// key-order fragility on plain objects coming back from Supabase vs from
+// upload helpers.
+export function deepEqual(a, b) {
+  if (a === b) return true
+  if (a === null || b === null) return false
+  if (typeof a !== 'object' || typeof b !== 'object') return false
+  if (Array.isArray(a) !== Array.isArray(b)) return false
+  if (Array.isArray(a)) {
+    if (a.length !== b.length) return false
+    for (let i = 0; i < a.length; i++) {
+      if (!deepEqual(a[i], b[i])) return false
+    }
+    return true
+  }
+  const aKeys = Object.keys(a)
+  const bKeys = Object.keys(b)
+  if (aKeys.length !== bKeys.length) return false
+  for (const k of aKeys) {
+    if (!deepEqual(a[k], b[k])) return false
+  }
+  return true
 }

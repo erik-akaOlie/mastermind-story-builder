@@ -39,6 +39,14 @@ vi.mock('sonner', () => ({
   toast: { error: vi.fn(), success: vi.fn() },
 }))
 
+// Phase-4 hook into the undo store so we can assert recordAction is NOT
+// called during typing (auto-save handles persistence; undo entries are
+// emitted only on modal close) and IS called once per changed field on close.
+const recordActionMock = vi.fn()
+vi.mock('../store/useUndoStore', () => ({
+  useUndoStore: { getState: () => ({ recordAction: recordActionMock }) },
+}))
+
 // ── Test fixtures ────────────────────────────────────────────────────────────
 
 const sampleNode = {
@@ -260,6 +268,104 @@ describe('EditModal — close behavior', () => {
     // onClose fires after the close animation delay.
     act(() => { vi.advanceTimersByTime(260) })
     expect(props.onClose).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('EditModal — undo entries (phase 4)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    recordActionMock.mockClear()
+  })
+  afterEach(() => { vi.useRealTimers() })
+
+  it('does NOT recordAction while the user is typing (auto-save handles persistence; undo entries are session-bounded)', () => {
+    renderModal()
+    flushSave()
+
+    // Several keystrokes + debounce flushes — no recordAction should fire.
+    const titleInput = screen.getByDisplayValue('Strahd von Zarovich')
+    fireEvent.change(titleInput, { target: { value: 'Strahd v2' } })
+    flushSave()
+    fireEvent.change(titleInput, { target: { value: 'Strahd v3' } })
+    flushSave()
+    fireEvent.change(titleInput, { target: { value: 'Strahd v4' } })
+    flushSave()
+
+    expect(recordActionMock).not.toHaveBeenCalled()
+  })
+
+  it('emits exactly one editCardField action per changed field on modal close', () => {
+    renderModal()
+    flushSave()
+    recordActionMock.mockClear()
+
+    // Edit BOTH title and summary, then close.
+    fireEvent.change(screen.getByDisplayValue('Strahd von Zarovich'), {
+      target: { value: 'Strahd the Damned' },
+    })
+    fireEvent.change(screen.getByDisplayValue('Vampire lord of Barovia'), {
+      target: { value: 'Lord of Castle Ravenloft' },
+    })
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+
+    // Two entries — one per field that drifted from snapshot.
+    expect(recordActionMock).toHaveBeenCalledTimes(2)
+
+    const calls = recordActionMock.mock.calls.map((c) => c[0])
+    const fields = calls.map((e) => e.field).sort()
+    expect(fields).toEqual(['label', 'summary'])
+
+    const labelEntry = calls.find((e) => e.field === 'label')
+    expect(labelEntry).toMatchObject({
+      type: 'editCardField',
+      cardId: 'node-strahd',
+      before: 'Strahd von Zarovich',
+      after:  'Strahd the Damned',
+    })
+
+    const summaryEntry = calls.find((e) => e.field === 'summary')
+    expect(summaryEntry).toMatchObject({
+      type: 'editCardField',
+      cardId: 'node-strahd',
+      before: 'Vampire lord of Barovia',
+      after:  'Lord of Castle Ravenloft',
+    })
+  })
+
+  it('emits no editCardField action on close when nothing changed', () => {
+    renderModal()
+    flushSave()
+    recordActionMock.mockClear()
+
+    // Open and close without touching anything.
+    fireEvent.keyDown(window, { key: 'Escape' })
+
+    expect(recordActionMock).not.toHaveBeenCalled()
+  })
+
+  it('captures bullet-list edits as a single editCardField action on close', () => {
+    renderModal()
+    flushSave()
+    recordActionMock.mockClear()
+
+    // Add a story note and close.
+    fireEvent.click(screen.getAllByRole('button', { name: /\+\s*add note/i })[0])
+    const newBullet = screen.getAllByPlaceholderText(/narrative beat/i).at(-1)
+    fireEvent.change(newBullet, { target: { value: 'New beat' } })
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+
+    // Exactly one entry, for storyNotes.
+    expect(recordActionMock).toHaveBeenCalledTimes(1)
+    const entry = recordActionMock.mock.calls[0][0]
+    expect(entry).toMatchObject({
+      type: 'editCardField',
+      cardId: 'node-strahd',
+      field: 'storyNotes',
+      before: ['Born ~1346', 'Cursed in 1346'],
+      after:  ['Born ~1346', 'Cursed in 1346', 'New beat'],
+    })
   })
 })
 

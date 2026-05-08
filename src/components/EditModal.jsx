@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useNodeTypes } from '../store/useTypeStore'
 import { useCampaign } from '../lib/CampaignContext.jsx'
+import { useUndoStore } from '../store/useUndoStore'
+import { ACTION_TYPES, deepEqual } from '../lib/undoActions'
 import CreateTypeModal from './CreateTypeModal'
 import BulletSection, { newItem } from './BulletSection'
 import SectionLabel from './SectionLabel'
@@ -11,6 +13,26 @@ import { useAutoSave } from '../hooks/useAutoSave'
 import { useMorphAnimation } from '../hooks/useMorphAnimation'
 
 const MODAL_WIDTH = '41.25rem'
+
+// editCardField undo entries are emitted on modal close, one per field that
+// drifted from its session-start snapshot. The order here is the order the
+// entries are pushed onto the undo stack, so consecutive Ctrl+Z's revert in
+// this order. Field labels are user-facing (toast in phase 9).
+const EDITABLE_FIELDS = [
+  'label', 'type', 'summary',
+  'storyNotes', 'hiddenLore', 'dmNotes',
+  'media', 'avatar',
+]
+const FIELD_LABELS = {
+  label:      'title',
+  type:       'type',
+  summary:    'summary',
+  storyNotes: 'story notes',
+  hiddenLore: 'hidden lore',
+  dmNotes:    'DM notes',
+  media:      'inspiration',
+  avatar:     'avatar',
+}
 
 // Return a readable foreground color for a given hex background.
 // Used for the header text on the type-colored band.
@@ -68,26 +90,39 @@ export default function EditModal({
   // animateClose is returned by the hook; handleClose wraps it with flushSave.
   // Declared after flushSave below.
 
+  // ── Persisted-shape values (used by both auto-save and the close-time diff) ─
+  // Recomputed each render and stashed in a ref so handleClose reads fresh
+  // values without re-attaching its useCallback (and the Esc keydown listener)
+  // every keystroke.
+  const livePersistedRef = useRef(null)
+  livePersistedRef.current = {
+    label:      title.trim() || 'Untitled',
+    type,
+    summary,
+    storyNotes: storyNotes.filter((b) => b.value.trim()).map((b) => b.value),
+    hiddenLore: hiddenLore.filter((b) => b.value.trim()).map((b) => b.value),
+    dmNotes:    dmNotes.filter((b) => b.value.trim()).map((b) => b.value),
+    media:      media.map((m) => m.src),
+    avatar:     thumbnail || null,
+  }
+
+  // Per-field session start snapshot (ADR-0006 §7). Captured ONCE on mount
+  // from the same persisted-shape projection the close-time diff uses, so
+  // a no-op open/close (or the initial mount auto-save folding `'' → 'Untitled'`)
+  // doesn't generate spurious undo entries. handleClose diffs this against
+  // livePersistedRef.current and emits one editCardField per changed field.
+  const sessionStartRef = useRef(null)
+  useEffect(() => {
+    sessionStartRef.current = livePersistedRef.current
+  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Auto-save ─────────────────────────────────────────────────────────────
   const flushSave = useAutoSave({
     doSave: () => {
       const currentNodeIds = new Set(localConns.map((c) => c.nodeId))
       const addNodeIds    = localConns.filter((c) => !syncedNodeIds.current.has(c.nodeId)).map((c) => c.nodeId)
       const removeNodeIds = [...syncedNodeIds.current].filter((id) => !currentNodeIds.has(id))
-      onUpdate(
-        node.id,
-        {
-          label:      title.trim() || 'Untitled',
-          type,
-          summary,
-          storyNotes: storyNotes.filter((b) => b.value.trim()).map((b) => b.value),
-          hiddenLore: hiddenLore.filter((b) => b.value.trim()).map((b) => b.value),
-          dmNotes:    dmNotes.filter((b) => b.value.trim()).map((b) => b.value),
-          media:      media.map((m) => m.src),
-          avatar:     thumbnail || null,
-        },
-        { addNodeIds, removeNodeIds }
-      )
+      onUpdate(node.id, livePersistedRef.current, { addNodeIds, removeNodeIds })
       addNodeIds.forEach((id) => syncedNodeIds.current.add(id))
       removeNodeIds.forEach((id) => syncedNodeIds.current.delete(id))
     },
@@ -97,8 +132,29 @@ export default function EditModal({
   const animateClose = useMorphAnimation({ modalRef, backdropRef, originRect, onClose })
   const handleClose = useCallback(() => {
     flushSave()
+    // Per-field diff vs session start. Each changed field becomes one
+    // editCardField undo entry; outside the modal, Ctrl+Z reverts them in
+    // this push order (most recently pushed first).
+    const start = sessionStartRef.current
+    if (start) {
+      const current = livePersistedRef.current
+      for (const field of EDITABLE_FIELDS) {
+        if (!deepEqual(start[field], current[field])) {
+          useUndoStore.getState().recordAction({
+            type: ACTION_TYPES.EDIT_CARD_FIELD,
+            campaignId: activeCampaignId,
+            label: `Edit ${FIELD_LABELS[field]}`,
+            timestamp: new Date().toISOString(),
+            cardId: node.id,
+            field,
+            before: start[field],
+            after: current[field],
+          })
+        }
+      }
+    }
     animateClose()
-  }, [flushSave, animateClose])
+  }, [flushSave, animateClose, activeCampaignId, node.id])
 
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') handleClose() }
