@@ -115,38 +115,38 @@ The card has three visual zones:
 
 ### 2.2 Avatar
 
-- If `data.avatar` (a URL or data URI) is set: renders as an `<img>` with `object-cover`
+- If `data.avatar` is set, the renderer resolves it via the `useImageUrl` hook (handles Supabase Storage paths, legacy base64 data URIs, and external `/avatars/*` URLs) and renders an `<img>` with `object-cover`
 - If not: renders the darkened type color as background + the label's first meaningful initial (via `labelInitial()`, which strips a leading "The " before taking the first character)
 - The avatar is D-shaped: full circle clipped on the left with `rounded-r-full`; its diameter always equals the header's rendered height
+- Clicking the avatar opens the shared lightbox (the same one the inspiration grid uses)
 
 ### 2.3 Node Data Schema
 
 Persistent fields (stored in Supabase; see `CLAUDE.md` for the full DB schema):
 - `label` — display title
 - `type` — one of the built-in type keys (`character`, `location`, `item`, `faction`, `story`) or a campaign-defined custom key
-- `avatar` — image URL or base64 data URI, or null
+- `avatar` — Supabase Storage path string (current shape, per ADR-0005), or a `/avatars/*` URL for the bundled Strahd sample data, or null. Legacy base64 data URIs still render but no new ones are written.
 - `summary` — short summary text
 - `storyNotes` — array of bullet strings (the visible body of the card)
 - `hiddenLore` — DM-only bullets (hidden from players)
 - `dmNotes` — DM-only operational notes
-- `media` — image URLs / data URIs attached to the card
+- `media` — array of inspiration entries; each entry is either a legacy string (URL or base64) or a `{path, alt, uploaded_at}` object pointing at a Storage path (current shape, per ADR-0005)
 
 (`storyNotes`, `hiddenLore`, `dmNotes`, and `media` are each stored as a row in `node_sections` keyed by `kind`; the schema supports future modular sections.)
 
-UI-computed fields (not persisted, derived in App.jsx and passed down):
+UI-computed fields (not persisted):
 - `isEditing` — hides the card while the edit modal is open
 - `connectionDots` — array of `{x, y, color}` for the border dot indicators
-- `anySelected` — true if any node in the canvas is selected
-- `anyHovered` — true if any node in the canvas is hovered
-- `hoveredEdgeNodeIds` — Set of node IDs connected to a currently-hovered edge
 - `locked` — in-memory only; lock feature was cut from V1
+
+Hover/select flags (`anySelected`, `anyHovered`, `hoveredEdgeNodeIds`) are not on `data` — they live in `useCanvasUiStore` and cards subscribe to them via narrow Zustand selectors so a hover event doesn't force every card to re-render.
 
 ### 2.4 Edit Modal Content (implemented)
 
 The edit modal (`EditModal.jsx`) is a centered overlay with:
 1. **Header** — type-color background; title input (inline, borderless); close button
 2. **Type selector** — pill buttons for all types; clicking changes card color immediately
-3. **Thumbnail** — image upload via file input; shows preview with Change/Remove overlay on hover; shows dashed upload zone when empty
+3. **Thumbnail** — clicking the avatar opens it in the lightbox; a small pencil button appears in the top-right on hover and triggers the file picker. When no avatar is set, clicking the initial-letter placeholder opens the file picker. Uploads transcode to two WebP variants (thumb + full) and write to Supabase Storage.
 4. **Summary** — textarea
 5. **Story Notes** — bullet list shown on the card body; Enter adds, Backspace on empty removes; drag-to-reorder
 6. **Hidden Lore** — bullet list visible only to the DM (planned to be hidden in the future player view)

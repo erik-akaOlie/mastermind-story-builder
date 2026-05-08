@@ -4,6 +4,74 @@ A running log of meaningful changes to MasterMind: Story Builder. Append-only. N
 
 ## [Unreleased]
 
+### Sprint 1 hygiene — Image storage migration + App.jsx refactor (2026-04-27)
+
+**Added**
+- Supabase Storage bucket `card-media` with row-level security gated by a
+  `SECURITY DEFINER` helper (`public.user_owns_card_media_path`).
+  See [`supabase/migrations/002_card_media_bucket.sql`](./supabase/migrations/002_card_media_bucket.sql).
+- `src/lib/imageStorage.js` — browser-Canvas transcode → two WebP variants
+  (`thumb` 256px / 40% q, `full` 1920px / 80% q) → Storage upload.
+- `src/lib/useImageUrl.js` — single hook that resolves any image reference
+  (legacy base64, external URL, or Storage path) to a renderable URL.
+- `src/components/Lightbox.jsx` — single shared lightbox provider; the
+  card avatar (canvas), modal avatar, and inspiration tiles all open it.
+- `src/components/MigrateImages.jsx` — one-shot tool at `#migrate` to
+  backfill any existing base64 image entries to Storage. Idempotent.
+- `src/hooks/` directory with four extracted hooks:
+  `useSpacebarPan`, `useCampaignData`, `useEdgeGeometry`, `useNodeHoverSelection`.
+  These were carved out of App.jsx to give Sprint 1.5 Realtime work
+  clean places to land.
+- `src/store/useCanvasUiStore.js` — Zustand store for transient hover/select
+  flags. Cards subscribe via narrow selectors; a hover event mutates one
+  atomic value instead of forcing a re-render of every card.
+- `:has(.is-lifted)` rule in [`src/index.css`](./src/index.css) so hovered /
+  selected / edge-highlighted cards rise above neighboring cards spatially.
+- ADR-0005 amendment documenting the SECURITY DEFINER lesson — the inlined
+  cross-schema check fails silently in storage policies.
+
+**Changed**
+- EditModal's avatar + inspiration uploads no longer write base64 strings
+  to the database. They transcode + upload via `imageStorage.uploadCardImage`
+  and store either a path string (avatars) or a `{path, alt, uploaded_at}`
+  object (inspiration entries) per ADR-0005.
+- App.jsx shrank from ~700 lines to ~530 lines. The load lifecycle, edge
+  geometry recompute, hover/select handlers, and spacebar-pan listeners
+  all moved into `src/hooks/`. App.jsx now reads as orchestration.
+- `anySelected`, `anyHovered`, and `hoveredEdgeNodeIds` no longer live on
+  per-node `data`. They're in `useCanvasUiStore` and CampaignNode reads
+  them via narrow Zustand selectors. This removes the O(N) re-render on
+  every hover event that would have made 100+ cards sluggish.
+- ADR-0005 status: Accepted → **Implemented (2026-04-27)**.
+- Avatar header in EditModal: clicking the image now opens the lightbox;
+  a small pencil button on hover triggers the file picker (was: clicking
+  the image *was* the file picker, no way to view it full-size from inside
+  the modal).
+- Avatar on the canvas card: clicking now opens the lightbox.
+- `main.jsx` Root gatekeeper accepts a `#migrate` hash route so the
+  migration tool can be reached without breaking the existing
+  loading → login → picker → app gate.
+
+**Fixed**
+- Image uploads previously failed with `new row violates row-level security
+  policy` because the bucket's RLS expression inlined a cross-schema lookup
+  against `public.campaigns`. Replaced with a `SECURITY DEFINER` helper.
+- Hovered or selected cards used to be visually overlapped by neighboring
+  cards (their bullets bled into the lifted card). The wrapper now gets a
+  bumped z-index via `:has(.is-lifted)`.
+- Modal avatar previously had no way to view the image full-size; the only
+  click target opened the file picker. The pencil-button pattern preserves
+  both actions.
+
+**Docs**
+- CLAUDE.md File Map updated for `src/hooks/`, `src/store/useCanvasUiStore.js`,
+  the new `src/lib/` files, the new components, and the migration file.
+- CLAUDE.md "What Is Built" updated; React-shape comment reflects the
+  new `media` shape and notes that hover/select flags moved to the store.
+- ADR-0005 status flipped to Implemented; an amendment captures the
+  SECURITY DEFINER discovery so future Storage-bucket work doesn't
+  rediscover it the hard way.
+
 ### Sprint 1 — Supabase persistence + auth
 
 **Added**

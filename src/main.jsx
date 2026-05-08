@@ -1,4 +1,4 @@
-import { StrictMode } from 'react'
+import { StrictMode, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Toaster } from 'sonner'
 import 'reactflow/dist/style.css'  // third-party first — our styles override below
@@ -12,6 +12,19 @@ import CampaignPicker from './components/CampaignPicker.jsx'
 import UserMenu from './components/UserMenu.jsx'
 import LockOverlay from './components/LockOverlay.jsx'
 import SyncIndicator from './components/SyncIndicator.jsx'
+import MigrateImages from './components/MigrateImages.jsx'
+
+// Tiny hash-based router. We don't need React Router for one ad-hoc page;
+// the `#migrate` route is temporary and gets removed once Phase 5 lands.
+function useHashRoute() {
+  const [hash, setHash] = useState(() => window.location.hash)
+  useEffect(() => {
+    const onChange = () => setHash(window.location.hash)
+    window.addEventListener('hashchange', onChange)
+    return () => window.removeEventListener('hashchange', onChange)
+  }, [])
+  return hash
+}
 
 // ============================================================================
 // Root gatekeeper
@@ -26,6 +39,7 @@ import SyncIndicator from './components/SyncIndicator.jsx'
 function Root() {
   const { session, loading } = useAuth()
   const { activeCampaignId } = useCampaign()
+  const hash = useHashRoute()
 
   // Keep the sync store in sync with navigator.onLine and probe while locked.
   // These are no-ops until a write fails or the network drops.
@@ -34,6 +48,7 @@ function Root() {
 
   if (loading) return null
   if (!session) return <Login />
+  if (hash === '#migrate') return <MigrateImages />
   if (!activeCampaignId) return <CampaignPicker />
 
   return (
