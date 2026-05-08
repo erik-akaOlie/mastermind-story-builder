@@ -8,7 +8,7 @@ import { updateTextNode as dbUpdateTextNode } from '../lib/textNodes.js'
 import { useCanvasOps } from '../lib/CanvasOpsContext.jsx'
 import { useCampaign } from '../lib/CampaignContext.jsx'
 import { useUndoStore } from '../store/useUndoStore'
-import { ACTION_TYPES } from '../lib/undoActions'
+import { ACTION_TYPES } from '../lib/undo/index.js'
 
 const DEFAULT_WIDTH = 240
 const MIN_WIDTH     = 80
