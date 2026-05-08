@@ -23,6 +23,13 @@ vi.mock('./nodes.js', async () => {
   }
 })
 
+vi.mock('./connections.js', () => ({
+  createConnection: vi.fn(async ({ id, sourceNodeId, targetNodeId }) => ({
+    id, source: sourceNodeId, target: targetNodeId, type: 'floating',
+  })),
+  deleteConnection: vi.fn(async () => {}),
+}))
+
 import {
   ACTION_TYPES,
   canApplyInverse,
@@ -38,19 +45,20 @@ import {
   updateNodeSections,
   restoreCardWithDependents,
 } from './nodes.js'
+import { createConnection, deleteConnection } from './connections.js'
 import { useTypeStore } from '../store/useTypeStore.js'
 
 const KNOWN = Object.values(ACTION_TYPES)
 
-// Action types that are still skeleton. Phases 3-5 wired moveCard,
-// editCardField, createCard, and deleteCard.
-const UNWIRED = KNOWN.filter(
-  (t) =>
-    t !== ACTION_TYPES.MOVE_CARD &&
-    t !== ACTION_TYPES.EDIT_CARD_FIELD &&
-    t !== ACTION_TYPES.CREATE_CARD &&
-    t !== ACTION_TYPES.DELETE_CARD,
-)
+// Action types still skeleton (no real validation / implementation).
+// Phases 3-7 wired everything except the four text-node ops (phase 8).
+const TEXT_NODE_TYPES = new Set([
+  ACTION_TYPES.CREATE_TEXT_NODE,
+  ACTION_TYPES.EDIT_TEXT_NODE,
+  ACTION_TYPES.MOVE_TEXT_NODE,
+  ACTION_TYPES.DELETE_TEXT_NODE,
+])
+const UNWIRED = KNOWN.filter((t) => TEXT_NODE_TYPES.has(t))
 
 beforeEach(() => {
   createNode.mockClear()
@@ -58,6 +66,8 @@ beforeEach(() => {
   updateNode.mockClear()
   updateNodeSections.mockClear()
   restoreCardWithDependents.mockClear()
+  createConnection.mockClear()
+  deleteConnection.mockClear()
 })
 
 describe('undoActions — exports + catalog', () => {
@@ -93,12 +103,12 @@ describe('undoActions — phase-skeleton stubs', () => {
     }
   })
 
-  it('applyInverse throws "not wired" for unwired known types (e.g. addConnection)', async () => {
-    await expect(applyInverse({ type: ACTION_TYPES.ADD_CONNECTION })).rejects.toThrow(/not wired/i)
+  it('applyInverse throws "not wired" for unwired known types (e.g. createTextNode)', async () => {
+    await expect(applyInverse({ type: ACTION_TYPES.CREATE_TEXT_NODE })).rejects.toThrow(/not wired/i)
   })
 
   it('applyForward throws "not wired" for unwired known types', async () => {
-    await expect(applyForward({ type: ACTION_TYPES.ADD_CONNECTION })).rejects.toThrow(/not wired/i)
+    await expect(applyForward({ type: ACTION_TYPES.CREATE_TEXT_NODE })).rejects.toThrow(/not wired/i)
   })
 })
 
@@ -715,5 +725,162 @@ describe('undoActions — deleteCard applyForward', () => {
     ])).toEqual([{ id: 'e2', source: 'a', target: 'b' }])
 
     expect(deleteNode).toHaveBeenCalledWith('card-doomed')
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// addConnection / removeConnection — phase 7. Symmetric pair: each side's
+// inverse calls the other's lib helper. canApply* on the recreate path
+// checks BOTH source and target nodes still exist locally.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const connectionEntry = (type, overrides = {}) => ({
+  type,
+  campaignId: 'c1',
+  label: type === ACTION_TYPES.ADD_CONNECTION ? 'Add connection' : 'Remove connection',
+  timestamp: '2026-04-30T17:00:00.000Z',
+  connectionId: 'edge-1',
+  sourceNodeId: 'card-a',
+  targetNodeId: 'card-b',
+  ...overrides,
+})
+
+describe('undoActions — addConnection canApply*', () => {
+  it('canApplyInverse passes when the connection is still in edges (about to delete it)', () => {
+    expect(canApplyInverse(connectionEntry(ACTION_TYPES.ADD_CONNECTION), {
+      edges: [{ id: 'edge-1', source: 'card-a', target: 'card-b' }],
+    })).toEqual({ ok: true })
+  })
+
+  it('canApplyInverse refuses when the connection was already removed elsewhere', () => {
+    const result = canApplyInverse(connectionEntry(ACTION_TYPES.ADD_CONNECTION), { edges: [] })
+    expect(result.ok).toBe(false)
+    expect(result.reason).toMatch(/no longer exists/i)
+  })
+
+  it('canApplyForward passes when both endpoints exist and the connection is absent', () => {
+    expect(canApplyForward(connectionEntry(ACTION_TYPES.ADD_CONNECTION), {
+      nodes: [{ id: 'card-a' }, { id: 'card-b' }],
+      edges: [],
+    })).toEqual({ ok: true })
+  })
+
+  it('canApplyForward refuses when the connection already exists', () => {
+    const result = canApplyForward(connectionEntry(ACTION_TYPES.ADD_CONNECTION), {
+      nodes: [{ id: 'card-a' }, { id: 'card-b' }],
+      edges: [{ id: 'edge-1', source: 'card-a', target: 'card-b' }],
+    })
+    expect(result.ok).toBe(false)
+    expect(result.reason).toMatch(/already exists/i)
+  })
+
+  it('canApplyForward refuses when source node is gone', () => {
+    const result = canApplyForward(connectionEntry(ACTION_TYPES.ADD_CONNECTION), {
+      nodes: [{ id: 'card-b' }],
+      edges: [],
+    })
+    expect(result.ok).toBe(false)
+    expect(result.reason).toMatch(/source.*no longer exists/i)
+  })
+
+  it('canApplyForward refuses when target node is gone', () => {
+    const result = canApplyForward(connectionEntry(ACTION_TYPES.ADD_CONNECTION), {
+      nodes: [{ id: 'card-a' }],
+      edges: [],
+    })
+    expect(result.ok).toBe(false)
+    expect(result.reason).toMatch(/target.*no longer exists/i)
+  })
+})
+
+describe('undoActions — addConnection apply*', () => {
+  it('applyInverse calls deleteConnection and filters the edge optimistically', async () => {
+    const setEdges = vi.fn()
+    await applyInverse(connectionEntry(ACTION_TYPES.ADD_CONNECTION), { setEdges })
+
+    expect(deleteConnection).toHaveBeenCalledWith('edge-1')
+    const updater = setEdges.mock.calls[0][0]
+    expect(updater([
+      { id: 'edge-1' }, { id: 'edge-2' },
+    ])).toEqual([{ id: 'edge-2' }])
+  })
+
+  it('applyForward calls createConnection with the recorded id and appends the edge', async () => {
+    const setEdges = vi.fn()
+    await applyForward(connectionEntry(ACTION_TYPES.ADD_CONNECTION), { setEdges })
+
+    expect(createConnection).toHaveBeenCalledWith({
+      id: 'edge-1',
+      campaignId: 'c1',
+      sourceNodeId: 'card-a',
+      targetNodeId: 'card-b',
+    })
+    const updater = setEdges.mock.calls[0][0]
+    expect(updater([])).toEqual([
+      { id: 'edge-1', source: 'card-a', target: 'card-b', type: 'floating' },
+    ])
+  })
+
+  it('applyForward is idempotent on a Realtime echo that re-inserted the edge first', async () => {
+    const setEdges = vi.fn()
+    await applyForward(connectionEntry(ACTION_TYPES.ADD_CONNECTION), { setEdges })
+
+    const updater = setEdges.mock.calls[0][0]
+    const have = [{ id: 'edge-1', source: 'card-a', target: 'card-b' }]
+    expect(updater(have)).toBe(have)   // unchanged — no double-insert
+  })
+})
+
+describe('undoActions — removeConnection canApply* (mirror of addConnection)', () => {
+  it('canApplyInverse passes when both endpoints exist and the connection is absent', () => {
+    expect(canApplyInverse(connectionEntry(ACTION_TYPES.REMOVE_CONNECTION), {
+      nodes: [{ id: 'card-a' }, { id: 'card-b' }],
+      edges: [],
+    })).toEqual({ ok: true })
+  })
+
+  it('canApplyInverse refuses when source has been deleted (FK would fail)', () => {
+    const result = canApplyInverse(connectionEntry(ACTION_TYPES.REMOVE_CONNECTION), {
+      nodes: [{ id: 'card-b' }],
+      edges: [],
+    })
+    expect(result.ok).toBe(false)
+    expect(result.reason).toMatch(/source/i)
+  })
+
+  it('canApplyForward passes when the connection still exists', () => {
+    expect(canApplyForward(connectionEntry(ACTION_TYPES.REMOVE_CONNECTION), {
+      edges: [{ id: 'edge-1' }],
+    })).toEqual({ ok: true })
+  })
+
+  it('canApplyForward refuses when the connection has already been removed', () => {
+    expect(canApplyForward(connectionEntry(ACTION_TYPES.REMOVE_CONNECTION), {
+      edges: [],
+    }).ok).toBe(false)
+  })
+})
+
+describe('undoActions — removeConnection apply*', () => {
+  it('applyInverse calls createConnection at the original id', async () => {
+    await applyInverse(connectionEntry(ACTION_TYPES.REMOVE_CONNECTION), {})
+    expect(createConnection).toHaveBeenCalledWith({
+      id: 'edge-1',
+      campaignId: 'c1',
+      sourceNodeId: 'card-a',
+      targetNodeId: 'card-b',
+    })
+    expect(deleteConnection).not.toHaveBeenCalled()
+  })
+
+  it('applyForward calls deleteConnection (mirror of addConnection inverse)', async () => {
+    const setEdges = vi.fn()
+    await applyForward(connectionEntry(ACTION_TYPES.REMOVE_CONNECTION), { setEdges })
+    expect(deleteConnection).toHaveBeenCalledWith('edge-1')
+    expect(createConnection).not.toHaveBeenCalled()
+
+    // And filters the edge from local state.
+    const updater = setEdges.mock.calls[0][0]
+    expect(updater([{ id: 'edge-1' }, { id: 'other' }])).toEqual([{ id: 'other' }])
   })
 })
