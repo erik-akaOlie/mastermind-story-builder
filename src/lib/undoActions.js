@@ -16,22 +16,19 @@
 // lib/*.js API so persistWrite + the Realtime channel + sync chip behave
 // like a normal edit.
 //
-// Phase 7c (this commit): list-item granularity. Four new types operate on
-// individual entries inside the list-shaped card fields (storyNotes,
-// hiddenLore, dmNotes, media), so an undo never silently bundles multiple
-// items together. Identity is the bullet's stable id (data-model
-// foundation from phase 7b) — position is only used as a hint and a
-// drift check, never as the primary identifier. This means duplicate-text
-// bullets, mid-list deletes, and reorders are all unambiguous.
+// Phase 8 (this commit): text-node action types wired. With this, every
+// action type from ADR-0006 §1's catalog is fully wired end-to-end.
 //
-//   addListItem      → insert entry.item at entry.position; inverse removes by id
-//   removeListItem   → remove by id; inverse re-inserts entry.item at position
-//   editListItem     → set bullet (by id) to before/after (bullets only)
-//   reorderListItem  → move item by id from `from` → `to`; inverse moves back
+//   createTextNode  → undo deletes the text node; redo recreates at same UUID
+//   editTextNode    → undo writes `before` field-set back; redo applies `after`
+//   moveTextNode    → undo restores prior position; redo replays
+//   deleteTextNode  → undo restores via restoreTextNode; redo deletes again
 //
-// Remaining skeleton cases (per ADR-0006 §10):
-//
-//   phase 8 → createTextNode, editTextNode, moveTextNode, deleteTextNode
+// editTextNode covers all "session edits" inside a text node — text content
+// changes captured at blur, toolbar clicks (font size / align / bold /
+// italic) recorded immediately, and resize gestures recorded on mouseup.
+// The entry's `before` / `after` carries only the fields that actually
+// changed; canApply* compares on those same fields.
 // ============================================================================
 
 import {
@@ -46,6 +43,13 @@ import {
   createConnection,
   deleteConnection,
 } from './connections.js'
+import {
+  createTextNode,
+  updateTextNode,
+  deleteTextNode,
+  restoreTextNode,
+  dbTextNodeToReactFlow,
+} from './textNodes.js'
 import { useTypeStore } from '../store/useTypeStore.js'
 
 export const ACTION_TYPES = Object.freeze({
@@ -181,11 +185,19 @@ export function canApplyInverse(entry, currentState = {}) {
       // currently sit at `to`.
       return checkListItemAtPosition(entry, currentState, entry.to)
     case ACTION_TYPES.CREATE_TEXT_NODE:
+      // Inverse = delete the text node we just created. It must still exist.
+      return checkTextNodePresent(entry, currentState)
     case ACTION_TYPES.EDIT_TEXT_NODE:
+      // Inverse = restore `before`. Each field in entry.after must currently
+      // match the live text node (otherwise something else changed it).
+      return checkTextNodeFields(entry, currentState, 'after')
     case ACTION_TYPES.MOVE_TEXT_NODE:
+      // Inverse = move back to `before`. Text node must still exist.
+      return checkTextNodePresent(entry, currentState)
     case ACTION_TYPES.DELETE_TEXT_NODE:
-      // Stubbed — phase 8 will replace each with real validation.
-      return { ok: true }
+      // Inverse = restore the deleted text node. The id must currently
+      // be absent (otherwise another tab beat us to it).
+      return checkTextNodeAbsent(entry, currentState)
     default:
       return { ok: false, reason: `Unknown action type: ${entry.type}` }
   }
@@ -253,10 +265,17 @@ export function canApplyForward(entry, currentState = {}) {
       // Forward (redo) = move from `from` → `to`. Item must currently sit at `from`.
       return checkListItemAtPosition(entry, currentState, entry.from)
     case ACTION_TYPES.CREATE_TEXT_NODE:
+      // Forward (redo) = recreate at the original UUID. Must currently be absent.
+      return checkTextNodeAbsent(entry, currentState)
     case ACTION_TYPES.EDIT_TEXT_NODE:
+      // Forward (redo) = re-apply `after`. Current must match `before`.
+      return checkTextNodeFields(entry, currentState, 'before')
     case ACTION_TYPES.MOVE_TEXT_NODE:
+      // Forward (redo) = move from `before` → `after`. Text node must still exist.
+      return checkTextNodePresent(entry, currentState)
     case ACTION_TYPES.DELETE_TEXT_NODE:
-      return { ok: true }
+      // Forward (redo) = delete again. Text node must currently exist.
+      return checkTextNodePresent(entry, currentState)
     default:
       return { ok: false, reason: `Unknown action type: ${entry.type}` }
   }
@@ -293,10 +312,10 @@ export async function applyInverse(entry, context = {}) {
     case ACTION_TYPES.REMOVE_LIST_ITEM:   return insertListItemImpl(entry, context)
     case ACTION_TYPES.EDIT_LIST_ITEM:     return setListItemValueImpl(entry, context, 'before')
     case ACTION_TYPES.REORDER_LIST_ITEM:  return moveListItemImpl(entry, context, 'inverse')
-    case ACTION_TYPES.CREATE_TEXT_NODE:   return notWired(entry, 'applyInverse')
-    case ACTION_TYPES.EDIT_TEXT_NODE:     return notWired(entry, 'applyInverse')
-    case ACTION_TYPES.MOVE_TEXT_NODE:     return notWired(entry, 'applyInverse')
-    case ACTION_TYPES.DELETE_TEXT_NODE:   return notWired(entry, 'applyInverse')
+    case ACTION_TYPES.CREATE_TEXT_NODE:   return createTextNodeInverse(entry, context)
+    case ACTION_TYPES.EDIT_TEXT_NODE:     return editTextNodeImpl(entry, context, 'before')
+    case ACTION_TYPES.MOVE_TEXT_NODE:     return moveTextNodeImpl(entry, context, 'before')
+    case ACTION_TYPES.DELETE_TEXT_NODE:   return deleteTextNodeInverse(entry, context)
     default:
       throw new Error(`[undoActions] applyInverse: unhandled action type "${entry.type}"`)
   }
@@ -323,10 +342,10 @@ export async function applyForward(entry, context = {}) {
     case ACTION_TYPES.REMOVE_LIST_ITEM:   return removeListItemImpl(entry, context)
     case ACTION_TYPES.EDIT_LIST_ITEM:     return setListItemValueImpl(entry, context, 'after')
     case ACTION_TYPES.REORDER_LIST_ITEM:  return moveListItemImpl(entry, context, 'forward')
-    case ACTION_TYPES.CREATE_TEXT_NODE:   return notWired(entry, 'applyForward')
-    case ACTION_TYPES.EDIT_TEXT_NODE:     return notWired(entry, 'applyForward')
-    case ACTION_TYPES.MOVE_TEXT_NODE:     return notWired(entry, 'applyForward')
-    case ACTION_TYPES.DELETE_TEXT_NODE:   return notWired(entry, 'applyForward')
+    case ACTION_TYPES.CREATE_TEXT_NODE:   return createTextNodeForward(entry, context)
+    case ACTION_TYPES.EDIT_TEXT_NODE:     return editTextNodeImpl(entry, context, 'after')
+    case ACTION_TYPES.MOVE_TEXT_NODE:     return moveTextNodeImpl(entry, context, 'after')
+    case ACTION_TYPES.DELETE_TEXT_NODE:   return deleteTextNodeForward(entry, context)
     default:
       throw new Error(`[undoActions] applyForward: unhandled action type "${entry.type}"`)
   }
@@ -792,6 +811,198 @@ async function moveListItemImpl(entry, context = {}, direction /* 'forward' | 'i
   const [moved] = copy.splice(idx, 1)
   copy.splice(clamped, 0, moved)
   await persistListChange(entry, context, copy)
+}
+
+// createTextNode / editTextNode / moveTextNode / deleteTextNode — phase 8.
+//
+// Text nodes (free-floating annotations on the canvas) get the same
+// optimistic + persist + Realtime-echo treatment cards do. Identity is the
+// row's UUID (same for forward and inverse), captured at action-time.
+// Position diffs are bounded by App.jsx's 4px filter for moveTextNode;
+// edit / toolbar / resize all collapse into editTextNode whose `before` /
+// `after` carry only the fields that changed.
+
+function findTextNodeIndex(nodes, id) {
+  if (!Array.isArray(nodes) || id == null) return -1
+  return nodes.findIndex((n) => n.id === id && n.type === 'textNode')
+}
+
+function checkTextNodePresent(entry, { nodes = [] } = {}) {
+  const id = entry.textNodeId
+  if (!id) return { ok: false, reason: 'Malformed text-node entry: missing textNodeId' }
+  return findTextNodeIndex(nodes, id) !== -1
+    ? { ok: true }
+    : { ok: false, reason: 'Text node no longer exists' }
+}
+
+function checkTextNodeAbsent(entry, { nodes = [] } = {}) {
+  const id = entry.textNodeId ?? entry.dbRow?.id
+  if (!id) return { ok: false, reason: 'Malformed text-node entry: missing id' }
+  return findTextNodeIndex(nodes, id) === -1
+    ? { ok: true }
+    : { ok: false, reason: 'A text node with that id already exists' }
+}
+
+// editTextNode drift check. The entry carries `before` / `after` partial
+// field-sets — only the fields that actually changed. We require every
+// field in the recorded side to match current React state. Other fields
+// not in the entry are ignored (e.g. resizing changed only width/height,
+// so a concurrent text edit elsewhere shouldn't block undo).
+//
+// Field name maps from the React-shape (text/width/height/fontSize/align)
+// to the locations in node.data. `text` lives in n.data.text;
+// width/height/fontSize/align all live in n.data; position lives in
+// n.position.x / n.position.y. moveTextNode handles position separately,
+// but resize bundles position+size into editTextNode (a resize from a top
+// or left handle moves the node's origin), so we need to compare position
+// fields here too when they're in the entry.
+function checkTextNodeFields(entry, { nodes = [] } = {}, side /* 'before' | 'after' */) {
+  const id = entry.textNodeId
+  if (!id) return { ok: false, reason: 'Malformed editTextNode entry: missing textNodeId' }
+  const fields = entry[side]
+  if (!fields || typeof fields !== 'object') {
+    return { ok: false, reason: `Malformed editTextNode entry: missing ${side}` }
+  }
+  const idx = findTextNodeIndex(nodes, id)
+  if (idx === -1) return { ok: false, reason: 'Text node no longer exists' }
+  const node = nodes[idx]
+  for (const [k, v] of Object.entries(fields)) {
+    let current
+    if (k === 'positionX')      current = node.position?.x
+    else if (k === 'positionY') current = node.position?.y
+    else if (k === 'text')      current = node.data?.text
+    else                        current = node.data?.[k]
+    if (current !== v) {
+      return { ok: false, reason: `Text node ${k} changed elsewhere` }
+    }
+  }
+  return { ok: true }
+}
+
+// Apply helpers. Each writes optimistic React state via setNodes, then
+// persists through the existing lib/textNodes.js API. persistWrite owns
+// retry + lock-overlay; Realtime echoes back as a normal write.
+
+async function createTextNodeInverse(entry, { setNodes } = {}) {
+  const id = entry.textNodeId
+  if (!id) throw new Error('[undoActions] createTextNode: missing textNodeId')
+
+  if (typeof setNodes === 'function') {
+    setNodes((nds) => nds.filter((n) => n.id !== id))
+  }
+  await deleteTextNode(id)
+}
+
+async function createTextNodeForward(entry, { setNodes } = {}) {
+  const { textNodeId, dbRow } = entry
+  if (!textNodeId || !dbRow) {
+    throw new Error('[undoActions] createTextNode: missing textNodeId or dbRow')
+  }
+  // Recreate at the original UUID via createTextNode({ id, ... }) so any
+  // later undo entry referring to this text node still finds it.
+  const reactNode = await createTextNode({
+    id:           textNodeId,
+    campaignId:   entry.campaignId,
+    contentHtml:  dbRow.content_html ?? '',
+    positionX:    dbRow.position_x,
+    positionY:    dbRow.position_y,
+    width:        dbRow.width,
+    height:       dbRow.height,
+    fontSize:     dbRow.font_size,
+    align:        dbRow.align,
+  })
+
+  if (typeof setNodes === 'function') {
+    setNodes((nds) => (nds.some((n) => n.id === textNodeId) ? nds : [...nds, reactNode]))
+  }
+}
+
+async function deleteTextNodeInverse(entry, { setNodes } = {}) {
+  const { textNodeId, dbRow } = entry
+  if (!textNodeId || !dbRow) {
+    throw new Error('[undoActions] deleteTextNode: missing textNodeId or dbRow')
+  }
+
+  if (typeof setNodes === 'function') {
+    const reactNode = dbTextNodeToReactFlow(dbRow)
+    setNodes((nds) => (nds.some((n) => n.id === textNodeId) ? nds : [...nds, reactNode]))
+  }
+  await restoreTextNode(dbRow)
+}
+
+async function deleteTextNodeForward(entry, { setNodes } = {}) {
+  const { textNodeId } = entry
+  if (!textNodeId) throw new Error('[undoActions] deleteTextNode: missing textNodeId')
+
+  if (typeof setNodes === 'function') {
+    setNodes((nds) => nds.filter((n) => n.id !== textNodeId))
+  }
+  await deleteTextNode(textNodeId)
+}
+
+// editTextNode shared impl for both directions. The recorded `before` /
+// `after` partial maps say which fields to write; we translate them to
+// the React shape for setNodes and to the camelCase lib API for
+// updateTextNode.
+async function editTextNodeImpl(entry, { setNodes } = {}, side /* 'before' | 'after' */) {
+  const { textNodeId } = entry
+  if (!textNodeId) throw new Error('[undoActions] editTextNode: missing textNodeId')
+  const fields = entry[side]
+  if (!fields || typeof fields !== 'object') {
+    throw new Error(`[undoActions] editTextNode: missing ${side} fields`)
+  }
+
+  if (typeof setNodes === 'function') {
+    setNodes((nds) => nds.map((n) => {
+      if (n.id !== textNodeId || n.type !== 'textNode') return n
+      const next = { ...n, data: { ...n.data } }
+      if ('text'     in fields) next.data.text     = fields.text
+      if ('width'    in fields) next.data.width    = fields.width
+      if ('height'   in fields) next.data.height   = fields.height
+      if ('fontSize' in fields) next.data.fontSize = fields.fontSize
+      if ('align'    in fields) next.data.align    = fields.align
+      if ('positionX' in fields || 'positionY' in fields) {
+        next.position = {
+          x: 'positionX' in fields ? fields.positionX : n.position.x,
+          y: 'positionY' in fields ? fields.positionY : n.position.y,
+        }
+      }
+      return next
+    }))
+  }
+
+  // Persist. updateTextNode takes camelCase { contentHtml, ... } so the
+  // entry's `text` field maps to `contentHtml`; everything else passes
+  // through unchanged.
+  const patch = {}
+  if ('text'      in fields) patch.contentHtml = fields.text
+  if ('width'     in fields) patch.width       = fields.width
+  if ('height'    in fields) patch.height      = fields.height
+  if ('fontSize'  in fields) patch.fontSize    = fields.fontSize
+  if ('align'     in fields) patch.align       = fields.align
+  if ('positionX' in fields) patch.positionX   = fields.positionX
+  if ('positionY' in fields) patch.positionY   = fields.positionY
+  if (Object.keys(patch).length === 0) return
+  await updateTextNode(textNodeId, patch)
+}
+
+// moveTextNode mirrors moveCard but operates on text-node positions.
+async function moveTextNodeImpl(entry, { setNodes } = {}, side /* 'before' | 'after' */) {
+  const { textNodeId } = entry
+  if (!textNodeId) throw new Error('[undoActions] moveTextNode: missing textNodeId')
+  const target = entry[side]
+  if (!target || typeof target.x !== 'number' || typeof target.y !== 'number') {
+    throw new Error(`[undoActions] moveTextNode: missing ${side} { x, y }`)
+  }
+
+  if (typeof setNodes === 'function') {
+    setNodes((nds) => nds.map((n) =>
+      n.id === textNodeId && n.type === 'textNode'
+        ? { ...n, position: { x: target.x, y: target.y } }
+        : n,
+    ))
+  }
+  await updateTextNode(textNodeId, { positionX: target.x, positionY: target.y })
 }
 
 // Reverse type lookup: useTypeStore exposes idByKey + types but not

@@ -37,6 +37,7 @@ const mockDb = {
   nodes:         new Map(),  // id → DB-shape row
   node_sections: new Map(),  // node_id → { narrative, hidden_lore, dm_notes, media }
   connections:   new Map(),  // id → DB-shape row
+  text_nodes:    new Map(),  // id → DB-shape row (phase 8)
 }
 
 // ── lib/nodes.js mocks (stateful) ─────────────────────────────────────────
@@ -134,6 +135,52 @@ vi.mock('./connections.js', () => ({
   }),
 }))
 
+vi.mock('./textNodes.js', async () => {
+  // Pull in the real dbTextNodeToReactFlow so the deleteTextNode inverse
+  // exercises the actual marshaler.
+  const actual = await vi.importActual('./textNodes.js')
+  return {
+    ...actual,
+    createTextNode: vi.fn(async (args) => {
+      const newId = args.id || `mock-tn-${Math.random().toString(36).slice(2)}`
+      const row = {
+        id:           newId,
+        campaign_id:  args.campaignId,
+        content_html: args.contentHtml ?? '',
+        position_x:   args.positionX,
+        position_y:   args.positionY,
+        width:        args.width,
+        height:       args.height ?? null,
+        font_size:    args.fontSize,
+        align:        args.align,
+      }
+      mockDb.text_nodes ??= new Map()
+      mockDb.text_nodes.set(newId, row)
+      return actual.dbTextNodeToReactFlow(row)
+    }),
+    updateTextNode: vi.fn(async (id, patch) => {
+      mockDb.text_nodes ??= new Map()
+      const row = mockDb.text_nodes.get(id)
+      if (!row) return
+      if (patch.contentHtml !== undefined) row.content_html = patch.contentHtml
+      if (patch.positionX   !== undefined) row.position_x   = patch.positionX
+      if (patch.positionY   !== undefined) row.position_y   = patch.positionY
+      if (patch.width       !== undefined) row.width        = patch.width
+      if (patch.height      !== undefined) row.height       = patch.height
+      if (patch.fontSize    !== undefined) row.font_size    = patch.fontSize
+      if (patch.align       !== undefined) row.align        = patch.align
+    }),
+    deleteTextNode: vi.fn(async (id) => {
+      mockDb.text_nodes ??= new Map()
+      mockDb.text_nodes.delete(id)
+    }),
+    restoreTextNode: vi.fn(async (dbRow) => {
+      mockDb.text_nodes ??= new Map()
+      mockDb.text_nodes.set(dbRow.id, { ...dbRow })
+    }),
+  }
+})
+
 // ── REAL imports (post-mock) ──────────────────────────────────────────────
 // The dispatcher under test, plus marshaling helpers, plus the live store.
 
@@ -196,6 +243,7 @@ function snapshotState(rs) {
       nodes:         [...mockDb.nodes.entries()].sort(([a], [b]) => a.localeCompare(b)),
       node_sections: [...mockDb.node_sections.entries()].sort(([a], [b]) => a.localeCompare(b)),
       connections:   [...mockDb.connections.entries()].sort(([a], [b]) => a.localeCompare(b)),
+      text_nodes:    [...mockDb.text_nodes.entries()].sort(([a], [b]) => a.localeCompare(b)),
     },
   }))
 }
@@ -251,6 +299,7 @@ beforeEach(() => {
   mockDb.nodes.clear()
   mockDb.node_sections.clear()
   mockDb.connections.clear()
+  mockDb.text_nodes.clear()
   // Seed the type store the dispatcher reads via useTypeStore.getState().
   useTypeStore.setState({
     types:   { [TYPE_KEY]: { label: 'Character', color: '#0EA5E9' } },
@@ -1018,5 +1067,236 @@ describe('round-trip — per-item bullet ops (phase 7c)', () => {
     const result = await useUndoStore.getState().undo(rs.ctx())
     expect(result).toMatchObject({ ok: false, conflict: true })
     expect(result.reason).toMatch(/already present/i)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Text-node round-trips — phase 8. Mirrors the moveCard / createCard /
+// editCardField / deleteCard suite but on text_nodes. seedTextNode plants
+// a row into both the React state and mockDb.text_nodes; round-trip
+// assertions compare the full snapshotState (which includes text_nodes).
+// ─────────────────────────────────────────────────────────────────────────────
+
+function seedTextNode(rs, {
+  id = `tn-${Math.random().toString(36).slice(2)}`,
+  contentHtml = '',
+  positionX = 0, positionY = 0,
+  width = 256, height = null,
+  fontSize = 18, align = 'left',
+}) {
+  const dbRow = {
+    id, campaign_id: CAMPAIGN,
+    content_html: contentHtml,
+    position_x: positionX, position_y: positionY,
+    width, height,
+    font_size: fontSize, align,
+  }
+  mockDb.text_nodes.set(id, dbRow)
+  const reactNode = {
+    id, type: 'textNode',
+    position: { x: positionX, y: positionY },
+    draggable: true,
+    data: {
+      text: contentHtml, editing: false,
+      width, height, fontSize, align,
+    },
+  }
+  rs.setNodes((nds) => [...nds, reactNode])
+  return reactNode
+}
+
+describe('round-trip — createTextNode', () => {
+  it('add → undo deletes; redo recreates at same UUID', async () => {
+    const rs = makeReactState()
+    const before = snapshotState(rs)
+
+    // User added a text node at (50, 50) — simulate the persisted state.
+    const tnId = 'tn-1'
+    const dbRow = {
+      id: tnId, campaign_id: CAMPAIGN,
+      content_html: '', position_x: 50, position_y: 50,
+      width: 256, height: null, font_size: 18, align: 'left',
+    }
+    mockDb.text_nodes.set(tnId, dbRow)
+    rs.setNodes((nds) => [...nds, {
+      id: tnId, type: 'textNode',
+      position: { x: 50, y: 50 },
+      draggable: true,
+      data: { text: '', editing: false, width: 256, height: null, fontSize: 18, align: 'left' },
+    }])
+
+    const entry = {
+      type: ACTION_TYPES.CREATE_TEXT_NODE,
+      campaignId: CAMPAIGN,
+      textNodeId: tnId,
+      dbRow,
+    }
+    await applyInverse(entry, rs.ctx())
+    expect(snapshotState(rs)).toEqual(before)
+
+    await applyForward(entry, rs.ctx())
+    expect(rs.state.nodes.find((n) => n.id === tnId)).toBeTruthy()
+    expect(mockDb.text_nodes.has(tnId)).toBe(true)
+  })
+})
+
+describe('round-trip — deleteTextNode', () => {
+  it('delete → undo restores via restoreTextNode; redo deletes again', async () => {
+    const rs = makeReactState()
+    seedTextNode(rs, {
+      id: 'tn-doomed', contentHtml: '<p>Strahd notes</p>',
+      positionX: 100, positionY: 200,
+      width: 320, height: 160, fontSize: 24, align: 'center',
+    })
+    const before = snapshotState(rs)
+
+    // User deleted it.
+    rs.setNodes((nds) => nds.filter((n) => n.id !== 'tn-doomed'))
+    mockDb.text_nodes.delete('tn-doomed')
+
+    const entry = {
+      type: ACTION_TYPES.DELETE_TEXT_NODE,
+      campaignId: CAMPAIGN,
+      textNodeId: 'tn-doomed',
+      dbRow: {
+        id: 'tn-doomed', campaign_id: CAMPAIGN,
+        content_html: '<p>Strahd notes</p>',
+        position_x: 100, position_y: 200,
+        width: 320, height: 160, font_size: 24, align: 'center',
+      },
+    }
+    await applyInverse(entry, rs.ctx())
+    expect(snapshotState(rs)).toEqual(before)
+
+    await applyForward(entry, rs.ctx())
+    expect(rs.state.nodes.find((n) => n.id === 'tn-doomed')).toBeUndefined()
+    expect(mockDb.text_nodes.has('tn-doomed')).toBe(false)
+  })
+})
+
+describe('round-trip — moveTextNode', () => {
+  it('drag → undo restores prior position; redo replays', async () => {
+    const rs = makeReactState()
+    seedTextNode(rs, { id: 'tn-1', positionX: 10, positionY: 20 })
+    const before = snapshotState(rs)
+
+    // User dragged from (10,20) to (100, 200).
+    rs.setNodes((nds) => nds.map((n) =>
+      n.id === 'tn-1' ? { ...n, position: { x: 100, y: 200 } } : n,
+    ))
+    mockDb.text_nodes.get('tn-1').position_x = 100
+    mockDb.text_nodes.get('tn-1').position_y = 200
+
+    const entry = {
+      type: ACTION_TYPES.MOVE_TEXT_NODE,
+      campaignId: CAMPAIGN,
+      textNodeId: 'tn-1',
+      before: { x: 10, y: 20 },
+      after:  { x: 100, y: 200 },
+    }
+    await applyInverse(entry, rs.ctx())
+    expect(snapshotState(rs)).toEqual(before)
+
+    await applyForward(entry, rs.ctx())
+    expect(rs.state.nodes[0].position).toEqual({ x: 100, y: 200 })
+  })
+})
+
+describe('round-trip — editTextNode', () => {
+  it('text edit on blur → undo restores prior text; redo replays', async () => {
+    const rs = makeReactState()
+    seedTextNode(rs, { id: 'tn-1', contentHtml: '<p>old</p>' })
+    const before = snapshotState(rs)
+
+    // Apply the text edit forward.
+    rs.setNodes((nds) => nds.map((n) =>
+      n.id === 'tn-1' ? { ...n, data: { ...n.data, text: '<p>new</p>' } } : n,
+    ))
+    mockDb.text_nodes.get('tn-1').content_html = '<p>new</p>'
+
+    const entry = {
+      type: ACTION_TYPES.EDIT_TEXT_NODE,
+      campaignId: CAMPAIGN,
+      textNodeId: 'tn-1',
+      before: { text: '<p>old</p>' },
+      after:  { text: '<p>new</p>' },
+    }
+    await applyInverse(entry, rs.ctx())
+    expect(snapshotState(rs)).toEqual(before)
+
+    await applyForward(entry, rs.ctx())
+    expect(rs.state.nodes[0].data.text).toBe('<p>new</p>')
+  })
+
+  it('toolbar font-size click → undo restores prior fontSize without touching text', async () => {
+    const rs = makeReactState()
+    seedTextNode(rs, { id: 'tn-1', contentHtml: '<p>same text</p>', fontSize: 18 })
+    const before = snapshotState(rs)
+
+    // User clicked the L size button: fontSize 18 → 24.
+    rs.setNodes((nds) => nds.map((n) =>
+      n.id === 'tn-1' ? { ...n, data: { ...n.data, fontSize: 24 } } : n,
+    ))
+    mockDb.text_nodes.get('tn-1').font_size = 24
+
+    const entry = {
+      type: ACTION_TYPES.EDIT_TEXT_NODE,
+      campaignId: CAMPAIGN,
+      textNodeId: 'tn-1',
+      before: { fontSize: 18 },
+      after:  { fontSize: 24 },
+    }
+    await applyInverse(entry, rs.ctx())
+    expect(snapshotState(rs)).toEqual(before)
+    // Text content untouched throughout.
+    expect(rs.state.nodes[0].data.text).toBe('<p>same text</p>')
+  })
+
+  it('resize gesture → undo restores width/height/position together', async () => {
+    const rs = makeReactState()
+    seedTextNode(rs, {
+      id: 'tn-1', positionX: 100, positionY: 200,
+      width: 200, height: 80,
+    })
+    const before = snapshotState(rs)
+
+    // User resized from the top-left handle: width/height grew, origin moved.
+    rs.setNodes((nds) => nds.map((n) =>
+      n.id === 'tn-1' ? {
+        ...n, position: { x: 80, y: 200 },
+        data: { ...n.data, width: 320, height: 120 },
+      } : n,
+    ))
+    const row = mockDb.text_nodes.get('tn-1')
+    row.position_x = 80; row.width = 320; row.height = 120
+
+    const entry = {
+      type: ACTION_TYPES.EDIT_TEXT_NODE,
+      campaignId: CAMPAIGN,
+      textNodeId: 'tn-1',
+      before: { width: 200, height: 80,  positionX: 100, positionY: 200 },
+      after:  { width: 320, height: 120, positionX: 80,  positionY: 200 },
+    }
+    await applyInverse(entry, rs.ctx())
+    expect(snapshotState(rs)).toEqual(before)
+  })
+
+  it('drift refusal: text edit undo refuses if text was changed elsewhere', async () => {
+    const rs = makeReactState()
+    seedTextNode(rs, { id: 'tn-1', contentHtml: '<p>changed in another tab</p>' })
+
+    const entry = {
+      type: ACTION_TYPES.EDIT_TEXT_NODE,
+      campaignId: CAMPAIGN,
+      textNodeId: 'tn-1',
+      before: { text: '<p>old</p>' },
+      after:  { text: '<p>new</p>' },
+    }
+    useUndoStore.getState().setScope({ userId: 'u1', campaignId: CAMPAIGN })
+    useUndoStore.getState().recordAction(entry)
+
+    const result = await useUndoStore.getState().undo(rs.ctx())
+    expect(result).toMatchObject({ ok: false, conflict: true })
+    expect(result.reason).toMatch(/text changed elsewhere/i)
   })
 })

@@ -147,11 +147,36 @@ export default function App() {
           persist.catch(console.error)
         }
       } else if (n.type === 'textNode') {
-        // moveTextNode recordAction lands in phase 8 per ADR-0006 §10.
-        dbUpdateTextNode(n.id, {
+        const persist = dbUpdateTextNode(n.id, {
           positionX: n.position.x,
           positionY: n.position.y,
-        }).catch(console.error)
+        })
+        if (movedFar) {
+          // moveTextNode is one entry per text node moved (no grouping).
+          // The persist failure path pops by rolling back this specific
+          // entry via popLastAction inside the .catch — same shape as the
+          // grouped moveCard rollback but per-node.
+          useUndoStore.getState().recordAction({
+            type: ACTION_TYPES.MOVE_TEXT_NODE,
+            campaignId: activeCampaignId,
+            label: 'Move text',
+            timestamp: new Date().toISOString(),
+            textNodeId: n.id,
+            before: { x: start.x, y: start.y },
+            after:  { x: n.position.x, y: n.position.y },
+          })
+          persist.catch((err) => {
+            console.error(err)
+            // Best-effort rollback. Multi-node drags that mix cards and
+            // text nodes can race here; in practice persists rarely fail
+            // for valid writes, and the orphan entry would just refuse on
+            // Ctrl+Z (canApplyInverse drift check). Acceptable.
+            useUndoStore.getState().popLastAction()
+          })
+        } else {
+          // Sub-threshold nudge — still persist, just no undo entry.
+          persist.catch(console.error)
+        }
       }
     }
 
@@ -273,6 +298,28 @@ export default function App() {
       newTextNode.dragHandle = '.text-node-drag-handle'
       newTextNode.data = { ...newTextNode.data, editing: true }
       setNodes((nds) => [...nds, newTextNode])
+
+      // Record AFTER the persist succeeds so canApplyInverse's existence
+      // check can rely on the row being in DB. dbRow captures the fields
+      // createTextNode writes; redo replays them via createTextNode({ id }).
+      useUndoStore.getState().recordAction({
+        type: ACTION_TYPES.CREATE_TEXT_NODE,
+        campaignId: activeCampaignId,
+        label: 'Add text',
+        timestamp: new Date().toISOString(),
+        textNodeId: newTextNode.id,
+        dbRow: {
+          id:           newTextNode.id,
+          campaign_id:  activeCampaignId,
+          content_html: '',
+          position_x:   flowPos.x,
+          position_y:   flowPos.y,
+          width:        newTextNode.data.width,
+          height:       newTextNode.data.height,
+          font_size:    newTextNode.data.fontSize,
+          align:        newTextNode.data.align,
+        },
+      })
     } catch (err) {
       console.error('Failed to create text node:', err)
     }
@@ -456,10 +503,38 @@ export default function App() {
     if (!target) return
 
     if (target.type === 'textNode') {
-      // Optimistic removal + persist. Text-node undo lands in phase 8.
+      // Snapshot the full DB-shape row from current React state BEFORE the
+      // optimistic removal. Text nodes have no dependent rows (no cascade),
+      // so this is a single-row snapshot — much simpler than deleteCard's
+      // restoreCardWithDependents path.
+      const dbRow = {
+        id:           target.id,
+        campaign_id:  activeCampaignId,
+        content_html: target.data.text ?? '',
+        position_x:   target.position.x,
+        position_y:   target.position.y,
+        width:        target.data.width,
+        height:       target.data.height ?? null,
+        font_size:    target.data.fontSize,
+        align:        target.data.align,
+      }
+
       setNodes((nds) => nds.filter((n) => n.id !== nodeId))
       setEdges((eds) => eds.filter((e) => e.source !== nodeId && e.target !== nodeId))
-      dbDeleteTextNode(nodeId).catch(console.error)
+
+      useUndoStore.getState().recordAction({
+        type: ACTION_TYPES.DELETE_TEXT_NODE,
+        campaignId: activeCampaignId,
+        label: 'Delete text',
+        timestamp: new Date().toISOString(),
+        textNodeId: target.id,
+        dbRow,
+      })
+
+      dbDeleteTextNode(nodeId).catch((err) => {
+        console.error(err)
+        useUndoStore.getState().popLastAction()
+      })
       return
     }
 

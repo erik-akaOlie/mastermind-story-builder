@@ -6,6 +6,9 @@ import {
 } from '@phosphor-icons/react'
 import { updateTextNode as dbUpdateTextNode } from '../lib/textNodes.js'
 import { useCanvasOps } from '../lib/CanvasOpsContext.jsx'
+import { useCampaign } from '../lib/CampaignContext.jsx'
+import { useUndoStore } from '../store/useUndoStore'
+import { ACTION_TYPES } from '../lib/undoActions'
 
 const DEFAULT_WIDTH = 240
 const MIN_WIDTH     = 80
@@ -71,6 +74,7 @@ function NativeButton({ onAction, className, title, children }) {
 export default function TextNode({ id, data, xPos, yPos }) {
   const { setNodes, getViewport } = useReactFlow()
   const { onDeleteNode } = useCanvasOps()
+  const { activeCampaignId } = useCampaign()
 
   const width    = data.width    ?? DEFAULT_WIDTH
   const height   = data.height   ?? null
@@ -84,6 +88,27 @@ export default function TextNode({ id, data, xPos, yPos }) {
   const editorRef = useRef(null)
   const boxRef    = useRef(null)
   const dragRef   = useRef(null)
+  // Phase 8: snapshot the editor's HTML on focus so the blur diff can fire
+  // exactly one editTextNode entry per session (matching ADR-0006 §7's
+  // text-edit session model). Toolbar clicks and resize gestures record
+  // their own immediate entries — those don't go through this ref.
+  const editFocusValueRef = useRef(null)
+
+  // Helper: record an editTextNode entry with whatever fields actually
+  // changed. Both `before` and `after` carry a partial field-set so the
+  // dispatcher's drift check only looks at the relevant slots.
+  const recordEdit = useCallback((before, after) => {
+    if (!activeCampaignId) return
+    useUndoStore.getState().recordAction({
+      type: ACTION_TYPES.EDIT_TEXT_NODE,
+      campaignId: activeCampaignId,
+      label: 'Edit text',
+      timestamp: new Date().toISOString(),
+      textNodeId: id,
+      before,
+      after,
+    })
+  }, [id, activeCampaignId])
 
   // ── Enter edit mode when data.editing flips true ──────────────────────────
   useEffect(() => {
@@ -102,6 +127,9 @@ export default function TextNode({ id, data, xPos, yPos }) {
     const el = editorRef.current
     if (!editing || !el) return
     el.innerHTML = data.text ?? ''
+    // Snapshot the text-content at session start so save()'s blur path
+    // can diff and emit a single editTextNode entry per session.
+    editFocusValueRef.current = el.innerHTML
 
     let attempts = 0
     let timer = null
@@ -140,11 +168,25 @@ export default function TextNode({ id, data, xPos, yPos }) {
   }, [id])
 
   const update = useCallback((patch) => {
-    setNodes((nds) => nds.map((n) =>
-      n.id === id ? { ...n, data: { ...n.data, ...patch } } : n
-    ))
+    // Capture before-values from current React state for the recordAction.
+    // `before` is the prior value of every field this update touches; only
+    // fields that actually changed end up in the entry.
+    const before = {}
+    const after  = {}
+    setNodes((nds) => nds.map((n) => {
+      if (n.id !== id) return n
+      for (const k of Object.keys(patch)) {
+        const prevVal = n.data[k]
+        if (prevVal !== patch[k]) {
+          before[k] = prevVal
+          after[k]  = patch[k]
+        }
+      }
+      return { ...n, data: { ...n.data, ...patch } }
+    }))
     persistPatch(patch)
-  }, [id, setNodes, persistPatch])
+    if (Object.keys(after).length > 0) recordEdit(before, after)
+  }, [id, setNodes, persistPatch, recordEdit])
 
   const save = useCallback(() => {
     const html = editorRef.current?.innerHTML ?? ''
@@ -156,7 +198,18 @@ export default function TextNode({ id, data, xPos, yPos }) {
     setEditing(false)
     // Persist the final text content. `editing` is UI-only and not stored in DB.
     persistPatch({ text: html })
-  }, [id, setNodes, persistPatch])
+
+    // Session-bound text-content edit: diff the html against the value
+    // captured on focus and record one editTextNode if it changed.
+    // Toolbar clicks (handled via update()) record their own entries
+    // immediately — this branch only covers the typed-into-the-editor
+    // session per ADR-0006 §7.
+    const before = editFocusValueRef.current
+    editFocusValueRef.current = null
+    if (before !== null && before !== html) {
+      recordEdit({ text: before }, { text: html })
+    }
+  }, [id, setNodes, persistPatch, recordEdit])
 
   // Route through App's onDeleteNode (which uses App's setNodes from
   // useNodesState + dbDeleteTextNode). Going through useReactFlow().setNodes
@@ -259,6 +312,7 @@ export default function TextNode({ id, data, xPos, yPos }) {
     }
 
     const onUp = () => {
+      const drag = dragRef.current
       dragRef.current = null
       if (latest.dirty) {
         dbUpdateTextNode(id, {
@@ -267,6 +321,34 @@ export default function TextNode({ id, data, xPos, yPos }) {
           width:     latest.width,
           height:    latest.height,
         }).catch(console.error)
+        // Record the resize as a single editTextNode entry. `before` /
+        // `after` carry only the dimensions and any position shift (a
+        // resize from a top or left handle moves the node's origin too).
+        // The drag's start values were captured in startResize and live
+        // on dragRef until this mouseup.
+        if (drag) {
+          const before = {}
+          const after  = {}
+          if (drag.startWidth !== latest.width) {
+            before.width = drag.startWidth
+            after.width  = latest.width
+          }
+          if (drag.startHeight !== latest.height) {
+            before.height = drag.startHeight
+            after.height  = latest.height
+          }
+          if (drag.startNodeX !== latest.x) {
+            before.positionX = drag.startNodeX
+            after.positionX  = latest.x
+          }
+          if (drag.startNodeY !== latest.y) {
+            before.positionY = drag.startNodeY
+            after.positionY  = latest.y
+          }
+          if (Object.keys(after).length > 0) {
+            recordEdit(before, after)
+          }
+        }
         latest.dirty = false
       }
     }
@@ -276,7 +358,7 @@ export default function TextNode({ id, data, xPos, yPos }) {
       document.removeEventListener('mousemove', onMove)
       document.removeEventListener('mouseup',   onUp)
     }
-  }, [id, setNodes])
+  }, [id, setNodes, recordEdit])
 
   // ── Styles ────────────────────────────────────────────────────────────────
   const textStyle = {

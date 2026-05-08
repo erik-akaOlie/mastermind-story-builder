@@ -24,8 +24,14 @@ export async function loadTextNodes(campaignId) {
 
 // ----------------------------------------------------------------------------
 // Create a new text annotation.
+//
+// `id` is optional. Pass it to recreate a text node at a known UUID — used
+// by the undo system when redoing a createTextNode (after it was undone via
+// delete) or undoing a deleteTextNode. Without `id`, Postgres assigns a
+// fresh one. Same pattern as createNode / createConnection.
 // ----------------------------------------------------------------------------
 export async function createTextNode({
+  id,
   campaignId,
   contentHtml = '',
   positionX = 0,
@@ -36,24 +42,45 @@ export async function createTextNode({
   align = 'left',
 }) {
   return persistWrite(async () => {
+    const insertRow = {
+      campaign_id:  campaignId,
+      content_html: contentHtml,
+      position_x:   positionX,
+      position_y:   positionY,
+      width,
+      height,
+      font_size:    fontSize,
+      align,
+    }
+    if (id) insertRow.id = id
+
     const { data, error } = await supabase
       .from('text_nodes')
-      .insert({
-        campaign_id:  campaignId,
-        content_html: contentHtml,
-        position_x:   positionX,
-        position_y:   positionY,
-        width,
-        height,
-        font_size:    fontSize,
-        align,
-      })
+      .insert(insertRow)
       .select()
       .single()
     if (error) throw error
 
     return dbTextNodeToReactFlow(data)
   }, 'your text note')
+}
+
+// ----------------------------------------------------------------------------
+// Inverse of a text-node delete: re-insert the row with all its fields at
+// its original UUID. Used by phase 8's deleteTextNode undo. Mirrors
+// restoreCardWithDependents from phase 5 but text nodes have no dependent
+// rows, so this is a single insert.
+//
+// Realtime echoes the INSERT back to all subscribers (including this tab),
+// but useCampaignData's text_nodes INSERT handler is idempotent — it skips
+// rows whose ids already exist locally. So the optimistic setNodes in the
+// dispatcher won't be double-applied.
+// ----------------------------------------------------------------------------
+export async function restoreTextNode(dbRow) {
+  return persistWrite(async () => {
+    const { error } = await supabase.from('text_nodes').insert(dbRow)
+    if (error) throw error
+  }, 'this restore')
 }
 
 // ----------------------------------------------------------------------------
