@@ -9,7 +9,21 @@
       "WebFetch(domain:www.eleken.co)",
       "WebFetch(domain:community.atlassian.com)",
       "WebFetch(domain:m1.material.io)",
-      "Bash(npm --version)"
+      "Bash(npm --version)",
+      "Bash(node -e \"const p = require\\(''./package.json''\\); console.log\\(JSON.stringify\\({...p.dependencies, ...p.devDependencies}, null, 2\\)\\)\")",
+      "Bash(npm install:*)",
+      "Bash(dir \"C:\\\\Users\\\\erik\\\\projects\\\\personal AI explorations\\\\DnD Campaign Mind Map\\\\public\")",
+      "Bash(cmd /c \"dir \"\"C:\\\\Users\\\\erik\\\\projects\\\\personal AI explorations\\\\DnD Campaign Mind Map\"\"\")",
+      "Bash(cmd /c \"dir \"\"C:\\\\Users\\\\erik\\\\projects\\\\personal AI explorations\\\\DnD Campaign Mind Map\"\" /b\")",
+      "Bash(powershell -Command \"Get-ChildItem ''C:\\\\Users\\\\erik\\\\projects\\\\personal AI explorations\\\\DnD Campaign Mind Map'' | Select-Object Name\")",
+      "Bash(powershell -Command \":*)",
+      "Bash(powershell -Command \"Get-ChildItem ''C:\\\\Users\\\\erik\\\\projects\\\\personal AI explorations\\\\DnD Campaign Mind Map\\\\public\\\\avatars'' | Select-Object Name\")",
+      "Bash(npx tsc *)",
+      "Bash(npm run *)",
+      "Bash(claude mcp *)",
+      "Bash(npx vite *)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(gh auth *)"
     ]
   }
 }
