@@ -51,6 +51,22 @@ describe('useFeedbackToastStore — push', () => {
     vi.advanceTimersByTime(1)
     expect(s().toasts[0].exiting).toBe(true)
   })
+
+  it('propagates the icon component reference onto the stored toast', () => {
+    // ChipToast reads `toast.icon` and renders it; this pins that the
+    // store's push() actually carries `icon` through to the rendered
+    // toast object. Regression guard for the bug where push() destructured
+    // only { stickyId, variant, content, durationMs } and silently dropped
+    // the icon, leaving undo/redo toasts iconless.
+    const FakeIcon = () => null
+    s().push({ variant: 'info', icon: FakeIcon, content: 'Move card' })
+    expect(s().toasts[0].icon).toBe(FakeIcon)
+  })
+
+  it('leaves icon undefined when not provided (text-only toasts)', () => {
+    s().push({ variant: 'warn', content: "Couldn't undo." })
+    expect(s().toasts[0].icon).toBeUndefined()
+  })
 })
 
 describe('useFeedbackToastStore — no-stacking on supersession', () => {
