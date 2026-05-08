@@ -4,6 +4,114 @@ A running log of meaningful changes to MasterMind: Story Builder. Append-only. N
 
 ## [Unreleased]
 
+### Sprint 2 — Undo / redo + chip-style feedback toasts (2026-05-04)
+
+Closes [ADR-0006](./docs/decisions/0006-undo-redo.md). Recovery from
+accidental deletes / edits is now a Ctrl+Z away; a small bottom-left
+"feedback strip" reports each undo and redo as a chip-style toast that
+slides in from behind the SyncIndicator chip. Foundation for the
+Sprint 5+ AI co-pilot (which will write into cards) to feel safe to
+try, since bad output is reversible.
+
+**Added**
+- 14 action types covering everything destructive or modifying:
+  `createCard`, `editCardField`, `moveCard`, `deleteCard`,
+  `addConnection`, `removeConnection`, `addListItem`, `removeListItem`,
+  `editListItem`, `reorderListItem`, `createTextNode`, `editTextNode`,
+  `moveTextNode`, `deleteTextNode`. Each carries a DB-shape snapshot of
+  what changed and how to reverse it; the dispatcher reads the top of
+  the stack on Ctrl+Z and runs the inverse via the same `lib/*.js`
+  write path that normal edits use.
+- [`src/store/useUndoStore.js`](./src/store/useUndoStore.js) — per-tab,
+  per-(user × campaign) past + future stacks capped at 75 entries.
+  sessionStorage-backed so F5 mid-session preserves history; closing
+  the tab clears it.
+- [`src/lib/undo/`](./src/lib/undo/) — dispatcher + 14 per-type modules
+  + 4 family helper files (card / connection / list-item / text-node)
+  + a `_shared.js` for universal helpers like `deepEqual`. Each per-
+  type module exports
+  `{ canApplyInverse, canApplyForward, applyInverse, applyForward }`
+  so the dispatcher is a thin `Map<type, handlers>` lookup.
+- Conflict-aware in both directions. Both `undo` and `redo` validate
+  current state matches what the entry expects (drift detection from
+  e.g. another tab's Realtime updates) before applying. On mismatch:
+  refuse, pop the orphan entry, fire a "Couldn't undo — this changed
+  elsewhere" toast.
+- Word-style typing exemption: while focused inside an
+  input / textarea / contenteditable, `Ctrl+Z` is left to the browser
+  (keystroke-level undo). Outside of those, `Ctrl+Z` reverses the last
+  campaign action. `Ctrl+Shift+Z` and `Ctrl+Y` both work for redo.
+- [`src/hooks/useUndoShortcuts.js`](./src/hooks/useUndoShortcuts.js)
+  — keyboard listener with the typing exemption above.
+- [`src/components/FeedbackChip.jsx`](./src/components/FeedbackChip.jsx),
+  [`src/components/ChipToast.jsx`](./src/components/ChipToast.jsx),
+  [`src/components/FeedbackChipBar.jsx`](./src/components/FeedbackChipBar.jsx)
+  — the bottom-left feedback strip. The SyncIndicator chip stays
+  light/frosted (ambient "Edited Nm ago"); toasts are dark gray-900
+  with white text and slide in from behind the chip via CSS
+  `@keyframes` (no JS state ping-pong, no entry delay). Undo/redo
+  toasts lead with a Phosphor curved-arrow icon
+  (`ArrowUUpLeft` / `ArrowUUpRight`) followed by the entry's label
+  ("[↶] Move card"). Conflict and save-fail toasts render text-only on
+  the same dark body. 2s visible, 300ms fade-out, hover pauses both
+  the dismiss timer and (mid-fade) the visual opacity transition.
+- [`src/store/useFeedbackToastStore.js`](./src/store/useFeedbackToastStore.js)
+  — custom queue + lifecycle replacing Sonner for the chip toasts.
+  Sonner couldn't carry the slide-from-behind-chip + masking pattern.
+  When a new toast pushes, any existing visible toast immediately
+  starts fading out (no horizontal stacking) so old and new cross-
+  fade smoothly during the overlap. Sticky id (`persist-fail`)
+  replaces in place so repeated save-failures collapse to one toast.
+- [`src/lib/feedbackToasts.jsx`](./src/lib/feedbackToasts.jsx) —
+  thin public API (`toastUndoSuccess`, `toastRedoSuccess`,
+  `toastUndoConflict`, `toastRedoConflict`, `toastSaveFailed`) so
+  `.js` modules can fire chip toasts without owning JSX.
+- 31 new tests across `useUndoStore.test.js` and
+  `useFeedbackToastStore.test.js` covering stack semantics, F5
+  rehydrate end-to-end, conflict + failure paths, toast call paths,
+  no-stacking supersession, sticky-id replace, lifecycle phase
+  transitions, and pause/resume in both phases.
+- [`src/lib/undoIntegration.test.js`](./src/lib/undoIntegration.test.js)
+  — round-trip integration test for delete-card-with-everything
+  (card + sections + connections), the riskiest action type's
+  snapshot/restore cycle.
+
+**Changed**
+- The persist-write final-failure toast (in `errorReporting.js`)
+  shifted off Sonner onto the same chip-toast system, so all
+  bottom-left feedback shares one visual family. The `sonner` npm
+  package is no longer imported anywhere — left installed for a
+  separate cleanup commit.
+- `AuthContext.signOut` now wipes the in-memory undo stack AND every
+  sessionStorage `mastermind:undo:${userId}:*` entry (across any
+  campaigns the user touched in this tab) before Supabase clears the
+  session. Prevents a different user signing in next on the same tab
+  from inheriting the prior user's undo history.
+- The original 1044-line `src/lib/undoActions.js` and 1565-line
+  `src/lib/undoActions.test.js` were each split per-type so the
+  dispatcher reads as 14 small focused modules instead of a switch-
+  on-type monolith. New action families (e.g. AI-generated batch
+  writes when Sprint 5+ lands) drop in as a new file alongside
+  rather than disentangling helpers from a grab-bag.
+
+**Trade-offs accepted**
+- **No live cross-tab sync.** Tab A's actions don't appear in Tab B's
+  stack while both are open. Industry-standard behavior (Figma,
+  Notion, Google Docs). If users ever ask, the V2 path is
+  BroadcastChannel coordination.
+- **No cross-tab-close survival.** Closing the tab loses its undo
+  history. F5 is fine (sessionStorage handles it). The localStorage +
+  multi-tab-coordination version is the V2 path if real users hit it.
+- **Non-transactional delete-restore.** The 3-step restore (card →
+  sections → connections) isn't atomic. A partial failure mid-restore
+  could leave inconsistent state. `persistWrite`'s retry/lock-overlay
+  flow makes this rare; if observed, swap the 3 inserts for one
+  Postgres RPC `restore_card_with_dependents`.
+- **Residual flicker on chained Ctrl+Z** (create → move → delete
+  combos). Functionally correct — round-trip property holds, undo
+  history intact — but a sub-frame visual stutter remains. Documented
+  in `BACKLOG.md` as Tier 4 polish.
+
 ### Sprint 1.6 — EditModal refactor + first component tests (2026-04-28)
 
 The 792-line EditModal was the largest single source of "fragile" code in the

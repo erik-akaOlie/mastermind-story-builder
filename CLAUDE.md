@@ -54,30 +54,56 @@ src/
 
   lib/                             infrastructure & data-access layer
     supabase.js                    single shared Supabase client (reads env vars)
-    AuthContext.jsx                session + signIn/signUp/signOut context
+    AuthContext.jsx                session + signIn/signUp/signOut context. signOut calls
+                                   useUndoStore.clearAllForUser(userId) before Supabase clears the session
+                                   so a different next user can't inherit prior undo history.
     CampaignContext.jsx            active-campaign-id context; persists to localStorage
     campaigns.js                   CRUD for campaigns + listNodeTypes
-    nodes.js                       CRUD for nodes + node_sections; shape-marshaling
+    nodes.js                       CRUD for nodes + node_sections; shape-marshaling. Includes
+                                   buildDeleteCardSnapshot + restoreCardWithDependents for undo's delete-card
+                                   round-trip.
     connections.js                 CRUD for connections (edges)
-    textNodes.js                   CRUD for text annotations
+    textNodes.js                   CRUD for text annotations; includes restoreTextNode for undo's delete-text
+                                   round-trip.
     imageStorage.js                Storage helpers: transcode → two WebP variants → upload; signed-URL fetch
     useImageUrl.js                 hook resolving avatar/media values to renderable URLs (handles base64,
                                    external https, and Storage paths)
-    errorReporting.js              persistWrite() retry wrapper; drives the sync indicator
+    errorReporting.js              persistWrite() retry wrapper; on final failure, fires toastSaveFailed
+                                   (chip-toast, no longer Sonner)
+    feedbackToasts.jsx             public push API for undo / redo / conflict / save-fail chip toasts.
+                                   Wraps useFeedbackToastStore so .js modules can fire toasts without JSX.
     CanvasOpsContext.jsx           context exposing App-level ops (onDeleteNode) to RF custom node
                                    renderers. Workaround for RF v11's `useReactFlow().setNodes` not
                                    propagating removals to App's `useNodesState`. See file header.
+
+  lib/undo/                        Undo-system command-pattern dispatcher (per ADR-0006)
+    index.js                       exports ACTION_TYPES, deepEqual, and the four dispatcher functions
+                                   (canApplyInverse / canApplyForward / applyInverse / applyForward). Routes
+                                   each entry to its per-type handler via a Map<type, handlers> lookup.
+    _shared.js                     deepEqual + universals
+    _cardHelpers.js, _connectionHelpers.js, _listItemHelpers.js, _textNodeHelpers.js
+                                   family-specific helpers (drift checks, persist-call shapes)
+    createCard.js, editCardField.js, moveCard.js, deleteCard.js,
+    addConnection.js, removeConnection.js,
+    addListItem.js, removeListItem.js, editListItem.js, reorderListItem.js,
+    createTextNode.js, editTextNode.js, moveTextNode.js, deleteTextNode.js
+                                   one file per action type, each exporting
+                                   { canApplyInverse, canApplyForward, applyInverse, applyForward }
 
   hooks/                           reusable hooks extracted from App.jsx and EditModal
     useSpacebarPan.js              spacebar-held-down panning state
     useCampaignData.js             load lifecycle for the active campaign (types + nodes + edges + text)
                                    AND Supabase Realtime subscriptions that mirror remote INSERT/UPDATE/DELETE
-                                   into setNodes/setEdges
+                                   into setNodes/setEdges. Calls useUndoStore.setScope() so undo rehydrates
+                                   on F5 and re-scopes when the active campaign switches.
     useEdgeGeometry.js             recomputes spread border points + connection-dot positions when nodes move
     useNodeHoverSelection.js       returns the four ReactFlow hover/select handlers, all backed by useCanvasUiStore
     useAutoSave.js                 debounced save with explicit flush; used by EditModal
     useMorphAnimation.js           modal-from-card morph in/out (useLayoutEffect setup, RAF animate-in,
                                    returned animateClose for exit); used by EditModal
+    useUndoShortcuts.js            global Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y listener with the Word-style typing
+                                   exemption (Ctrl+Z inside an input/textarea/contenteditable is left to the
+                                   browser; outside it reverses the last campaign action)
 
   nodes/
     CampaignNode.jsx               colored campaign cards; subscribes to useCanvasUiStore; adds .is-lifted
@@ -114,7 +140,11 @@ src/
     MigrateImages.jsx              one-shot tool at #migrate to backfill base64 → Storage; safe to delete
                                    once no campaign has any base64 image entries
     LockOverlay.jsx                modal that freezes edits on prolonged save failure
-    SyncIndicator.jsx              ambient bottom-left "Edited just now" / "Can't save" chip
+    SyncIndicator.jsx              ambient "Edited just now" / "Can't save" chip; positioned by FeedbackChipBar
+    FeedbackChipBar.jsx            bottom-left feedback strip composing SyncIndicator + chip-toast slot;
+                                   overflow:hidden mask makes the slot the slide-in surface
+    FeedbackChip.jsx               pill-shaped toast body (dark gray-900 + white text + optional Phosphor icon)
+    ChipToast.jsx                  single chip-toast w/ CSS @keyframes slide-in, opacity fadeout, hover-pause
     EditModal.test.jsx             10 happy-path tests pinning down EditModal behavior (open/populate,
                                    debounced auto-save, connection add/remove, Esc to close, avatar upload)
 
@@ -126,6 +156,12 @@ src/
                                    hoveredEdgeNodeIds). Cards subscribe via narrow selectors so a hover event
                                    only re-renders cards whose computed state actually changed.
     useSyncStore.js                Zustand store for write-success/failure tracking (drives SyncIndicator + LockOverlay)
+    useUndoStore.js                Zustand store for the undo/redo stacks; per-tab, per-(user × campaign);
+                                   sessionStorage-backed under `mastermind:undo:${userId}:${campaignId}`;
+                                   capped at 75. clearAllForUser() called on sign-out wipes every entry under
+                                   the user's prefix.
+    useFeedbackToastStore.js       Zustand store for the chip-toast queue: lifecycle (visible → exiting →
+                                   removed), pause/resume per toast, sticky-id replace for persist-fail.
 
   utils/
     labelUtils.js                  sortKey(), labelInitial()
@@ -434,6 +470,9 @@ Custom user-created types are scoped per campaign in Supabase but the UI flow fo
 - [x] **Realtime sync** — Supabase Realtime channel in `useCampaignData` mirrors remote `nodes` / `node_sections` / `connections` / `text_nodes` INSERT/UPDATE/DELETE into local state. No echo filter in V1; self-writes round-trip harmlessly. Requires `REPLICA IDENTITY FULL` on each table for DELETE events to pass RLS + filter checks.
 - [x] **EditModal decomposition** — 792-line component split into `<EditModalHeader>`, `<BulletSection>` (×3), `<MediaSection>`, `<ConnectionsSection>`, `<TypePicker>` + `useAutoSave` and `useMorphAnimation` hooks. EditModal itself is now 228 lines of orchestration.
 - [x] **Component tests** — Vitest + React Testing Library + jsdom; `EditModal.test.jsx` covers 10 happy-path scenarios. Run with `npm test`.
+- [x] **Undo / redo** — Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y reverses recent campaign actions. Per-tab, per-(user × campaign), capped at 75. Conflict-aware in both directions (refuses + toasts when state has drifted from another tab's Realtime updates). 14 action types covered; sessionStorage-backed for F5 protection. Word-style typing exemption: `Ctrl+Z` inside an input/textarea/contenteditable is left to the browser. See [ADR-0006](./docs/decisions/0006-undo-redo.md).
+- [x] **Bottom-left feedback strip** — `FeedbackChipBar` composes the existing `SyncIndicator` (light, ambient "Edited Nm ago") with a chip-toast slot (dark, transient action feedback). Toasts slide in from behind the chip via CSS @keyframes (no JS state ping-pong, no entry delay), masked by an `overflow:hidden` container so no toast pixels are visible left of the chip's left edge. Undo/redo toasts lead with a Phosphor curved-arrow icon (`ArrowUUpLeft` / `ArrowUUpRight`) followed by the entry's label. 2s visible, 300ms fadeout, hover pauses both phases (including freezing the visual opacity transition mid-fadeout). Replaces Sonner for these toasts; persist-fail uses the same chip family with a sticky id.
+- [x] **Sign-out cleanup** — `AuthContext.signOut` calls `useUndoStore.clearAllForUser(userId)` before Supabase clears the session, wiping the in-memory undo stack AND every `mastermind:undo:${userId}:*` sessionStorage entry across any campaigns the user touched in this tab.
 
 ## What Is NOT Built (roadmap)
 
@@ -481,6 +520,6 @@ Going forward:
 |---|---|---|---|
 | Custom node types | Persisted per-browser in `localStorage` via `useTypeStore` (key `dnd-node-types`) | Described as per-campaign rows in `node_types` | Tactical: the DB already supports it; the UI write path wasn't migrated. Revisit before custom types become user-facing to anyone besides Erik. Cross-ref: "Cut Scope Notes" above. |
 | Top-left breadcrumb + campaign switcher (`UserMenu.jsx`) | Collapsible house-icon chip that expands on hover to reveal `Campaigns / <name> v`; chevron opens a dropdown that switches campaigns in place | Design doc still describes a top-right UserMenu with separate Campaigns button + avatar | New UX, shipped after the design-doc Sprint 1 sync. Design doc should be updated to match (preferred path per policy). |
-| Sync status chip (`SyncIndicator.jsx`) + lock overlay (`LockOverlay.jsx`) + 3-strike auto-retry (`persistWrite` + `useProbeLoop`) | Ambient bottom-left "Edited just now" chip; lock modal freezes edits on offline / 3 consecutive failures; 3s probe loop unlocks on reconnect; Sonner toast on final failure | Not in design doc | New behavior responding to the "loss of trust" risk in `project-brief.md`. Candidate for an ADR covering the probe-vs-requeue tradeoff and the 3-failure threshold. |
+| Sync status chip (`SyncIndicator.jsx`) + lock overlay (`LockOverlay.jsx`) + 3-strike auto-retry (`persistWrite` + `useProbeLoop`) | Ambient bottom-left "Edited just now" chip; lock modal freezes edits on offline / 3 consecutive failures; 3s probe loop unlocks on reconnect; chip-style `toastSaveFailed` on final failure (same chip family as undo/redo toasts via `feedbackToasts.jsx`) | Bottom-left feedback strip is now documented in `design-document.md`; the probe / 3-failure / lock-overlay specifics still aren't | The chip vs lock-overlay split is the operational answer to the "loss of trust" risk in `project-brief.md`. The probe-vs-requeue tradeoff and the 3-failure threshold remain a candidate for a future ADR. |
 
 These last two divergences should be resolved either by updating `design-document.md` or writing ADRs — they're not hacks, they're design decisions that happened after the most recent doc sync.

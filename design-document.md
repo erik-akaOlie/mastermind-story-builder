@@ -401,6 +401,34 @@ Card titles scale inversely with viewport zoom so they remain readable at any zo
 - The icon auto-hides when the title's longest word would otherwise slide under it (determined by a deterministic canvas `measureText` layout simulation — see `CampaignNode.jsx`)
 - The avatar diameter tracks the header's rendered height via `ResizeObserver`, so it always fills the header regardless of title wrapping or zoom level
 
+### 7.5 Bottom-Left Feedback Strip *(implemented)*
+
+A horizontal pair of pill-shaped chips sits at the bottom-left of the canvas, reading as one cohesive feedback surface for two related concerns:
+
+| Half | What it reports | Visual treatment |
+|---|---|---|
+| **Sync chip** (left) | Ambient save status — "Edited just now," "Edited 5m ago," "Can't save," "Offline" | Light: white-90 backdrop blur, gray-500 text |
+| **Toast chip** (right) | Transient action events — undo / redo confirmations, conflicts, save-fail | Dark: gray-900-95 backdrop blur, white text |
+
+Same pill shape, same frosted backdrop, opposite tonal direction. The light/dark contrast is the visual signal that distinguishes "where things stand" from "what just happened."
+
+**Toast types:**
+
+- **Undo success.** Leads with a curved-arrow icon (`ArrowUUpLeft`) followed by the action label. "[↶] Move card" — no "Undid:" word prefix; the icon does that work.
+- **Redo success.** Mirror of undo. "[↷] Move card" using `ArrowUUpRight`.
+- **Conflict.** Text-only on the dark body. "Couldn't undo — this changed elsewhere." Used when state has drifted (e.g. another tab edited the same field via Realtime) and the recorded inverse can no longer be applied cleanly.
+- **Save-fail.** Text-only on the dark body. "Can't save your changes — check your connection." Sticky id so repeated failures collapse to a single toast rather than stacking.
+
+**Animation & lifecycle:**
+
+- **Slide-in.** Toast slides in from behind the sync chip. Pure CSS `@keyframes` so the animation begins the same frame the toast is created — no JS state ping-pong, no entry delay between Ctrl+Z and the visible motion. `translateX(-200px) → translateX(0)` over 250ms.
+- **Mask.** The strip wraps the toast slot in `overflow: hidden` whose left edge is the sync chip's left edge. Combined with the sync chip's higher z-index, this means: the toast can be UNDER the chip (occluded by z-index) but never extends LEFT of the chip's left edge. The toast emerges visually from the chip's right edge.
+- **Visible & fade-out.** 2 seconds at full opacity, then 300ms opacity fade-out.
+- **Cross-fade on supersession.** When a new toast pushes while another is still visible, the older one starts fading out in the *same React commit* the new one is created in — so both animations begin in the same paint frame and the old/new chips cross-fade smoothly during the overlap. No horizontal stacking; the strip never holds more than one fully-visible toast.
+- **Hover pause.** Hovering a toast pauses both the dismiss timer AND (mid-fade) the visual opacity transition via a DOM snapshot. Mouse-out resumes both — the fade continues from the snapshotted opacity rather than restarting.
+
+**Why the chip system, not Sonner.** The original ADR-0006 §6 envisioned Sonner-rendered toasts. Sonner couldn't carry the slide-from-behind-chip mask + cross-fade pattern without significant fighting, so a small custom store + component pair (`useFeedbackToastStore` + `ChipToast` + `FeedbackChipBar`) handles these specific toasts. The persist-fail toast moved to the same system so all bottom-left feedback shares one visual family.
+
 ---
 
 ## 8. Search *(designed, not yet built)*
