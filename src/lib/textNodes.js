@@ -7,6 +7,7 @@
 // ============================================================================
 
 import { supabase } from './supabase.js'
+import { persistWrite } from './errorReporting.js'
 
 // ----------------------------------------------------------------------------
 // Load all text annotations for a campaign, shaped as React Flow nodes.
@@ -34,23 +35,25 @@ export async function createTextNode({
   fontSize = 18,
   align = 'left',
 }) {
-  const { data, error } = await supabase
-    .from('text_nodes')
-    .insert({
-      campaign_id:  campaignId,
-      content_html: contentHtml,
-      position_x:   positionX,
-      position_y:   positionY,
-      width,
-      height,
-      font_size:    fontSize,
-      align,
-    })
-    .select()
-    .single()
-  if (error) throw error
+  return persistWrite(async () => {
+    const { data, error } = await supabase
+      .from('text_nodes')
+      .insert({
+        campaign_id:  campaignId,
+        content_html: contentHtml,
+        position_x:   positionX,
+        position_y:   positionY,
+        width,
+        height,
+        font_size:    fontSize,
+        align,
+      })
+      .select()
+      .single()
+    if (error) throw error
 
-  return dbTextNodeToReactFlow(data)
+    return dbTextNodeToReactFlow(data)
+  }, 'your text note')
 }
 
 // ----------------------------------------------------------------------------
@@ -75,16 +78,20 @@ export async function updateTextNode(id, {
   if (align       !== undefined) patch.align        = align
   if (Object.keys(patch).length === 0) return
 
-  const { error } = await supabase.from('text_nodes').update(patch).eq('id', id)
-  if (error) throw error
+  return persistWrite(async () => {
+    const { error } = await supabase.from('text_nodes').update(patch).eq('id', id)
+    if (error) throw error
+  }, 'your text note')
 }
 
 // ----------------------------------------------------------------------------
 // Delete a text annotation by its id.
 // ----------------------------------------------------------------------------
 export async function deleteTextNode(id) {
-  const { error } = await supabase.from('text_nodes').delete().eq('id', id)
-  if (error) throw error
+  return persistWrite(async () => {
+    const { error } = await supabase.from('text_nodes').delete().eq('id', id)
+    if (error) throw error
+  }, 'this deletion')
 }
 
 // ============================================================================
