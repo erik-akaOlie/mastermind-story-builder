@@ -44,10 +44,28 @@ Version-level scope (V1, V2+, V3+, out) lives in [`docs/product/roadmap.md`](./d
 
 ## Current sprint candidate — next
 
-Two items from the Sprint 2 candidate shipped: **undo / redo** (closes
-ADR-0006) and **dynamic card width**. **Branding (favicon + tab)** and
-**relative edit timestamps** are still open — see Quick Win below. The
-next sprint hasn't been picked yet; review the tiers at sprint start.
+**Recommended:** *Templates plumbing + leftover Quick Wins*
+
+| Item | Band | Size |
+|---|---|---|
+| Manage Card Templates | Foundational Progress | M |
+| Markdown export | Foundational Progress | S–M |
+| Branding (favicon + tab) | Quick Win | S |
+| Relative edit timestamps | Quick Win | S |
+
+**Why this mix.** Manage Card Templates is the cleanest "big thing" of the
+batch: it closes the localStorage-only custom-types divergence flagged in
+CLAUDE.md *and* unblocks Tailor Card Types → which is itself a prerequisite
+for V2's AI Card Creation. Markdown export is small but also a V2
+prerequisite (data ownership lands before AI lock-in concerns surface).
+Branding and relative edit timestamps are leftover from the prior sprint.
+
+**Alternative if user-visible value matters more this sprint.** Swap
+Manage Card Templates + Markdown export for **Typed Connections** (L) —
+ships meaningful canvas semantics (edge labels, relationship dropdowns)
+in one sprint without touching contenteditable.
+
+Final pick lands at sprint start.
 
 ---
 
@@ -100,18 +118,86 @@ next sprint hasn't been picked yet; review the tiers at sprint start.
 
 ## Foundational Progress
 
-### Card-type template management UI
-- **Problem.** Card types currently live in `useTypeStore` (localStorage)
-  with no UI for editing the *structure* of a type — only label / color /
-  icon. AI generation needs a structured target ("what sections does a
-  'character' card have?"). Modular sections work can't ship without this.
-- **Success.** Can edit a node type's section structure: add / remove /
-  rename sections, choose default kind (narrative bullets, hidden lore,
-  dm notes, custom). Changes are persisted to the existing Supabase
-  `node_types` table — wraps up the localStorage divergence currently
-  flagged in CLAUDE.md's "Known Divergences."
-- **Notes.** This is the missing piece for AI generation. Templates first,
-  then AI.
+> All items in this section target **V1** unless otherwise noted. Order
+> within the band reflects current sequencing intent, but is reviewed
+> sprint-by-sprint.
+
+### Manage Card Templates
+- **Problem.** Custom card types live in `useTypeStore` (localStorage)
+  with no UI to list, duplicate, or delete them — only `CreateTypeModal`
+  for label / color / icon at creation time. The localStorage-only
+  persistence is also flagged as a Known Divergence in CLAUDE.md: the
+  `node_types` table already exists per campaign, but the UI never
+  writes to it.
+- **Success.** A "Manage card templates" surface that lists all card
+  types for the active campaign and supports: create, rename, recolor,
+  re-icon, duplicate, delete. Persists to the Supabase `node_types`
+  table (closes the Known Divergence). Built-in types are protected
+  (cannot delete; some properties may be locked).
+- **Notes.** This is the *system-level* CRUD on card types. Per-type
+  *section structure* (alignment, motivations, geography, etc.) is the
+  separate Tailor Card Types item below — split this sprint so each can
+  ship independently.
+- **Dependencies.** None — purely additive.
+- **Size:** M
+
+### Tailor Card Types
+- **Problem.** Every card type today has the same fixed sections (Story
+  Notes / Hidden Lore / DM Notes / Inspiration). DMs want type-specific
+  structure: Character cards should have alignment, motivations, voice;
+  Location cards should have geography, population. Without per-type
+  section structure, AI Card Creation has no structured target either.
+- **Success.** A given card type can declare its own list of sections
+  (kind + label + default placement). Editing a card of that type
+  surfaces those sections in the modal in the declared order. The
+  Character template ships with an **Alignment** field as a default
+  section (this folds in what was previously a standalone Exploration
+  item — alignment is no longer one-off polish, it's the canonical
+  example use-case for tailoring).
+- **Notes.** Schema-flexible enough to keep the door open to richer
+  per-section field types in V2 (enum, number, image grid, etc.) —
+  V1 ships with the existing kinds (`narrative`, `hidden_lore`,
+  `dm_notes`, `media`, `custom`).
+- **Dependencies.** Manage Card Templates ships first (you can't tailor
+  what you can't manage).
+- **Size:** L
+
+### Typed Connections
+- **Problem.** Connections currently exist but are unlabeled — the canvas
+  encodes adjacency, not meaning. Users want to see *"father of"*,
+  *"ally of"*, *"located in"* on edges so the graph captures
+  relationships, not just lines.
+- **Success.** Each connection carries a relationship type from a managed
+  list (per-campaign or per-user — design call during build). A picker
+  prompts for the relationship type when a connection is created
+  (canvas-drag or via modal). Edges render the type label inline.
+  Existing untyped connections continue to render and can be typed
+  retroactively.
+- **Notes.** This is the V1-shippable half of what was previously
+  bundled with @-mention parsing as one Strategic Bet. Splitting them:
+  typed connections need only a `connections.relationship_type_id`
+  column + a `relationship_types` table + a small picker UI. No
+  contenteditable parsing required. The @-mention half stays in
+  Strategic Bet (see below).
+- **Dependencies.** None — independent of Templates work.
+- **Size:** L
+
+### Nest component
+- **Problem.** No way to group cards / connections / text annotations
+  into thematic units ("Act 1: Death House", "The Vistani plotline").
+  At >50 cards, the canvas becomes hard to organize visually.
+- **Success.** A FigJam-section-style container that:
+  - Holds any number of cards / connections / text nodes / sub-nests
+  - Recurses (nests inside nests)
+  - Moves its contents when the nest is moved
+  - Has a label / header and is colorable
+  - Persists position + membership to Supabase
+- **Notes.** Design-loaded — needs a pass on header chrome, resize
+  handles, drag-into vs. overlap-into semantics, and how nests
+  interact with multi-select / marquee. Persistence shape probably
+  needs a `nests` table + a `nest_members` join table (or a `nest_id`
+  on each child entity, which limits recursion strategy).
+- **Dependencies.** None.
 - **Size:** L
 
 ### Search
@@ -124,6 +210,37 @@ next sprint hasn't been picked yet; review the tiers at sprint start.
   already-loaded state. Postgres full-text search is straightforward
   later if scale demands it.
 - **Size:** M
+
+### Background images V1
+- **Problem.** The canvas is a flat color today. Campaigns set in a
+  specific place (Barovia, Waterdeep, the Underdark) lose visual
+  identity without a backing image. The aspirational isometric map is
+  V4+; a static image gets most of the value much sooner.
+- **Success.** Per-campaign background image upload. Image fills the
+  viewport without stretch or tile, and is **fixed to the window, not
+  the canvas zoom** (so it doesn't shift when panning / zooming).
+  Persists per-campaign; uses the existing image storage pipeline.
+- **Notes.** V1 is intentionally minimal: one image, no slideshow, no
+  AI generation, no canvas-anchored positioning. V2 layers slideshow
+  and AI-generated contextual images on top. Do NOT engineer V1 to be
+  "isometric-ready" — the V4+ interactive map is a different rendering
+  layer.
+- **Dependencies.** None (image storage + signed URLs already shipped).
+- **Size:** M
+
+### Markdown export
+- **Problem.** No way for a user to get their campaign data out of the
+  product. Data ownership matters on its own merits, and matters more
+  before AI features ship (lock-in concerns will surface).
+- **Success.** One-click "download my campaign as markdown" produces a
+  zip (or single file) containing all cards, sections, connections,
+  text annotations — readable in any markdown viewer.
+- **Notes.** Bounded but needs format decisions: one .md per card or
+  one combined file? How are connections encoded — inline links via
+  card labels? Where does media land — referenced by signed URL, or
+  inlined as base64 attachments?
+- **Dependencies.** None.
+- **Size:** S–M
 
 ### Copy / paste cards across campaigns
 - **Problem.** Useful patterns / cards from one campaign can't be reused
@@ -144,24 +261,33 @@ next sprint hasn't been picked yet; review the tiers at sprint start.
 > sprint. The spike's job: prototype the hardest piece, write findings,
 > then decide whether to invest a sprint.
 
-### Dynamic card connections + relationship types
-- **Problem (sketch).** Connections currently exist but are unlabeled and
-  created via a separate UI (the picker in EditModal). Users want to write
-  *"father to @Ireena"* in narrative text and have the connection
-  auto-created with the typed relationship "father to."
-- **What success might look like.** @-mention autocomplete in card text;
-  inline tagging creates a connection with a typed relationship;
-  relationships show as edge labels on the canvas; relationship types are
-  managed (dropdown, not free text).
+### @-mention parsing + autocomplete
+- **Problem (sketch).** Even after typed connections ship, creating a
+  connection still means leaving the narrative text and using a separate
+  picker. Users want to write *"father to @Ireena"* in card text and
+  have the connection auto-created with the typed relationship "father
+  to" attached. This is the contenteditable-heavy half of what was
+  previously bundled with typed connections; typed connections moved
+  into Foundational Progress (V1) and are no longer blocked by the
+  spike below.
+- **What success might look like.** @-trigger autocomplete inside any
+  card's narrative / hidden lore / dm notes; selecting an entry creates
+  a typed connection (using the V1 typed-connections infrastructure)
+  *and* renders an inline link in the prose. Removing the inline link
+  asks before deleting the underlying connection.
 - **What the spike has to answer.**
-  - Schema: `relationships` table with `source`, `target`, `type_id`,
-    where `type` is FK to a `relationship_types` table — per-campaign or
-    per-user?
-  - Inline parsing in contenteditable: how does the @-trigger menu
-    interact with React Flow + the existing rich text in cards?
+  - How does the @-trigger menu interact with React Flow + the
+    existing rich text in cards? (No popover libraries currently
+    integrated; contenteditable is custom.)
+  - Phrase capture: how do we extract *"father to"* from prose to
+    populate the relationship type? Pre-text vs. post-mention vs.
+    explicit syntax.
   - Bidirectional inverses ("father to" / "child of") — auto-generated
     or explicitly defined?
-  - Migration path from existing untyped connections.
+  - Reverse-edit semantics: if the user deletes the @-mention text in
+    the card, does the connection disappear?
+- **Dependencies.** Typed Connections (V1) ships first.
+- **Target version:** V2 (likely; reassess after spike)
 - **Size:** XL
 
 ### AI-Assisted Card Creation
@@ -206,18 +332,6 @@ next sprint hasn't been picked yet; review the tiers at sprint start.
 
 ## Exploration
 
-### Character alignment field
-- **Problem.** Character cards have no consistent place to display
-  alignment (lawful good, chaotic evil, etc.). DMs want it visible at
-  a glance.
-- **Success.** Alignment is a structured field on character-type cards
-  with consistent placement on the card body and in the EditModal.
-- **Notes.** Design-loaded. Where does alignment go — in the header,
-  below the title, as a small icon? Needs a design pass before build.
-  Also: does this generalize (a "stat" section for character cards) or
-  stay specific to alignment?
-- **Size:** S–M depending on design scope
-
 ### Undo/redo residual flicker
 - **Problem.** When chaining several Ctrl+Z presses through
   create → move → delete (or similar), a card can occasionally exhibit
@@ -252,11 +366,15 @@ next sprint hasn't been picked yet; review the tiers at sprint start.
 - **Estimates are honest, not inflated.** If an item says S, it really is
   < 1 day; if it says XL, it really does need a spike and a multi-sprint
   commit.
-- **Dependencies are tracked explicitly.** AI depends on templates;
-  templates must ship before AI. AI also benefits from undo / redo;
-  undo / redo should ship before AI. @-mentions depend on relationships;
-  relationships must ship before @-mentions. Don't reorder against the
-  dependency graph.
+- **Dependencies are tracked explicitly.** Tailor Card Types depends on
+  Manage Card Templates (you can't tailor what you can't manage). AI
+  Card Creation depends on Tailor Card Types (it needs a structured
+  target) and on undo / redo (AI output is bad sometimes; users need
+  an out — undo / redo is shipped). @-mention parsing depends on
+  Typed Connections (it builds inline-link UI on top of the relationship
+  schema). Markdown export should ship before AI Card Creation (data
+  ownership before AI lock-in concerns surface). Don't reorder against
+  the dependency graph.
 - **Discovery items get a spike, not a sprint commitment.** The spike
   output becomes the basis for "should we commit a sprint to this?"
 - **Each sprint review:** drop done items into CHANGELOG, re-rank what's
