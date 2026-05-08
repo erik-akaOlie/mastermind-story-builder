@@ -71,71 +71,124 @@ export default function CampaignNode({ data, selected }) {
     return () => ro.disconnect()
   }, [])
 
-  // ── Dynamic icon visibility ──────────────────────────────────────────────
-  // When the title's longest unbreakable word is wider than the span width
-  // it would have with the icon visible, the title text would visually slide
-  // under the icon. In that case we hide the icon so the title gets the full
-  // header width.
+  // ── Dynamic icon visibility + dynamic card width ────────────────────────
+  // Two decisions share the same word-width measurement, so they live in one
+  // memo:
+  //
+  //   iconHidden — at extreme zoom-out, when the title's longest unbreakable
+  //   word would be wider than the title span with the icon visible, the
+  //   icon is hidden so the title gets the full header width.
+  //
+  //   cardWidth — when the title's longest word still doesn't fit (even with
+  //   the icon hidden), the card itself widens just enough to give the
+  //   longest word room plus a 1rem (16px) breathing strip between text and
+  //   the card's right edge. At zoom ≥ 1 (or when the title comfortably fits)
+  //   this returns to the base 256px width. React Flow re-measures the node
+  //   when its outer div's width changes, which triggers useEdgeGeometry to
+  //   re-place edge endpoints and connection dots automatically.
   //
   // Critical: this decision must NOT depend on the measured `avatarSize`
   // state, because `avatarSize` is itself a downstream result of the rendered
-  // layout (which depends on whether the icon is visible). Reading it here
-  // creates a feedback loop that oscillates at any zoom level where hiding
-  // the icon changes the title's line count.
+  // layout (depending on the chosen card width and whether the icon is
+  // visible). Reading it here creates a feedback loop that oscillates at any
+  // zoom level where the layout choice changes the title's line count.
   //
-  // Instead, we simulate the converged layout deterministically: iterate an
-  // avatar-size estimate as if the icon WERE visible, converging on the line
-  // count the browser would produce, and use the resulting span to decide.
+  // Instead, we simulate the converged layout deterministically: iterate
+  // (avatar height, icon visibility, card width) until they all stabilize.
   //
   // Layout constants (see header JSX below):
-  //   card width              = 256 (w-64)
+  //   base card width         = 256 (w-64)
   //   outer flex gap          = 8   (gap-2 on the header container)
-  //   title div right padding = 8   (pr-2)
+  //   title div right padding = 8   (pr-2)  ← contributes to the right margin
   //   title div inner gap     = 8   (gap-2 between title span and icon)
   //   header vertical padding = 32  (py-4)
-  const iconHidden = useMemo(() => {
-    if (!typeConfig.icon || !data.label) return false
+  //   right breathing target  = 16  (1rem clear between text and card edge)
+  const { iconHidden, cardWidth } = useMemo(() => {
+    const BASE_CARD       = 256
+    const PAD_OUTER       = 8
+    const PR_2            = 8
+    const INNER_GAP       = 8
+    const PY_4            = 32
+    const RIGHT_BREATHING = 16
+
+    if (!data.label) return { iconHidden: false, cardWidth: BASE_CARD }
     const ctx = getMeasureCtx()
-    if (!ctx) return false
-    const fontPx = titleFontSize * 16  // 1rem = 16px at browser default
+    if (!ctx) return { iconHidden: false, cardWidth: BASE_CARD }
+    const fontPx = titleFontSize * 16
     ctx.font = `600 ${fontPx}px Inter, system-ui, sans-serif`
 
     const words = data.label.split(/\s+/).filter(Boolean)
-    if (words.length === 0) return false
+    if (words.length === 0) return { iconHidden: false, cardWidth: BASE_CARD }
 
-    let longestWordWidth = 0
-    let totalTextWidth = 0
-    for (const w of words) {
-      const width = ctx.measureText(w).width
-      if (width > longestWordWidth) longestWordWidth = width
-      totalTextWidth += width
-    }
-    if (words.length > 1) {
-      totalTextWidth += (words.length - 1) * ctx.measureText(' ').width
-    }
+    // Per-word widths (computed once) drive a real greedy word-wrap below.
+    // An earlier version used `ceil(totalTextWidth / span)` which is a
+    // continuous approximation; greedy wrap can produce MORE lines than that
+    // estimate when adjacent words awkwardly overflow by a small margin
+    // (e.g., "Strahd von" at 210px just barely doesn't fit a 208px span).
+    // Underestimating lines underestimates avatar height, which shrinks the
+    // computed span, which lets the longest word still overflow. Greedy
+    // matches the browser's actual rendering decision.
+    const wordWidths = words.map((w) => ctx.measureText(w).width)
+    const spaceWidth = ctx.measureText(' ').width
+    const longestWordWidth = wordWidths.reduce((m, w) => (w > m ? w : m), 0)
 
-    const CARD     = 256
-    const PAD_GAPS = 8 + 8 + 8   // outer gap + pr-2 + inner gap
-    const PY_4     = 32
-
-    // Simulate the converged layout with the icon visible. Start with a
-    // one-line avatar estimate, then iterate: compute span width, estimate
-    // line count from greedy word wrapping, recompute avatar. Converges in
-    // a handful of passes for any real title.
-    let avatar = PY_4 + Math.max(fontPx, iconSize)
-    for (let i = 0; i < 6; i++) {
-      const span = CARD - avatar - PAD_GAPS - iconSize
-      // If even the longest word can't fit in the span, text overflows
-      // regardless — hide the icon.
-      if (span <= longestWordWidth) return true
-      const lines = Math.max(1, Math.ceil(totalTextWidth / span))
-      const nextAvatar = PY_4 + Math.max(lines * fontPx, iconSize)
-      if (nextAvatar === avatar) break
-      avatar = nextAvatar
+    function greedyLines(span) {
+      if (span <= 0) return Infinity
+      let lines = 1
+      let lineW = 0
+      for (const w of wordWidths) {
+        const next = lineW === 0 ? w : lineW + spaceWidth + w
+        if (next > span && lineW > 0) {
+          lines++
+          lineW = w
+        } else {
+          lineW = next
+        }
+      }
+      return lines
     }
 
-    const finalSpan = CARD - avatar - PAD_GAPS - iconSize
-    return longestWordWidth > finalSpan
+    const hasIcon = !!typeConfig.icon
+
+    // The minimum span the title needs: longest word fits with `RIGHT_BREATHING`
+    // total clear between rightmost text pixel and card's right edge. PR_2
+    // already contributes 8px, so we need (RIGHT_BREATHING - PR_2) extra inside
+    // the span.
+    const minSpan = longestWordWidth + Math.max(0, RIGHT_BREATHING - PR_2)
+
+    // Iterate: at the current cardWidth + iconHidden, compute span via the
+    // greedy line counter → avatar height → required cardWidth. Loop until
+    // stable. Converges in a handful of passes for any real title.
+    let cardWidth  = BASE_CARD
+    let iconHidden = false
+    let avatar     = PY_4 + Math.max(fontPx, hasIcon ? iconSize : fontPx)
+
+    for (let i = 0; i < 8; i++) {
+      const iconStuff = hasIcon && !iconHidden ? (INNER_GAP + iconSize) : 0
+      const fixedHorz = avatar + PAD_OUTER + iconStuff + PR_2
+      const span      = cardWidth - fixedHorz
+
+      // If a visible icon would force the longest word to overflow, hide it
+      // and re-evaluate next pass.
+      if (hasIcon && !iconHidden && span < longestWordWidth) {
+        iconHidden = true
+        continue
+      }
+
+      const lines     = greedyLines(span)
+      const newAvatar = PY_4 + Math.max(lines * fontPx, hasIcon && !iconHidden ? iconSize : fontPx)
+
+      // Required cardWidth so span ≥ minSpan with the new avatar.
+      // The (newAvatar - avatar) term re-projects fixedHorz to the new avatar,
+      // so we don't need a second pass just to apply the bump.
+      const requiredCard = Math.max(BASE_CARD, fixedHorz + minSpan + (newAvatar - avatar))
+
+      if (newAvatar === avatar && requiredCard === cardWidth) break
+      avatar    = newAvatar
+      cardWidth = requiredCard
+    }
+
+    return { iconHidden, cardWidth }
   }, [typeConfig.icon, data.label, titleFontSize, iconSize])
 
   const isEdgeHighlighted = useCanvasUiStore(selectIsEdgeHighlighted(data.id))
@@ -179,8 +232,11 @@ export default function CampaignNode({ data, selected }) {
 
   return (
     <div
-      className={`relative rounded-lg w-64 ${lifted ? 'is-lifted' : ''}`}
+      className={`relative rounded-lg ${lifted ? 'is-lifted' : ''}`}
       style={{
+        // cardWidth defaults to 256px (the old w-64) and grows only when the
+        // title's longest word can't fit at the current zoom-out font size.
+        width: cardWidth,
         opacity,
         boxShadow: shadow,
         transform:  `scale(${scale})`,
