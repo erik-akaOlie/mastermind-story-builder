@@ -1,26 +1,3 @@
-<!--
-  MasterMind OS favicon — abstract knowledge-graph hub.
-
-  Inspired by Material's "hub" icon: a central node with five satellite
-  nodes connected by spokes. Tuned to read at 16×16 by using bolder strokes
-  and larger node radii than the strict Material proportions.
-
-  Color: #0284c7 (Tailwind sky-600), matching the app's system CTA color.
-  Single-color so it stays recognizable against either a light or dark
-  browser-tab background.
--->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="#0284c7">
-  <g stroke="#0284c7" stroke-width="20" stroke-linecap="round" fill="none">
-    <line x1="128" y1="128" x2="128" y2="48"/>
-    <line x1="128" y1="128" x2="204" y2="104"/>
-    <line x1="128" y1="128" x2="175" y2="200"/>
-    <line x1="128" y1="128" x2="81"  y2="200"/>
-    <line x1="128" y1="128" x2="52"  y2="104"/>
-  </g>
-  <circle cx="128" cy="128" r="32"/>
-  <circle cx="128" cy="48"  r="22"/>
-  <circle cx="204" cy="104" r="22"/>
-  <circle cx="175" cy="200" r="22"/>
-  <circle cx="81"  cy="200" r="22"/>
-  <circle cx="52"  cy="104" r="22"/>
+<svg width="105" height="129" viewBox="0 0 105 129" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M81.501 0C92.5467 0 101.501 8.9543 101.501 20C101.501 31.0457 92.5467 40 81.501 40C77.4226 39.9999 73.6304 38.7777 70.4678 36.6816L43.5527 76.8096C49.5569 81.1719 53.4619 88.248 53.4619 96.2373C53.4619 98.1428 53.238 99.9961 52.8184 101.773L74.3027 105.905C76.7562 100.218 82.4128 96.2373 89 96.2373C97.8365 96.2373 105 103.401 105 112.237C105 121.074 97.8366 128.237 89 128.237C80.1634 128.237 73 121.074 73 112.237C73 111.396 73.0654 110.571 73.1904 109.765L51.5645 105.604C47.9151 114.205 39.3932 120.237 29.4619 120.237C16.2071 120.237 5.46191 109.492 5.46191 96.2373C5.46193 85.5819 12.4061 76.5493 22.0156 73.416L12.5381 39.9873C12.3597 39.9952 12.1803 40 12 40C5.37258 40 0 34.6274 0 28C0 21.3726 5.37258 16 12 16C18.6274 16 24 21.3726 24 28C24 33.0522 20.8762 37.371 16.4561 39.1406L25.9131 72.498C27.0711 72.3264 28.2562 72.2373 29.4619 72.2373C33.294 72.2373 36.9154 73.1372 40.1289 74.7344L67.3564 34.1396C63.7387 30.5206 61.501 25.5215 61.501 20C61.501 8.95443 70.4555 0.000197925 81.501 0Z" fill="#D9D9D9"/>
 </svg>
