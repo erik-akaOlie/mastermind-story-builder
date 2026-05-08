@@ -5,12 +5,15 @@
 // Per ADR-0007, no Storage or DB writes occur until Save. Cancel discards
 // everything cleanly.
 //
-// Chunk 1 scope: empty state + image preview at natural size + Save/Cancel
-// plumbing. The cropper UI is added in chunk 2.
+// Chunk 2 scope: empty state + ImageCropper (drag, scale, free-form
+// aspect ratio with 1:3 / 3:1 bounds in image-section mode; fixed 5:4
+// in thumbnail mode) + Save/Cancel plumbing. Save fetches the cropped
+// Blob from the cropper and routes it through uploadCardImage.
 
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { uploadCardImage } from '../lib/imageStorage'
+import ImageCropper from './ImageCropper'
 
 // OS-aware paste hint label
 const isMac = typeof navigator !== 'undefined' &&
@@ -33,21 +36,11 @@ export default function UploadImageModal({
   onClose,         // () => void
 }) {
   const [imageBlob, setImageBlob] = useState(null)
-  const [previewUrl, setPreviewUrl] = useState(null)
-  const [uploading, setUploading]   = useState(false)
+  const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef(null)
-
-  // Build a temporary preview URL whenever the image changes. Revokes the
-  // old URL on cleanup so the browser can free the bitmap.
-  useEffect(() => {
-    if (!imageBlob) {
-      setPreviewUrl(null)
-      return
-    }
-    const url = URL.createObjectURL(imageBlob)
-    setPreviewUrl(url)
-    return () => URL.revokeObjectURL(url)
-  }, [imageBlob])
+  const cropperRef   = useRef(null)
+  // Note: the ImageCropper handles its own object URL lifecycle for the
+  // image preview, so we don't keep a separate previewUrl here anymore.
 
   // Document-level paste listener using the capture phase so we run before
   // any focused input's own paste handler. We only preventDefault when we
@@ -95,14 +88,22 @@ export default function UploadImageModal({
 
   const handleSave = async () => {
     if (!imageBlob || !campaignId || uploading) return
+    if (!cropperRef.current) {
+      toast.error("Cropper isn't ready yet — try again in a moment")
+      return
+    }
     setUploading(true)
     try {
+      // Per ADR-0007: cropper produces the final cropped Blob (already
+      // capped to the 1920x1080 strict box). uploadCardImage transcodes
+      // that into the two WebP variants and writes both to Storage.
+      const croppedBlob = await cropperRef.current.computeCroppedBlob()
       const path = await uploadCardImage({
         campaignId,
         cardId,
         section,
         slug,
-        file: imageBlob,
+        file: croppedBlob,
       })
       onSave(path)
       onClose()
@@ -160,12 +161,11 @@ export default function UploadImageModal({
               className="hidden"
               onChange={handleFilePick}
             />
-            {previewUrl ? (
-              <img
-                src={previewUrl}
-                alt=""
-                className="max-w-full max-h-full object-contain"
-                draggable={false}
+            {imageBlob ? (
+              <ImageCropper
+                ref={cropperRef}
+                imageBlob={imageBlob}
+                mode={mode}
               />
             ) : (
               <div className="flex flex-col items-center gap-4 text-gray-700">
