@@ -1,9 +1,14 @@
 // ============================================================================
 // SyncIndicator
 // ----------------------------------------------------------------------------
-// Notion-style text indicator styled as a bottom-left chip so it stays
-// readable when cards scroll behind it. Reports the current persistence state
-// in plain English and updates the "Edited Nm ago" relative time every 60s.
+// Notion-style text indicator styled as a chip. Reports the current
+// persistence state in plain English and updates the "Edited Nm ago"
+// relative time every 60s.
+//
+// Positioning (fixed bottom-4 left-4) is owned by the parent FeedbackChipBar
+// so the SyncIndicator chip and the chip-toast stack share one bottom-left
+// surface. SyncIndicator itself just renders the chip styling — it doesn't
+// know where it sits on the page.
 //
 // lastSavedAt is seeded from the campaign's most recent updated_at on load
 // (see useCampaignData → getCampaignLastEditedAt) and bumps on both local
@@ -40,7 +45,7 @@ export default function SyncIndicator() {
 
   return (
     <div
-      className="fixed bottom-4 left-4 z-40 px-3 py-1.5 bg-white/90 backdrop-blur rounded-full shadow-sm border border-gray-200 text-xs text-gray-500 select-none"
+      className="px-3 py-1.5 bg-white/90 backdrop-blur rounded-full shadow-sm border border-gray-200 text-xs text-gray-500 select-none whitespace-nowrap"
       title={display.tooltip}
     >
       {display.text}

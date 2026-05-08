@@ -16,8 +16,8 @@
 // pass { retries: 0 }.
 // ============================================================================
 
-import { toast } from 'sonner'
 import { useSyncStore } from '../store/useSyncStore.js'
+import { toastSaveFailed } from './feedbackToasts.jsx'
 
 const DEFAULT_RETRY_DELAYS_MS = [250, 500] // between attempts 1→2 and 2→3
 
@@ -42,10 +42,7 @@ export async function persistWrite(fn, context = 'your changes', options = {}) {
   }
 
   useSyncStore.getState().writeFailed(lastErr, context)
-  toast.error(`Couldn't save ${context}`, {
-    id: 'persist-fail',
-    description: "Check your connection. We'll keep trying in the background.",
-  })
+  toastSaveFailed(context)
   throw lastErr
 }
 

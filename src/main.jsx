@@ -1,6 +1,5 @@
 import { StrictMode, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { Toaster } from 'sonner'
 import 'reactflow/dist/style.css'  // third-party first — our styles override below
 import './index.css'
 import App from './App.jsx'
@@ -11,7 +10,7 @@ import Login from './components/Login.jsx'
 import CampaignPicker from './components/CampaignPicker.jsx'
 import UserMenu from './components/UserMenu.jsx'
 import LockOverlay from './components/LockOverlay.jsx'
-import SyncIndicator from './components/SyncIndicator.jsx'
+import FeedbackChipBar from './components/FeedbackChipBar.jsx'
 import MigrateImages from './components/MigrateImages.jsx'
 
 // Tiny hash-based router. We don't need React Router for one ad-hoc page;
@@ -55,7 +54,7 @@ function Root() {
     <>
       <App />
       <UserMenu />
-      <SyncIndicator />
+      <FeedbackChipBar />
       <LockOverlay />
     </>
   )
@@ -66,7 +65,6 @@ createRoot(document.getElementById('root')).render(
     <AuthProvider>
       <CampaignProvider>
         <Root />
-        <Toaster position="bottom-right" richColors closeButton />
       </CampaignProvider>
     </AuthProvider>
   </StrictMode>,

@@ -31,6 +31,12 @@ import {
   canApplyInverse,
   canApplyForward,
 } from '../lib/undo/index.js'
+import {
+  toastUndoSuccess,
+  toastRedoSuccess,
+  toastUndoConflict,
+  toastRedoConflict,
+} from '../lib/feedbackToasts.jsx'
 
 const MAX_STACK = 75
 const KEY_PREFIX = 'mastermind:undo:'
@@ -133,6 +139,7 @@ export const useUndoStore = create((set, get) => ({
       const nextPast = past.slice(0, -1)
       set({ past: nextPast })
       saveToStorage(buildKey(userId, campaignId), nextPast, future)
+      toastUndoConflict()
       return { ok: false, conflict: true, reason: check.reason, entry }
     }
 
@@ -140,7 +147,9 @@ export const useUndoStore = create((set, get) => ({
       await applyInverse(entry, context)
     } catch (err) {
       // DB write failed — persistWrite's retry/lock-overlay flow handles
-      // user-facing UX. Stacks stay where they are so the user can retry.
+      // user-facing UX (its own toast). Stacks stay where they are so the
+      // user can retry; we deliberately don't fire a second undo-failed
+      // toast here.
       console.error('[useUndoStore] applyInverse failed', err)
       return { ok: false, error: err, entry }
     }
@@ -149,6 +158,7 @@ export const useUndoStore = create((set, get) => ({
     const nextFuture = [...future, entry]
     set({ past: nextPast, future: nextFuture })
     saveToStorage(buildKey(userId, campaignId), nextPast, nextFuture)
+    toastUndoSuccess(entry)
     return { ok: true, entry }
   },
 
@@ -163,6 +173,7 @@ export const useUndoStore = create((set, get) => ({
       const nextFuture = future.slice(0, -1)
       set({ future: nextFuture })
       saveToStorage(buildKey(userId, campaignId), past, nextFuture)
+      toastRedoConflict()
       return { ok: false, conflict: true, reason: check.reason, entry }
     }
 
@@ -177,6 +188,7 @@ export const useUndoStore = create((set, get) => ({
     const nextPast = [...past, entry]
     set({ past: nextPast, future: nextFuture })
     saveToStorage(buildKey(userId, campaignId), nextPast, nextFuture)
+    toastRedoSuccess(entry)
     return { ok: true, entry }
   },
 

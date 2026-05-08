@@ -27,6 +27,15 @@ vi.mock('../lib/undo/index.js', () => ({
   applyForward:    vi.fn(async () => {}),
 }))
 
+// Toast helpers — mocked so tests assert what got fired without rendering JSX.
+vi.mock('../lib/feedbackToasts.jsx', () => ({
+  toastUndoSuccess:  vi.fn(),
+  toastRedoSuccess:  vi.fn(),
+  toastUndoConflict: vi.fn(),
+  toastRedoConflict: vi.fn(),
+  toastSaveFailed:   vi.fn(),
+}))
+
 import { useUndoStore } from './useUndoStore'
 import {
   canApplyInverse,
@@ -34,6 +43,12 @@ import {
   applyInverse,
   applyForward,
 } from '../lib/undo/index.js'
+import {
+  toastUndoSuccess,
+  toastRedoSuccess,
+  toastUndoConflict,
+  toastRedoConflict,
+} from '../lib/feedbackToasts.jsx'
 
 const A = { type: 'editCardField', label: 'Edit summary', cardId: 'a' }
 const B = { type: 'moveCard',      label: 'Move card',    cardId: 'b' }
@@ -52,6 +67,11 @@ beforeEach(() => {
   canApplyForward.mockReset().mockReturnValue({ ok: true })
   applyInverse.mockReset().mockResolvedValue(undefined)
   applyForward.mockReset().mockResolvedValue(undefined)
+  // Reset toast mocks between tests so call counts are scoped per-test.
+  toastUndoSuccess.mockClear()
+  toastRedoSuccess.mockClear()
+  toastUndoConflict.mockClear()
+  toastRedoConflict.mockClear()
   // Reset store to a clean slate between tests.
   useUndoStore.setState({
     userId: null,
@@ -389,5 +409,87 @@ describe('useUndoStore — clear', () => {
 
     expect(sessionStorage.getItem('mastermind:undo:u1:c1')).toBeNull()
     expect(sessionStorage.getItem('mastermind:undo:u1:c2')).not.toBeNull()
+  })
+})
+
+// Phase 9: chip-style toasts on undo/redo. The store fires the right helper
+// based on outcome; persist-write failure stays silent here because
+// errorReporting.persistWrite owns its own toast (toastSaveFailed).
+describe('useUndoStore — toasts on undo / redo outcomes', () => {
+  it('fires toastUndoSuccess with the entry on a clean undo', async () => {
+    setScope()
+    s().recordAction(A)
+    await s().undo()
+    expect(toastUndoSuccess).toHaveBeenCalledTimes(1)
+    expect(toastUndoSuccess).toHaveBeenCalledWith(A)
+    expect(toastUndoConflict).not.toHaveBeenCalled()
+  })
+
+  it('fires toastRedoSuccess with the entry on a clean redo', async () => {
+    setScope()
+    s().recordAction(A)
+    await s().undo()
+    toastUndoSuccess.mockClear()  // ignore the prior undo toast
+
+    await s().redo()
+    expect(toastRedoSuccess).toHaveBeenCalledTimes(1)
+    expect(toastRedoSuccess).toHaveBeenCalledWith(A)
+    expect(toastRedoConflict).not.toHaveBeenCalled()
+  })
+
+  it('fires toastUndoConflict (and not success) when canApplyInverse refuses', async () => {
+    canApplyInverse.mockReturnValueOnce({ ok: false, reason: 'changed elsewhere' })
+    setScope()
+    s().recordAction(A)
+    await s().undo()
+    expect(toastUndoConflict).toHaveBeenCalledTimes(1)
+    expect(toastUndoSuccess).not.toHaveBeenCalled()
+  })
+
+  it('fires toastRedoConflict (and not success) when canApplyForward refuses', async () => {
+    canApplyForward.mockReturnValueOnce({ ok: false, reason: 'card gone' })
+    setScope()
+    s().recordAction(A)
+    await s().undo()
+    toastUndoSuccess.mockClear()
+
+    await s().redo()
+    expect(toastRedoConflict).toHaveBeenCalledTimes(1)
+    expect(toastRedoSuccess).not.toHaveBeenCalled()
+  })
+
+  it('does not fire any undo toast when applyInverse throws (persistWrite handles it)', async () => {
+    applyInverse.mockRejectedValueOnce(new Error('db down'))
+    setScope()
+    s().recordAction(A)
+    await s().undo()
+    expect(toastUndoSuccess).not.toHaveBeenCalled()
+    expect(toastUndoConflict).not.toHaveBeenCalled()
+  })
+
+  it('does not fire any redo toast when applyForward throws', async () => {
+    applyForward.mockRejectedValueOnce(new Error('db down'))
+    setScope()
+    s().recordAction(A)
+    await s().undo()
+    toastUndoSuccess.mockClear()
+
+    await s().redo()
+    expect(toastRedoSuccess).not.toHaveBeenCalled()
+    expect(toastRedoConflict).not.toHaveBeenCalled()
+  })
+
+  it('does not fire any toast on undo with empty past', async () => {
+    setScope()
+    await s().undo()
+    expect(toastUndoSuccess).not.toHaveBeenCalled()
+    expect(toastUndoConflict).not.toHaveBeenCalled()
+  })
+
+  it('does not fire any toast on redo with empty future', async () => {
+    setScope()
+    await s().redo()
+    expect(toastRedoSuccess).not.toHaveBeenCalled()
+    expect(toastRedoConflict).not.toHaveBeenCalled()
   })
 })
