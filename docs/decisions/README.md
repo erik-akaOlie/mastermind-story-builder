@@ -31,3 +31,4 @@ What does this enable? What does it prevent? What are the trade-offs?
 - [ADR-0002: Modular node sections in the schema from day one](./0002-modular-node-sections.md)
 - [ADR-0003: Optimistic UI with fire-and-forget persistence](./0003-optimistic-ui-persistence.md)
 - [ADR-0004: Inline `@`-mention syntax for cross-card references](./0004-inline-mentions-syntax.md)
+- [ADR-0005: Image storage on Supabase Storage with two variants per upload](./0005-image-storage.md)
