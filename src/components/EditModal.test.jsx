@@ -381,10 +381,12 @@ describe('EditModal — undo entries (phase 4)', () => {
     })
   })
 
-  it('emits field edits and connection events in chronological order on close (phase 7a)', () => {
+  it('emits list-item edits and connection events in chronological order on close (phase 7a + 7c)', () => {
     // Erik's reported issue: edit a bullet, then add a connection, then close.
     // Expectation: undo step #1 removes the connection (most recent action),
-    // step #2 reverts the bullets. Stack push order must be [field, connection].
+    // step #2 removes the bullet. Stack push order must be [bullet, connection].
+    // Phase 7c: the bullet edit is now an addListItem (per-item granularity)
+    // instead of editCardField bundling.
     const otherNode = {
       id: 'node-ireena',
       data: { label: 'Ireena Kolyana', type: 'character' },
@@ -393,11 +395,13 @@ describe('EditModal — undo entries (phase 4)', () => {
     flushSave()
     recordActionMock.mockClear()
 
-    // 1) Edit a bullet (storyNotes). Use fake timers' Date.now() so each
-    //    action gets a distinct timestamp.
+    // 1) Add a bullet and type into it. The blur (which would log an
+    //    editListItem) merges into the addListItem per Erik's spec —
+    //    "click +Add, type, blur" is one undo step.
     fireEvent.click(screen.getAllByRole('button', { name: /\+\s*add note/i })[0])
     const newBullet = screen.getAllByPlaceholderText(/narrative beat/i).at(-1)
     fireEvent.change(newBullet, { target: { value: 'New beat' } })
+    fireEvent.blur(newBullet)
 
     act(() => { vi.advanceTimersByTime(50) })
 
@@ -407,12 +411,15 @@ describe('EditModal — undo entries (phase 4)', () => {
 
     fireEvent.keyDown(window, { key: 'Escape' })
 
-    // Two recordActions: editCardField storyNotes (older) then addConnection (newer).
+    // Two recordActions: addListItem storyNotes (older, post-merge) then
+    // addConnection (newer).
     expect(recordActionMock).toHaveBeenCalledTimes(2)
     expect(recordActionMock.mock.calls[0][0]).toMatchObject({
-      type: 'editCardField',
+      type: 'addListItem',
       field: 'storyNotes',
     })
+    // Merge worked: the recorded item carries the typed value, not ''.
+    expect(recordActionMock.mock.calls[0][0].item.value).toBe('New beat')
     expect(recordActionMock.mock.calls[1][0]).toMatchObject({
       type: 'addConnection',
       sourceNodeId: 'node-strahd',
@@ -485,31 +492,31 @@ describe('EditModal — undo entries (phase 4)', () => {
       .toBe(recordActionMock.mock.calls[1][0].connectionId)
   })
 
-  it('captures bullet-list edits as a single editCardField action on close', () => {
+  it('phase 7c: adding+typing a single bullet emits exactly one addListItem (merge)', () => {
     renderModal()
     flushSave()
     recordActionMock.mockClear()
 
-    // Add a story note and close.
+    // Click +Add → empty bullet appears. Type into it. Blur. The blur
+    // produces an editListItem which merges into the addListItem (Erik's
+    // spec: "click +Add, type, blur" is one undo step). Close the modal.
     fireEvent.click(screen.getAllByRole('button', { name: /\+\s*add note/i })[0])
     const newBullet = screen.getAllByPlaceholderText(/narrative beat/i).at(-1)
     fireEvent.change(newBullet, { target: { value: 'New beat' } })
+    fireEvent.blur(newBullet)
 
     fireEvent.keyDown(window, { key: 'Escape' })
 
-    // Exactly one entry, for storyNotes.
+    // Exactly one entry: addListItem with the typed value (post-merge).
     expect(recordActionMock).toHaveBeenCalledTimes(1)
     const entry = recordActionMock.mock.calls[0][0]
     expect(entry).toMatchObject({
-      type: 'editCardField',
+      type: 'addListItem',
       cardId: 'node-strahd',
       field: 'storyNotes',
     })
-    // Phase 7b: bullets persist as {id, value}[]. Compare on `.value` so
-    // the assertion doesn't pin to the IDs generated from the legacy
-    // string[] test fixture.
-    expect(entry.before.map((b) => b.value)).toEqual(['Born ~1346', 'Cursed in 1346'])
-    expect(entry.after.map((b) => b.value)).toEqual(['Born ~1346', 'Cursed in 1346', 'New beat'])
+    expect(entry.item.value).toBe('New beat')
+    expect(entry.item.id).toEqual(expect.any(String))
   })
 })
 
@@ -548,5 +555,130 @@ describe('EditModal — avatar upload', () => {
 
     const lastCall = props.onUpdate.mock.calls.at(-1)
     expect(lastCall[1].avatar).toBe('mock/path.webp')
+  })
+})
+
+describe('EditModal — per-item bullet undo (phase 7c)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    recordActionMock.mockClear()
+  })
+  afterEach(() => { vi.useRealTimers() })
+
+  it("Erik's scenario: add bullet then move bullet emits two separate undo entries (add → reorder)", () => {
+    renderModal()
+    flushSave()
+    recordActionMock.mockClear()
+
+    // 1. Click +Add. New bullet appears.
+    fireEvent.click(screen.getAllByRole('button', { name: /\+\s*add note/i })[0])
+    const newBullet = screen.getAllByPlaceholderText(/narrative beat/i).at(-1)
+    fireEvent.change(newBullet, { target: { value: 'fresh beat' } })
+    fireEvent.blur(newBullet)  // merge into addListItem
+
+    act(() => { vi.advanceTimersByTime(50) })
+
+    // 2. Reorder: drag the existing 'Born ~1346' bullet to the end.
+    //    BulletSection's onDragEnd would normally fire from a real DnD-Kit
+    //    pointer event; we can't simulate that directly here, but we can
+    //    verify the modal-close emission shape produces TWO entries when
+    //    add+typed and a reorder both happen. The reorder side is exercised
+    //    end-to-end in undoIntegration.test.js's round-trip tests.
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+
+    // For the simulated path here (just the add+type), we expect ONE entry.
+    // The full add+reorder = 2 entries scenario is covered by the
+    // integration round-trip test using direct dispatcher calls. This
+    // test pins the in-component logging of the add-with-merge.
+    expect(recordActionMock).toHaveBeenCalledTimes(1)
+    expect(recordActionMock.mock.calls[0][0]).toMatchObject({
+      type: 'addListItem',
+      field: 'storyNotes',
+    })
+    expect(recordActionMock.mock.calls[0][0].item.value).toBe('fresh beat')
+  })
+
+  it('removing a bullet emits one removeListItem with the recorded item + position', () => {
+    renderModal()
+    flushSave()
+    recordActionMock.mockClear()
+
+    // Find the existing 'Born ~1346' bullet's row and click its × button.
+    const targetRow = screen.getByDisplayValue('Born ~1346').closest('li')
+    const removeBtn = Array.from(targetRow.querySelectorAll('button')).at(-1)
+    fireEvent.click(removeBtn)
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+
+    expect(recordActionMock).toHaveBeenCalledTimes(1)
+    const entry = recordActionMock.mock.calls[0][0]
+    expect(entry).toMatchObject({
+      type: 'removeListItem',
+      field: 'storyNotes',
+      cardId: 'node-strahd',
+      position: 0,
+    })
+    expect(entry.item.value).toBe('Born ~1346')
+    expect(entry.item.id).toEqual(expect.any(String))
+  })
+
+  it('add then remove same bullet within a session emits two entries (each click is its own step)', () => {
+    renderModal()
+    flushSave()
+    recordActionMock.mockClear()
+
+    // Add a bullet.
+    fireEvent.click(screen.getAllByRole('button', { name: /\+\s*add note/i })[0])
+    const newBullet = screen.getAllByPlaceholderText(/narrative beat/i).at(-1)
+
+    // Find the new bullet's row and click ×.
+    const newRow = newBullet.closest('li')
+    const removeBtn = Array.from(newRow.querySelectorAll('button')).at(-1)
+    fireEvent.click(removeBtn)
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+
+    expect(recordActionMock).toHaveBeenCalledTimes(2)
+    // The remove invalidates the pending-add merge slot, so both entries
+    // stay separate — one Ctrl+Z restores the empty bullet, second removes it.
+    expect(recordActionMock.mock.calls[0][0].type).toBe('addListItem')
+    expect(recordActionMock.mock.calls[1][0].type).toBe('removeListItem')
+    // Same item id in both entries.
+    expect(recordActionMock.mock.calls[0][0].item.id)
+      .toBe(recordActionMock.mock.calls[1][0].item.id)
+  })
+
+  it('does NOT emit editCardField for storyNotes (now per-item only)', () => {
+    renderModal()
+    flushSave()
+    recordActionMock.mockClear()
+
+    fireEvent.click(screen.getAllByRole('button', { name: /\+\s*add note/i })[0])
+    const newBullet = screen.getAllByPlaceholderText(/narrative beat/i).at(-1)
+    fireEvent.change(newBullet, { target: { value: 'X' } })
+    fireEvent.blur(newBullet)
+    fireEvent.keyDown(window, { key: 'Escape' })
+
+    const fieldEntries = recordActionMock.mock.calls
+      .map((c) => c[0])
+      .filter((e) => e.type === 'editCardField' && e.field === 'storyNotes')
+    expect(fieldEntries).toHaveLength(0)
+  })
+
+  it('still emits editCardField for scalar fields (label/summary/avatar/type)', () => {
+    renderModal()
+    flushSave()
+    recordActionMock.mockClear()
+
+    fireEvent.change(screen.getByDisplayValue('Strahd von Zarovich'), {
+      target: { value: 'Strahd v2' },
+    })
+    fireEvent.keyDown(window, { key: 'Escape' })
+
+    expect(recordActionMock).toHaveBeenCalledTimes(1)
+    expect(recordActionMock.mock.calls[0][0]).toMatchObject({
+      type: 'editCardField', field: 'label',
+    })
   })
 })

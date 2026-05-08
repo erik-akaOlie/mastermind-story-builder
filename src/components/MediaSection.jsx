@@ -54,7 +54,20 @@ function SortableImage({ id, value, onRemove, onLightbox }) {
   )
 }
 
-export default function MediaSection({ items, onChange, cardId, campaignId, slug }) {
+// Optional semantic callbacks for per-item undo logging (phase 7c).
+// Mirrors BulletSection's callbacks except media has no per-item edit
+// (you replace an image, you don't tweak its text).
+//
+//   onAddItem    ({ item, position })   // item = the raw src value (path
+//                                          object for storage uploads, or
+//                                          a legacy string)
+//   onRemoveItem ({ item, position })
+//   onReorderItem({ itemId, from, to }) // itemId = item.path for storage,
+//                                          string itself for legacy
+export default function MediaSection({
+  items, onChange, cardId, campaignId, slug,
+  onAddItem, onRemoveItem, onReorderItem,
+}) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
   const fileInputRef = useRef(null)
   const lightbox = useLightbox()
@@ -76,7 +89,9 @@ export default function MediaSection({ items, onChange, cardId, campaignId, slug
           file,
         })
         const entry = { path, alt: '', uploaded_at: new Date().toISOString() }
+        const insertPosition = currentItemsRef.current.length
         onChange([...currentItemsRef.current, { id: crypto.randomUUID(), src: entry }])
+        onAddItem?.({ item: entry, position: insertPosition })
       } catch (err) {
         console.error('Inspiration upload failed', err)
         toast.error(`Couldn't upload "${file.name}": ${err.message}`)
@@ -93,7 +108,19 @@ export default function MediaSection({ items, onChange, cardId, campaignId, slug
   const currentItemsRef = useRef(items)
   currentItemsRef.current = items
 
-  const removeItem = (id) => onChange(items.filter((m) => m.id !== id))
+  const removeItem = (id) => {
+    const idx = items.findIndex((m) => m.id === id)
+    if (idx === -1) return
+    const removed = items[idx]
+    onChange(items.filter((m) => m.id !== id))
+    onRemoveItem?.({ item: removed.src, position: idx })
+  }
+
+  // Convert the local React-key `m.id` (session-scoped UUID) into the
+  // persistable identity the dispatcher uses (storage path for uploaded
+  // entries, or the string itself for legacy entries).
+  const persistableId = (src) =>
+    src && typeof src === 'object' && typeof src.path === 'string' ? src.path : src
 
   return (
     <div className="flex flex-col gap-4">
@@ -111,11 +138,12 @@ export default function MediaSection({ items, onChange, cardId, campaignId, slug
         collisionDetection={closestCenter}
         onDragEnd={({ active, over }) => {
           if (over && active.id !== over.id) {
-            onChange(arrayMove(
-              items,
-              items.findIndex((x) => x.id === active.id),
-              items.findIndex((x) => x.id === over.id),
-            ))
+            const from = items.findIndex((x) => x.id === active.id)
+            const to   = items.findIndex((x) => x.id === over.id)
+            if (from === -1 || to === -1 || from === to) return
+            const moved = items[from]
+            onChange(arrayMove(items, from, to))
+            onReorderItem?.({ itemId: persistableId(moved.src), from, to })
           }
         }}
       >

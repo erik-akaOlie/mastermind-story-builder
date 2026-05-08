@@ -15,29 +15,29 @@ import { useMorphAnimation } from '../hooks/useMorphAnimation'
 
 const MODAL_WIDTH = '41.25rem'
 
-// Card fields that emit `editCardField` undo entries on modal close. Phase 7a
-// emits them in CHRONOLOGICAL order (sorted by per-field last-dirty timestamp,
-// interleaved with connection events from the same session) instead of the
-// fixed array order used in phases 4–6 — see the dirty-tracking refs below.
+// Scalar card fields that emit `editCardField` undo entries on modal close.
+// Phase 7c removed the four list-shaped fields (storyNotes / hiddenLore /
+// dmNotes / media) from this set — they now use per-item entries
+// (addListItem / removeListItem / editListItem / reorderListItem) so a
+// single Ctrl+Z can never silently bundle multiple bullets or images.
 //
-// Phase 7b will split storyNotes/hiddenLore/dmNotes/media into per-item
-// `addListItem`/`removeListItem`/`editListItem`/`reorderListItem` entries.
-// For now they stay collapsed at the field level; the chronological ordering
-// across fields and connections is what 7a fixes.
-const EDITABLE_FIELDS = [
-  'label', 'type', 'summary',
-  'storyNotes', 'hiddenLore', 'dmNotes',
-  'media', 'avatar',
-]
+// Emission order is chronological by per-field last-dirty timestamp,
+// interleaved with connection events and per-item list events all sorted
+// by their own timestamps in handleClose's emission pass.
+const EDITABLE_FIELDS = ['label', 'type', 'summary', 'avatar']
 const FIELD_LABELS = {
-  label:      'title',
-  type:       'type',
-  summary:    'summary',
-  storyNotes: 'story notes',
-  hiddenLore: 'hidden lore',
-  dmNotes:    'DM notes',
-  media:      'inspiration',
-  avatar:     'avatar',
+  label:   'title',
+  type:    'type',
+  summary: 'summary',
+  avatar:  'avatar',
+}
+
+// Singular nouns for list-item action labels (toast display in phase 9).
+const LIST_ITEM_NOUNS = {
+  storyNotes: 'story note',
+  hiddenLore: 'secret',
+  dmNotes:    'DM note',
+  media:      'image',
 }
 
 // Return a readable foreground color for a given hex background.
@@ -176,6 +176,14 @@ export default function EditModal({
   const connectionLogRef = useRef([])      // [{ kind, connectionId, nodeId, timestamp }]
   const prevLocalConnsRef = useRef(localConns)
 
+  // Phase 7c: per-item events for the four list-shaped fields. The log is
+  // an ordered append of every user-visible bullet/media operation, with
+  // a per-itemId "pending add" slot so the FIRST edit on a freshly-added
+  // bullet folds into the add entry (Erik's spec: "click +Add, type, blur"
+  // is one undo step, not two; later re-edits become their own entries).
+  const listItemLogRef         = useRef([])
+  const pendingAddByItemIdRef  = useRef(new Map())   // itemId → index in listItemLogRef
+
   useEffect(() => {
     const start = sessionStartRef.current
     if (!start) {
@@ -226,6 +234,89 @@ export default function EditModal({
     }
     prevLocalConnsRef.current = curr
   }, [localConns])
+
+  // ── Per-item list logging (phase 7c) ─────────────────────────────────────
+  // BulletSection / MediaSection fire semantic callbacks for each
+  // user-visible action. We push them into listItemLogRef in click order;
+  // handleClose later sorts everything by timestamp and emits one
+  // recordAction per remaining log entry.
+  //
+  // Add-then-first-edit merge: when an editListItem arrives whose itemId
+  // matches the most recent un-touched addListItem in the log, replace
+  // the add's value with the edit's after-value and drop the edit. Any
+  // event for that id between the add and the edit cancels the merge
+  // (the bullet has stopped being "freshly added" and re-edits should
+  // be their own undo step).
+  const logListItemEvent = (event) => {
+    const log = listItemLogRef.current
+    const pending = pendingAddByItemIdRef.current
+    const itemId = event.itemId ?? event.item?.id ??
+      (event.item && typeof event.item === 'object' && event.item.path) ??
+      (typeof event.item === 'string' ? event.item : null)
+
+    if (event.kind === 'editListItem' && itemId != null && pending.has(itemId)) {
+      const idx = pending.get(itemId)
+      const addEntry = log[idx]
+      if (addEntry?.kind === 'addListItem' && addEntry.item && typeof addEntry.item === 'object') {
+        addEntry.item = { ...addEntry.item, value: event.after }
+        addEntry.timestamp = event.timestamp
+        pending.delete(itemId)
+        return
+      }
+    }
+
+    log.push(event)
+    if (event.kind === 'addListItem') {
+      if (itemId != null) pending.set(itemId, log.length - 1)
+    } else if (itemId != null) {
+      // Any non-add event for this id invalidates the pending merge.
+      pending.delete(itemId)
+    }
+  }
+
+  // Curried section-callback factories so each BulletSection / MediaSection
+  // gets its `field` baked in without having to know it.
+  const bulletCallbacks = (field) => ({
+    onAddItem: ({ item, position }) => {
+      logListItemEvent({
+        kind: 'addListItem', field, item, position, timestamp: Date.now(),
+      })
+    },
+    onRemoveItem: ({ item, position }) => {
+      logListItemEvent({
+        kind: 'removeListItem', field, item, position, timestamp: Date.now(),
+      })
+    },
+    onItemBlur: ({ itemId, position, before, after }) => {
+      logListItemEvent({
+        kind: 'editListItem', field, itemId, position, before, after,
+        timestamp: Date.now(),
+      })
+    },
+    onReorderItem: ({ itemId, from, to }) => {
+      logListItemEvent({
+        kind: 'reorderListItem', field, itemId, from, to, timestamp: Date.now(),
+      })
+    },
+  })
+  const mediaCallbacks = {
+    onAddItem: ({ item, position }) => {
+      logListItemEvent({
+        kind: 'addListItem', field: 'media', item, position, timestamp: Date.now(),
+      })
+    },
+    onRemoveItem: ({ item, position }) => {
+      logListItemEvent({
+        kind: 'removeListItem', field: 'media', item, position, timestamp: Date.now(),
+      })
+    },
+    onReorderItem: ({ itemId, from, to }) => {
+      logListItemEvent({
+        kind: 'reorderListItem', field: 'media', itemId, from, to,
+        timestamp: Date.now(),
+      })
+    },
+  }
 
   // ── Auto-save ─────────────────────────────────────────────────────────────
   // Payload shape for connections is { addConnections, removeConnections },
@@ -294,6 +385,9 @@ export default function EditModal({
       for (const ev of connectionLogRef.current) {
         emissions.push(ev)
       }
+      for (const ev of listItemLogRef.current) {
+        emissions.push(ev)
+      }
       emissions.sort((a, b) => a.timestamp - b.timestamp)
 
       for (const e of emissions) {
@@ -328,6 +422,52 @@ export default function EditModal({
             connectionId: e.connectionId,
             sourceNodeId: node.id,
             targetNodeId: e.nodeId,
+          })
+        } else if (e.kind === 'addListItem') {
+          useUndoStore.getState().recordAction({
+            type: ACTION_TYPES.ADD_LIST_ITEM,
+            campaignId: activeCampaignId,
+            label: `Add ${LIST_ITEM_NOUNS[e.field] || 'item'}`,
+            timestamp: isoTs,
+            cardId: node.id,
+            field: e.field,
+            position: e.position,
+            item: e.item,
+          })
+        } else if (e.kind === 'removeListItem') {
+          useUndoStore.getState().recordAction({
+            type: ACTION_TYPES.REMOVE_LIST_ITEM,
+            campaignId: activeCampaignId,
+            label: `Remove ${LIST_ITEM_NOUNS[e.field] || 'item'}`,
+            timestamp: isoTs,
+            cardId: node.id,
+            field: e.field,
+            position: e.position,
+            item: e.item,
+          })
+        } else if (e.kind === 'editListItem') {
+          useUndoStore.getState().recordAction({
+            type: ACTION_TYPES.EDIT_LIST_ITEM,
+            campaignId: activeCampaignId,
+            label: `Edit ${LIST_ITEM_NOUNS[e.field] || 'item'}`,
+            timestamp: isoTs,
+            cardId: node.id,
+            field: e.field,
+            itemId: e.itemId,
+            before: e.before,
+            after:  e.after,
+          })
+        } else if (e.kind === 'reorderListItem') {
+          useUndoStore.getState().recordAction({
+            type: ACTION_TYPES.REORDER_LIST_ITEM,
+            campaignId: activeCampaignId,
+            label: `Reorder ${LIST_ITEM_NOUNS[e.field] || 'item'}`,
+            timestamp: isoTs,
+            cardId: node.id,
+            field: e.field,
+            itemId: e.itemId,
+            from: e.from,
+            to:   e.to,
           })
         }
       }
@@ -409,6 +549,7 @@ export default function EditModal({
               placeholder="Narrative beat…"
               dotColor={typeConfig.color}
               addLabel="Add note"
+              {...bulletCallbacks('storyNotes')}
             />
 
             {/* ── GM Only divider ── */}
@@ -424,6 +565,7 @@ export default function EditModal({
               cardId={node.id}
               campaignId={activeCampaignId}
               slug={title || node.data.label}
+              {...mediaCallbacks}
             />
 
             {/* Hidden Lore */}
@@ -434,6 +576,7 @@ export default function EditModal({
               placeholder="Secret not yet revealed…"
               dotColor={typeConfig.color}
               addLabel="Add secret"
+              {...bulletCallbacks('hiddenLore')}
             />
 
             {/* DM Notes */}
@@ -444,6 +587,7 @@ export default function EditModal({
               placeholder="Voice, motivation, tactics…"
               dotColor={typeConfig.color}
               addLabel="Add note"
+              {...bulletCallbacks('dmNotes')}
             />
 
             {/* ── Connections ── */}

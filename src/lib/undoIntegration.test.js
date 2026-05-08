@@ -754,3 +754,269 @@ describe('drift refusal at the dispatcher level', () => {
     expect(rs.state.nodes[0].data.label).toBe('pre-existing')      // untouched
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Per-item bullet undo round-trips — phase 7c. The trust-preservation
+// scenarios Erik called out: each bullet is its own undo step and identity
+// is the bullet's stable id (from phase 7b's data model). Position is a
+// drift check, never the primary identifier.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('round-trip — per-item bullet ops (phase 7c)', () => {
+  it("Erik's scenario #1: deleting one of three duplicate-text bullets restores the right one", async () => {
+    const rs = makeReactState()
+    seedCard(rs, {
+      id: 'card-1',
+      storyNotes: [
+        { id: 'b1', value: 'TODO' },
+        { id: 'b2', value: 'TODO' },
+        { id: 'b3', value: 'TODO' },
+      ],
+    })
+    const before = snapshotState(rs)
+
+    // Delete the middle TODO (id 'b2'). Without stable IDs, position +
+    // value alone couldn't distinguish which TODO to restore.
+    rs.setNodes((nds) => nds.map((n) =>
+      n.id === 'card-1' ? {
+        ...n,
+        data: { ...n.data, storyNotes: [
+          { id: 'b1', value: 'TODO' },
+          { id: 'b3', value: 'TODO' },
+        ] },
+      } : n,
+    ))
+    mockDb.node_sections.set('card-1', {
+      ...mockDb.node_sections.get('card-1'),
+      narrative: [{ id: 'b1', value: 'TODO' }, { id: 'b3', value: 'TODO' }],
+    })
+
+    const entry = {
+      type: ACTION_TYPES.REMOVE_LIST_ITEM,
+      campaignId: CAMPAIGN, cardId: 'card-1',
+      field: 'storyNotes',
+      position: 1,
+      item: { id: 'b2', value: 'TODO' },
+    }
+    await applyInverse(entry, rs.ctx())
+    expect(snapshotState(rs)).toEqual(before)
+
+    await applyForward(entry, rs.ctx())
+    expect(rs.state.nodes[0].data.storyNotes).toEqual([
+      { id: 'b1', value: 'TODO' },
+      { id: 'b3', value: 'TODO' },
+    ])
+  })
+
+  it("Erik's scenario #2: deleting the first bullet → undo restores it; surviving IDs unchanged", async () => {
+    const rs = makeReactState()
+    seedCard(rs, {
+      id: 'card-1',
+      storyNotes: [
+        { id: 'b1', value: 'first' },
+        { id: 'b2', value: 'middle' },
+        { id: 'b3', value: 'last' },
+      ],
+    })
+    const before = snapshotState(rs)
+
+    // User deletes 'first'.
+    rs.setNodes((nds) => nds.map((n) =>
+      n.id === 'card-1' ? {
+        ...n,
+        data: { ...n.data, storyNotes: [
+          { id: 'b2', value: 'middle' },
+          { id: 'b3', value: 'last' },
+        ] },
+      } : n,
+    ))
+    mockDb.node_sections.set('card-1', {
+      ...mockDb.node_sections.get('card-1'),
+      narrative: [
+        { id: 'b2', value: 'middle' },
+        { id: 'b3', value: 'last' },
+      ],
+    })
+
+    const entry = {
+      type: ACTION_TYPES.REMOVE_LIST_ITEM,
+      campaignId: CAMPAIGN, cardId: 'card-1',
+      field: 'storyNotes',
+      position: 0,
+      item: { id: 'b1', value: 'first' },
+    }
+    await applyInverse(entry, rs.ctx())
+    expect(snapshotState(rs)).toEqual(before)
+
+    // Survivors carry their original IDs through the round-trip.
+    expect(rs.state.nodes[0].data.storyNotes[1].id).toBe('b2')
+    expect(rs.state.nodes[0].data.storyNotes[2].id).toBe('b3')
+  })
+
+  it("Erik's scenario #3: reorder → undo moves the bullet back, IDs preserved", async () => {
+    const rs = makeReactState()
+    seedCard(rs, {
+      id: 'card-1',
+      storyNotes: [
+        { id: 'b1', value: 'A' },
+        { id: 'b2', value: 'B' },
+        { id: 'b3', value: 'C' },
+      ],
+    })
+    const before = snapshotState(rs)
+
+    // Drag 'A' to the end: [B, C, A].
+    rs.setNodes((nds) => nds.map((n) =>
+      n.id === 'card-1' ? {
+        ...n,
+        data: { ...n.data, storyNotes: [
+          { id: 'b2', value: 'B' },
+          { id: 'b3', value: 'C' },
+          { id: 'b1', value: 'A' },
+        ] },
+      } : n,
+    ))
+    mockDb.node_sections.set('card-1', {
+      ...mockDb.node_sections.get('card-1'),
+      narrative: [
+        { id: 'b2', value: 'B' },
+        { id: 'b3', value: 'C' },
+        { id: 'b1', value: 'A' },
+      ],
+    })
+
+    const entry = {
+      type: ACTION_TYPES.REORDER_LIST_ITEM,
+      campaignId: CAMPAIGN, cardId: 'card-1',
+      field: 'storyNotes',
+      itemId: 'b1', from: 0, to: 2,
+    }
+    await applyInverse(entry, rs.ctx())
+    expect(snapshotState(rs)).toEqual(before)
+  })
+
+  it("Erik's add-then-move scenario: two undo steps reverse independently", async () => {
+    // Forward: starting from [{A}], user clicks +Add → [{A}, {B-fresh}],
+    // then drags B to position 0 → [{B}, {A}]. Two log entries: addListItem
+    // (with B-fresh's id and value) and reorderListItem (B from 1 to 0).
+    // Stack push order: add, then reorder. Undo unwinds in reverse.
+    const rs = makeReactState()
+    seedCard(rs, {
+      id: 'card-1',
+      storyNotes: [{ id: 'a-orig', value: 'A' }],
+    })
+
+    // Apply the forward sequence to the world (simulates the user's actions).
+    rs.setNodes((nds) => nds.map((n) =>
+      n.id === 'card-1' ? {
+        ...n,
+        data: { ...n.data, storyNotes: [
+          { id: 'b-new', value: 'B' },     // moved
+          { id: 'a-orig', value: 'A' },
+        ] },
+      } : n,
+    ))
+    mockDb.node_sections.set('card-1', {
+      ...mockDb.node_sections.get('card-1'),
+      narrative: [
+        { id: 'b-new', value: 'B' },
+        { id: 'a-orig', value: 'A' },
+      ],
+    })
+
+    // Push the two entries through the live store, then walk back.
+    useUndoStore.getState().setScope({ userId: 'u1', campaignId: CAMPAIGN })
+    useUndoStore.getState().recordAction({
+      type: ACTION_TYPES.ADD_LIST_ITEM,
+      campaignId: CAMPAIGN, cardId: 'card-1',
+      field: 'storyNotes', position: 1,
+      item: { id: 'b-new', value: 'B' },
+    })
+    useUndoStore.getState().recordAction({
+      type: ACTION_TYPES.REORDER_LIST_ITEM,
+      campaignId: CAMPAIGN, cardId: 'card-1',
+      field: 'storyNotes', itemId: 'b-new', from: 1, to: 0,
+    })
+
+    // Ctrl+Z #1: top of stack = reorder. B moves back to position 1.
+    let res = await useUndoStore.getState().undo(rs.ctx())
+    expect(res.ok).toBe(true)
+    expect(rs.state.nodes[0].data.storyNotes).toEqual([
+      { id: 'a-orig', value: 'A' },
+      { id: 'b-new', value: 'B' },
+    ])
+
+    // Ctrl+Z #2: top = add. B is removed.
+    res = await useUndoStore.getState().undo(rs.ctx())
+    expect(res.ok).toBe(true)
+    expect(rs.state.nodes[0].data.storyNotes).toEqual([
+      { id: 'a-orig', value: 'A' },
+    ])
+  })
+
+  it('editListItem round-trip: type into a bullet, undo restores prior text by id', async () => {
+    const rs = makeReactState()
+    seedCard(rs, {
+      id: 'card-1',
+      storyNotes: [
+        { id: 'b1', value: 'A' },
+        { id: 'b2', value: 'B' },
+      ],
+    })
+    const before = snapshotState(rs)
+
+    // User edits b2 from 'B' → 'B edited'.
+    rs.setNodes((nds) => nds.map((n) =>
+      n.id === 'card-1' ? {
+        ...n,
+        data: { ...n.data, storyNotes: [
+          { id: 'b1', value: 'A' },
+          { id: 'b2', value: 'B edited' },
+        ] },
+      } : n,
+    ))
+    mockDb.node_sections.set('card-1', {
+      ...mockDb.node_sections.get('card-1'),
+      narrative: [
+        { id: 'b1', value: 'A' },
+        { id: 'b2', value: 'B edited' },
+      ],
+    })
+
+    const entry = {
+      type: ACTION_TYPES.EDIT_LIST_ITEM,
+      campaignId: CAMPAIGN, cardId: 'card-1',
+      field: 'storyNotes',
+      itemId: 'b2', before: 'B', after: 'B edited',
+    }
+    await applyInverse(entry, rs.ctx())
+    expect(snapshotState(rs)).toEqual(before)
+    // ID survives the round-trip.
+    expect(rs.state.nodes[0].data.storyNotes[1].id).toBe('b2')
+  })
+
+  it('drift refusal: undoing a removeListItem refuses if the id is already back in the list', async () => {
+    const rs = makeReactState()
+    seedCard(rs, {
+      id: 'card-1',
+      // Some other tab "restored" the bullet via Realtime before this tab undid.
+      storyNotes: [
+        { id: 'b1', value: 'A' },
+        { id: 'b2', value: 'restored from elsewhere' },
+      ],
+    })
+
+    const entry = {
+      type: ACTION_TYPES.REMOVE_LIST_ITEM,
+      campaignId: CAMPAIGN, cardId: 'card-1',
+      field: 'storyNotes', position: 1,
+      item: { id: 'b2', value: 'B' },   // we recorded 'B' but world has 'restored'
+    }
+    useUndoStore.getState().setScope({ userId: 'u1', campaignId: CAMPAIGN })
+    useUndoStore.getState().recordAction(entry)
+
+    const result = await useUndoStore.getState().undo(rs.ctx())
+    expect(result).toMatchObject({ ok: false, conflict: true })
+    expect(result.reason).toMatch(/already present/i)
+  })
+})
