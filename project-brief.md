@@ -1,4 +1,6 @@
-# DnD Campaign Mind Map — Project Brief
+# MasterMind: Story Builder — Project Brief
+
+*(Previously titled "DnD Campaign Mind Map." The product vision below is unchanged; only the name has evolved. For current implementation specifics, see [CLAUDE.md](./CLAUDE.md).)*
 
 ## The Problem
 
@@ -79,7 +81,7 @@ Campaigns grow and change. A DM who starts thinking in locations may later want 
 - A linear notes app or wiki
 - A static document
 - A tool that makes decisions for the DM
-- A tool optimized primarily for Game Masters and Dungeon Masters. Secondarily, the tool serves players with a specific, narrower need: getting oriented and caught up between sessions
+- A tool optimized primarily for players. The primary audience is the DM. Players are served secondarily with a specific, narrower need: getting oriented and caught up between sessions.
 
 ---
 
