@@ -1,8 +1,10 @@
-# DnD Campaign Mind Map — Design Document
+# MasterMind: Story Builder — Design Document
 
 ## Overview
 
-This document captures all design decisions made during the design phase. It is the source of truth for visual systems, interaction patterns, and information architecture. Aesthetic decisions (typography choices, specific color values, textures, theming) are intentionally deferred — this document defines the functional grammar of the interface, not its skin.
+This document captures design decisions — the functional grammar of the interface: visual systems, interaction patterns, and information architecture. Aesthetic decisions (typography choices, specific color values, textures, theming) are intentionally deferred.
+
+**Relationship to other docs:** This document is updated as the design evolves, but source-of-truth for *current implementation* is [`CLAUDE.md`](./CLAUDE.md). Architectural decisions (backend choice, persistence pattern, etc.) are captured as ADRs in [`docs/decisions/`](./docs/decisions/).
 
 ---
 
@@ -20,20 +22,22 @@ This document captures all design decisions made during the design phase. It is 
 
 ### 1.1 Card Format
 
-All nodes are **rectangles** — uniform shape across all types. Shape does not encode type. Cards grow vertically with content. There is no fixed height cap.
+All nodes are **rectangles** — uniform shape across all types. Shape does not encode type. Cards grow vertically with content. There is no fixed height cap. Current implementation uses `w-64` (256px) with `rounded-lg`.
 
 ### 1.2 Node Types and Colors
 
-Color encodes node type. Each type has a distinct assigned color. Color is never used to encode any other property.
+Color encodes node type. Each type has a distinct assigned color and a Phosphor icon. Color is never used to encode any other property.
 
-| Type | Color |
-|---|---|
-| Character / Beings | Purple |
-| Location / Environment | Green |
-| Item / Thing | Orange |
-| Faction | Blue |
-| Story / Narrative Structure | Warm gray |
-| Custom (user-defined) | User-selected |
+| Type | Color | Phosphor Icon |
+|---|---|---|
+| Character | Purple (`#7C3AED`) | UserCircle |
+| Location | Green (`#16A34A`) | MapPin |
+| Item | Orange (`#EA580C`) | Backpack |
+| Faction | Blue (`#2563EB`) | ShieldPlus |
+| Story | Warm gray (`#9CA3AF`) | BookOpen |
+| Custom (user-defined) | User-selected from 2D color picker | User-selected from icon library |
+
+Note: The fifth type is confirmed as "Story" (not "Plot Hook"). Type icons render at `weight="fill"`, colored by the header's luminance-adaptive foreground, sized proportionally to the title text.
 
 ### 1.3 Custom Type Color Picker
 
@@ -53,13 +57,21 @@ Each state has exactly one visual treatment. Treatments are never shared across 
 
 | State | Visual Treatment |
 |---|---|
-| Default | Normal appearance |
-| Locked (being edited by another user) | 50% opacity |
-| Hovered | Scales up slightly + drop shadow |
-| Selected | Scales up slightly + drop shadow + all other nodes drop to 50% opacity |
-| Locked + not selected (when another node is selected) | ~25% opacity (50% locked × 50% from dimming) |
+| Default | Normal appearance, light drop shadow |
+| Hovered | scale(1.03) + deep drop shadow |
+| Selected | scale(1.03) + deep drop shadow; persists while anything else is hovered |
+| Dimmed | 50% opacity — any card that is not active when something else is hovered/selected |
+| Is-editing | opacity 0 (card disappears; modal animates from its position) |
+
+*(The original design included a "Locked" state — an explicit user toggle that dimmed the card to 50% opacity. The lock feature was cut from V1; the `locked` flag remains in-memory only and the state treatment is no longer active.)*
 
 **Rule:** Drop shadow and scale-up mean "pulled forward in space." This treatment is exclusive to hover and selected states and must not be applied to any other concept.
+
+**Hover priority:** Hover always claims visual priority over selection. A hovered card is always lifted and undimmed — this is consistent with Figma and expected in all canvas tools.
+
+**Multi-select:** Shift+click selects additional nodes. All selected nodes remain lifted (scale + shadow). The selection bounding box React Flow renders after release is hidden; cards communicate selection visually themselves.
+
+**Edge hover:** When the user hovers over a connection line, the two connected cards are highlighted (undimmed, lifted) and the line thickens. All other cards dim.
 
 ### 1.5 Completeness
 
@@ -69,65 +81,96 @@ No progress bars, badges, or completeness scores are used.
 
 ### 1.6 Drag Affordance
 
-- **Grab zone:** The grip icon area on the left side of the card header
-- **Grip icon:** A 2×n grid of dots (drag handle) — a persistent visual hint that this area is grabbable
-- **Cursor states:**
-  - Default arrow when not over grip area
-  - Open hand when hovering over grip icon
-  - Closed fist when mouse is held down (grabbed)
-  - Closed fist while dragging
-  - Open hand on mouse release
-  - Returns to arrow when leaving grip area
+Cards are draggable across their entire surface (React Flow's default node drag behavior). Grip icons have been removed from the current implementation — the whole card is the drag target.
 
-The card's drag mechanic is unique to cards. It does not apply to any other UI element.
+Cursor states on the canvas:
+- Default cursor: arrow
+- Spacebar held: open hand (pan mode)
+- Spacebar + drag: closed fist (actively panning)
+
+*(A grip icon with cursor affordance was designed but removed during build. May be revisited.)*
 
 ### 1.7 Card Actions
 
 **Right-clicking anywhere on a card** opens a context menu with all available actions:
-- Edit (opens detail popup)
-- Lock / Unlock
+- Edit (opens edit modal)
+- Duplicate (without connections — "with connections" variant is cut from V1)
 - Delete
-- Duplicate (with or without connections)
 
-There is no persistent edit icon on the card surface. The grip icon is the only persistent interactive element on the card.
+**Double-clicking a card** also opens the edit modal.
+
+There is no persistent edit icon on the card surface.
 
 ---
 
 ## 2. Card Content Structure
 
-### 2.1 Sections
+### 2.1 Card Layout (implemented)
 
-Every node contains the following sections, in this order:
+The card has three visual zones:
 
-1. **Title** — always visible to players once a node is discovered
-2. **Node type** — always visible to players once a node is discovered (communicated via card color)
-3. **Narrative** — rich text with inline media support; bullet-level discovery control (see Section 5)
-4. **DM Notes** — rich text with inline media support; always hidden from players
-5. **Mood board / Media** — dedicated media section; DM-only (see Section 3)
-6. **Related to** — connections to other nodes with relationship types; discovery-controlled per relationship
-7. **Custom fields** — user-defined text input fields; DM-only by default
+1. **Header** — type-color background; D-shaped avatar on the left (diameter tracks the header's rendered height via ResizeObserver); title text (wraps, no truncation, font scales with zoom compensation); Phosphor type icon on the right (auto-hidden when the title would overflow it at extreme zoom-out)
+2. **Summary** — short italicized text visible on the card surface (`text-xs`, `text-gray-500`); separated from the body by a subtle border
+3. **Body** — bullet list of narrative notes (`text-xs`, `text-gray-700`); shows "No content yet" placeholder when empty
 
-### 2.2 Custom Fields
+### 2.2 Avatar
 
-- Field type: plain text input only
-- Defined per node by the user
-- Can be added to card templates for automatic inclusion on new cards of that type
-- Template changes apply to new cards only — existing cards are not retroactively updated
-- Hidden from players by default
+- If `data.avatar` (a URL or data URI) is set: renders as an `<img>` with `object-cover`
+- If not: renders the darkened type color as background + the label's first meaningful initial (via `labelInitial()`, which strips a leading "The " before taking the first character)
+- The avatar is D-shaped: full circle clipped on the left with `rounded-r-full`; its diameter always equals the header's rendered height
 
-### 2.3 Card Templates
+### 2.3 Node Data Schema
 
-Users can define templates per node type. A template pre-populates custom fields for all new cards of that type. Template updates only affect cards created after the change.
+Persistent fields (stored in Supabase; see `CLAUDE.md` for the full DB schema):
+- `label` — display title
+- `type` — one of the built-in type keys (`character`, `location`, `item`, `faction`, `story`) or a campaign-defined custom key
+- `avatar` — image URL or base64 data URI, or null
+- `summary` — short summary text
+- `storyNotes` — array of bullet strings (the visible body of the card)
+- `hiddenLore` — DM-only bullets (hidden from players)
+- `dmNotes` — DM-only operational notes
+- `media` — image URLs / data URIs attached to the card
 
-### 2.4 Information Hierarchy
+(`storyNotes`, `hiddenLore`, `dmNotes`, and `media` are each stored as a row in `node_sections` keyed by `kind`; the schema supports future modular sections.)
+
+UI-computed fields (not persisted, derived in App.jsx and passed down):
+- `isEditing` — hides the card while the edit modal is open
+- `connectionDots` — array of `{x, y, color}` for the border dot indicators
+- `anySelected` — true if any node in the canvas is selected
+- `anyHovered` — true if any node in the canvas is hovered
+- `hoveredEdgeNodeIds` — Set of node IDs connected to a currently-hovered edge
+- `locked` — in-memory only; lock feature was cut from V1
+
+### 2.4 Edit Modal Content (implemented)
+
+The edit modal (`EditModal.jsx`) is a centered overlay with:
+1. **Header** — type-color background; title input (inline, borderless); close button
+2. **Type selector** — pill buttons for all types; clicking changes card color immediately
+3. **Thumbnail** — image upload via file input; shows preview with Change/Remove overlay on hover; shows dashed upload zone when empty
+4. **Summary** — textarea
+5. **Story Notes** — bullet list shown on the card body; Enter adds, Backspace on empty removes; drag-to-reorder
+6. **Hidden Lore** — bullet list visible only to the DM (planned to be hidden in the future player view)
+7. **DM Notes** — bullet list, DM-only
+8. **Inspiration Images** — media grid with drag-to-reorder and a lightbox
+9. **Connections** — list of connected nodes; add via dropdown picker (alphabetically sorted, strips "The " prefix); remove individually
+
+### 2.5 Sections Designed but Not Yet Built
+
+The following section-level capabilities are in the design spec but not yet implemented:
+- Relationship type labels on connections (Sprint 4)
+- Discovery toggles per relationship (deferred with player view)
+- Modular card sections UI — reorder / add / remove sections, per-type templates (Sprint 3; the schema already supports it)
+- Custom fields — fully user-defined sections beyond the built-in kinds
+
+### 2.6 Information Hierarchy
 
 Information hierarchy follows established typographic best practices:
 - **Card title / header:** Dominant — the first thing the eye lands on
-- **Section headers (inside popup):** Clearly subordinate to the card title
+- **Section headers (inside modal):** Clearly subordinate to the card title
 - **Body text and bullet points:** Standard reading weight
 - **Labels, metadata, secondary information:** Lightest weight
 
-Specific type sizes and weights are aesthetic decisions deferred to the implementation phase.
+Font sizes use `rem` units. `html { font-size: 100% }` anchors rem to the browser's root font size preference.
 
 ---
 
@@ -226,28 +269,45 @@ Connection discovery is **independent from node discovery**. Within the detail p
 
 ## 5. Connections
 
-### 5.1 Visual Language
+### 5.1 Visual Language (implemented)
 
-All connection lines are visually identical — line style does not vary by relationship type. Relationship type is communicated exclusively through the **hover label**.
+All connection lines are straight lines from card border to card border — no curves, no arrows. Line style does not vary by relationship type.
 
-- **Hover label:** All relationship types for a connection are displayed stacked vertically, one per line, for easy scanning
-- **Line treatment:** Solid (discovered) or dashed (undiscovered) per the discovery layer system
+- **Color:** Slate gray (`#94a3b8`) by default
+- **Weight:** 1.5px default; 2px when the edge is hovered or selected
+- **Connection dots:** 8px colored circles rendered directly on the card border at each connection point. The dot color reflects the type color of the card on the other end of the connection. Dots are HTML elements, not SVG, so they sit above the card surface.
+- **Dot spreading:** When multiple connections exit the same card side, dots spread apart automatically with a minimum 16px gap between centers, staying 8px clear of corners. If they would overlap, they distribute evenly.
 
-### 5.2 Creating Connections — Method 1: Canvas Drag
+### 5.2 Floating Edge Routing (implemented)
 
-1. Hover over any card border → cursor changes to a **four-directional arrow**
+Edges connect to precise border intersection points, not fixed handle positions.
+
+- `getNodeCenter()` — returns the center point of a node
+- `getBorderIntersection()` — finds where a straight line from the node center toward a target exits the node's rectangular border
+- `getSpreadBorderPoints()` — handles multi-connection spreading on a single side
+- React Flow handles are invisible; border points are computed by the App and passed to `FloatingEdge` via `edge.data.sourcePoint` / `edge.data.targetPoint`
+
+### 5.3 Creating Connections — Method 1: Edit Modal
+
+Inside the Connections section of the edit modal:
+1. Click "+ Add connection"
+2. A dropdown picker lists all other nodes alphabetically (strips "The " prefix for sort order)
+3. Selecting a node creates the connection immediately
+
+Relationship type labels are designed but not yet built.
+
+### 5.4 Creating Connections — Method 2: Canvas Drag
+
+*(Designed but not yet built.)*
+
+1. Hover over any card border → cursor changes to a four-directional arrow
 2. Click and drag → a line begins drawing from that point
 3. Drag toward target card → line snaps to the target card's border
-4. Release mouse → connection is created and the **relationship type popup** appears
+4. Release mouse → connection is created and the relationship type popup appears
 
-### 5.3 Creating Connections — Method 2: Detail Popup
+### 5.5 Relationship Type Popup
 
-Inside the Related to section of the detail popup:
-1. A dropdown lists all available nodes
-2. Selecting a node creates the connection
-3. The **relationship type popup** appears
-
-### 5.4 Relationship Type Popup
+*(Designed but not yet built.)*
 
 Appears immediately after a connection is created via either method.
 
@@ -260,73 +320,85 @@ Appears immediately after a connection is created via either method.
 
 ---
 
-## 6. Detail Popup
+## 6. Edit Modal
 
 ### 6.1 Appearance
 
-- **Centered modal** overlay
-- **Draggable** by clicking and dragging the header bar — standard modal conventions (Figma/Photoshop mental model)
-- The card's grip-icon drag mechanic does not apply to the modal
+- **Centered modal** overlay with a semi-transparent black backdrop
+- Width: `41.25rem` (660px at default browser font size); max-height: 90vh; scrollable body
+- Opens with a morph animation: the card disappears and the modal expands from the card's screen position to center. Closes with the reverse animation.
+- **Not draggable** in the current implementation (draggable header is in the design spec but not yet built)
+- Escape key closes the modal; clicking the backdrop closes the modal
 
-### 6.2 Layout
+### 6.2 Layout (implemented)
 
-Single **scrolling panel**. Sections appear in the same order as the card, top to bottom:
+Single **scrolling panel**. Sections in order:
 
-1. Title
-2. Node type
-3. Narrative (rich text, checkable bullets, inline media)
-4. DM Notes (rich text, inline media)
-5. Mood board / Media
-6. Related to (connections + relationship types + discovery toggles)
-7. Custom fields
+1. Title (inline input in the colored header bar)
+2. Type selector (pill buttons)
+3. Thumbnail (image upload)
+4. Summary (textarea)
+5. Notes (bullet list with keyboard navigation)
+6. Connections (list + add picker)
+
+### 6.3 Animation Detail
+
+- `useLayoutEffect` runs before first paint, reads the modal's actual centered rect, and applies a `translate + scale` transform placing the modal exactly over the source card — invisible (`opacity: 0`), no transition
+- `useEffect` fires after first paint, schedules a `requestAnimationFrame` to set `transform: none` and `opacity: 1` with a CSS transition, so the browser interpolates card → center
+- Close reverses the process: animates to card position, then `setTimeout(onClose, 260)` so React unmounts after the animation completes
 
 ---
 
 ## 7. Canvas Navigation
 
-### 7.1 Navigation Controls
+### 7.1 Navigation Controls (implemented)
 
 | Interaction | Behavior |
 |---|---|
-| Scroll wheel | Zoom centered on cursor |
-| Click and drag (canvas) | Pan |
-| Double-click (canvas area) | Zoom into that area |
+| Scroll wheel | Vertical pan |
+| Ctrl + scroll wheel | Zoom centered on cursor |
+| Pinch (trackpad) | Zoom |
+| Spacebar + drag | Pan (Figma model) |
+| Drag on empty canvas | Marquee selection (indigo rectangle, partial intersection selects) |
+| Shift + click | Add to / remove from selection |
+| Double-click on card | Open edit modal |
+| Right-click on card | Context menu (Edit, Duplicate, Delete) |
+| Right-click on empty canvas | Context menu (Add card / Add text) |
 
-### 7.2 Bottom Toolbar
+**Marquee selection:** React Flow's selection rect uses an indigo tinted fill + indigo border. The post-selection bounding box React Flow renders around selected nodes is hidden (background: none, border: none) — cards communicate selection state visually.
 
-A persistent toolbar lives at the bottom of the screen. Contains (left to right):
+### 7.2 Toolbar / Node Creation
 
-| Control | Function |
-|---|---|
-| Undo | Undo last action (50-action limit per session, configurable in settings) |
-| Redo | Redo last undone action |
-| Zoom out | Decrease zoom level |
-| Zoom level indicator | Shows current zoom percentage |
-| Zoom in | Increase zoom level |
-| Fit-all | Adjusts zoom and pan to fit all nodes in view; updates as map grows |
-| Node | Drag onto canvas to create a new node |
-| Text tool | Add freestanding canvas text label |
+**No persistent toolbar exists.** Node creation, text tools, and related controls are exposed via canvas right-click. Undo/redo is planned but not yet built.
 
-### 7.3 Creating a New Node
+**Implemented:**
+- Canvas right-click menu: "Add card" (with type submenu) and "Add text"
 
-1. User drags the Node item from the toolbar onto the canvas
-2. Node is dropped at the desired position
-3. A **type selection popup** appears immediately
-4. Popup lists all default types + custom types
-5. **First option always:** Custom (creates a new permanent global card type)
-6. User selects type → card is created in the correct color → detail popup opens for content entry
+**Still planned:**
+- Shift+1: fit all (zoom and pan to fit all nodes)
+- Snapshot-based undo/redo: Ctrl+Z / Ctrl+Shift+Z, 50-snapshot limit
 
-### 7.4 Text Tool
+### 7.3 Text Tool
 
-- Adds freestanding text directly on the canvas surface
-- Not connected to any node — purely for canvas annotation and labeling
-- Scalable by the user
-- Default size: larger than any card header
-- Follows the canvas information hierarchy (canvas labels > card headers > section headers > body text)
+- Freestanding text directly on the canvas surface (default font 18px; S/M/L/XL size options)
+- Not connected to any node — purely for canvas annotation
+- Scalable by the user via 8 resize handles (corners + edges)
+- Rich text: per-selection bold + italic via contentEditable; alignment left/center/right
+- All content, size, formatting, and position persist to Supabase
+
+### 7.4 Zoom Compensation
+
+Card titles scale inversely with viewport zoom so they remain readable at any zoom level:
+
+- At zoom ≥ 1: base size (`1rem`)
+- At zoom < 1: `1rem ÷ zoom`, capped at 5× to prevent absurd values at extreme zoom-out
+- The Phosphor type icon scales proportionally (`iconSize = titleFontSize × 16 × 1.25 px`)
+- The icon auto-hides when the title's longest word would otherwise slide under it (determined by a deterministic canvas `measureText` layout simulation — see `CampaignNode.jsx`)
+- The avatar diameter tracks the header's rendered height via `ResizeObserver`, so it always fills the header regardless of title wrapping or zoom level
 
 ---
 
-## 8. Search
+## 8. Search *(designed, not yet built)*
 
 ### 8.1 Invocation
 
@@ -349,7 +421,7 @@ A panel slides out from the **right side of the screen**:
 
 ---
 
-## 9. Settings (Phase 1)
+## 9. Settings *(designed, not yet built)*
 
 Settings panel contains at minimum:
 
@@ -358,12 +430,75 @@ Settings panel contains at minimum:
 
 ---
 
-## 10. Phase 2 (Deferred)
+## 10. Tech Stack and Implementation Conventions
 
-The following are fully deferred to Phase 2. Do not design or build until Phase 1 is complete:
+### 10.1 Tech Stack
 
-- **Player view interface** — how players access and navigate their filtered map view
-- **Collaboration indicators** — active user cursors, display names on canvas, active users list
-- **Campaign management UI** — switching campaigns, inviting collaborators, managing permissions
+| Layer | Choice |
+|---|---|
+| Framework | React 18 + Vite |
+| Canvas | React Flow v11.11.4 |
+| Styling | Tailwind CSS v3 |
+| Icons | Phosphor Icons (`@phosphor-icons/react`) |
+| Drag-to-reorder | `@dnd-kit/core`, `@dnd-kit/sortable`, `@dnd-kit/utilities` |
+| State management | Zustand v5 (wired for the node-type store) |
+| Auth + Database | Supabase (Postgres + Auth + RLS) |
 
-Note: The data logic for player view (discovery state, bullet visibility, player-visible image designation) is already designed. Only the UI layer is deferred.
+See [ADR-0001](./docs/decisions/0001-supabase-over-firebase.md) for the backend decision rationale.
+
+### 10.2 CSS Import Order
+
+React Flow's stylesheet is imported in `main.jsx` **before** `index.css`. This ensures our Tailwind overrides and custom CSS rules win over React Flow's defaults without needing `!important` everywhere.
+
+### 10.3 Grid System
+
+All sizing follows an 8-point grid:
+- **÷8 ideal** — preferred for all spacing, sizing, and layout values
+- **÷4 acceptable** — used where ÷8 would be too coarse
+- **÷2 rare** — only when the UI genuinely requires it
+
+Font sizes use `rem`. The `html { font-size: 100% }` declaration in `index.css` anchors rem to the browser's own root font size preference so accessibility zoom settings are respected.
+
+### 10.4 Key Architectural Notes
+
+- All layout is free-form — physics/collision was built and then reverted. Nodes go where you put them.
+- `App.jsx` owns the canvas state, loads from Supabase on mount, and persists every mutation back optimistically (fire-and-forget). Refactor into custom hooks (`useEdgeRouting`, `useCanvasInteraction`, `useNodeActions`) is still pending.
+- Persistent vs. UI state in `node.data` is now split: persistent fields flow from Supabase via `lib/nodes.js`; UI-only fields (`isEditing`, `connectionDots`, `anySelected`, `anyHovered`, `hoveredEdgeNodeIds`) are derived and passed through render.
+- The sample Curse of Strahd data now lives in Supabase as a real campaign seeded via the (now-deleted) `seedStrahd.js` utility. Avatar images are still self-hosted in `public/avatars/`.
+
+### 10.5 Utility Files
+
+- `src/utils/labelUtils.js` — `sortKey(label)` strips "The " prefix for alphabetical sorting; `labelInitial(label)` returns the first meaningful character for avatar fallbacks
+- `src/utils/edgeRouting.js` — `getNodeCenter()`, `getBorderIntersection()`, `getSpreadBorderPoints()`
+
+---
+
+## 11. Roadmap
+
+Authoritative roadmap lives in [`README.md`](./README.md) and [`Market Research/mastermind-build-plan.md`](./Market%20Research/mastermind-build-plan.md). Summary:
+
+### Built (Sprint 1)
+
+Custom type color picker · canvas right-click menu (Add card / Add text) · text annotation tool · data persistence to Supabase · auth + campaigns CRUD · RLS policies · hidden-lore + DM-notes + inspiration-images sections · drag-to-reorder bullets and images · node+section marshaling · separation of persistent vs UI state in `node.data` · dynamic type-icon visibility on card headers.
+
+### Designed, pending build
+
+| Sprint | Feature |
+|---|---|
+| 1.5 | Realtime cross-tab sync via Supabase Realtime |
+| 2 | Snapshot-based undo/redo (Ctrl+Z / Ctrl+Shift+Z, 50-step limit); card templates per type |
+| 3 | Modular card sections UI (reorder / add / remove); template editor |
+| 4 | Search panel (right-side slide-out); canvas drag to create connections; relationship type labels + popup on edges; Shift+1 fit-all |
+| 5 | AI copilot grounded in campaign data |
+
+### Cut from V1
+
+- Lock / unlock cards (state remains in-memory only; no UI)
+- Duplicate-with-connections (plain duplicate is sufficient)
+
+### Deferred (Phase 2)
+
+- Player view interface — how players access and navigate their filtered view (data logic is designed; UI deferred)
+- Collaboration indicators — cursors, display names, active users
+- Campaign sharing / multi-user permissions
+- Settings panel (discovery toggle, undo limit)
