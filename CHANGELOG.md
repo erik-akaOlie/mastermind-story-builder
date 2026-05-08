@@ -4,6 +4,61 @@ A running log of meaningful changes to MasterMind: Story Builder. Append-only. N
 
 ## [Unreleased]
 
+### Sprint 1.6 — EditModal refactor + first component tests (2026-04-28)
+
+The 792-line EditModal was the largest single source of "fragile" code in the
+project. Sprint 3 (modular sections UI) would have added more to it. Decomposed
+into 5 focused components + 2 hooks, with 10 happy-path tests pinning down
+behavior across the refactor.
+
+**Added**
+- 4 testing dev dependencies — `@testing-library/react`,
+  `@testing-library/jest-dom`, `@testing-library/user-event`, `jsdom`.
+- [`vitest.config.js`](./vitest.config.js) — jsdom environment + globals.
+- [`src/setupTests.js`](./src/setupTests.js) — jest-dom matchers, cleanup
+  between tests, jsdom polyfills for `crypto.randomUUID` and `matchMedia`.
+- [`src/components/EditModal.test.jsx`](./src/components/EditModal.test.jsx)
+  — 10 happy-path tests covering open/populate, debounced auto-save (title +
+  type + bullets + bullet removal), connection add/remove, Esc to close
+  (with flush), and avatar upload (mocked).
+- 5 new components extracted from EditModal:
+  - [`src/components/EditModalHeader.jsx`](./src/components/EditModalHeader.jsx)
+    — avatar + title + TypePicker + close button. Owns its own
+    `uploadingAvatar` state and avatar upload handler.
+  - [`src/components/BulletSection.jsx`](./src/components/BulletSection.jsx)
+    — reusable section with DnD reorder, focus-on-new, add/remove/update.
+    Exports `newItem` for parents that need to seed initial state.
+  - [`src/components/MediaSection.jsx`](./src/components/MediaSection.jsx)
+    — Inspiration grid with DnD reorder + parallel-safe upload (uses a
+    ref to track the latest items so concurrent uploads don't clobber).
+  - [`src/components/ConnectionsSection.jsx`](./src/components/ConnectionsSection.jsx)
+    — chip list + picker with click-outside-to-dismiss.
+  - [`src/components/TypePicker.jsx`](./src/components/TypePicker.jsx)
+    — type dropdown with hover highlighting and "Create new type…" row.
+  - [`src/components/SectionLabel.jsx`](./src/components/SectionLabel.jsx)
+    — small uppercase-tracked label utility used at the top of each section.
+- 2 new hooks:
+  - [`src/hooks/useAutoSave.js`](./src/hooks/useAutoSave.js) — debounced
+    save with explicit `flush()` for use on close.
+  - [`src/hooks/useMorphAnimation.js`](./src/hooks/useMorphAnimation.js)
+    — modal-from-card morph in/out animation with three phases (pre-paint
+    setup via `useLayoutEffect`, animate-in via `useEffect`, animate-out
+    via the returned `animateClose` function).
+
+**Changed**
+- `src/components/EditModal.jsx`: 792 → 228 lines (71% reduction). Now
+  pure orchestration: form state declarations, hook calls, sub-component
+  composition. State (title, type, summary, bullet sections, media,
+  thumbnail, localConns) stays in EditModal so the auto-save useEffect
+  can read all of it from one place.
+
+**What this unblocks**
+- Sprint 3 (modular sections UI) lands on small focused files instead of
+  a 792-line behemoth.
+- Sprint 5 (AI copilot inserting content) can hand each section a clean
+  `items` + `onChange` interface.
+- Future contributors can read EditModal end-to-end in one sitting.
+
 ### Sprint 1.5b — Cascade of polish + bug fixes (2026-04-28)
 
 Sprint 1.5 (Realtime) shipped, but exposed several bugs and UX issues

@@ -22,8 +22,9 @@ Source of truth for any AI session working on this codebase. When this file conf
 | Styling | Tailwind CSS v3 | rem units throughout; `html { font-size: 100% }` |
 | Icons | **Phosphor Icons** (`@phosphor-icons/react`) | design doc says Lucide — **ignore that, we use Phosphor** |
 | Drag-to-reorder | `@dnd-kit/core`, `@dnd-kit/sortable`, `@dnd-kit/utilities` | used in EditModal for bullets and images |
-| State management | Zustand v5 | currently only for the local type store (`useTypeStore`); campaign data lives in React state hydrated from Supabase |
+| State management | Zustand v5 | two stores: `useTypeStore` (node types, localStorage-persisted) and `useCanvasUiStore` (transient hover/select flags). Campaign data lives in React state hydrated from Supabase. |
 | Auth + Database | **Supabase** (Postgres + Auth + RLS) | `@supabase/supabase-js` client; schema in `supabase/schema.sql` |
+| Image storage | **Supabase Storage** (`card-media` bucket) | private bucket; client requests signed URLs per render. See ADR-0005. |
 
 Firebase was previously installed but never wired; it has been uninstalled. Do not reintroduce.
 
@@ -46,9 +47,10 @@ Never use or reference the `service_role` key in client code.
 
 ```
 src/
-  App.jsx                          root canvas: loads from Supabase, owns all edge state
-  index.css                        Tailwind base + RF overrides + contenteditable placeholder CSS
-  main.jsx                         entry; wraps app in AuthProvider → CampaignProvider → Root gatekeeper
+  App.jsx                          canvas orchestration: composes hooks, renders ReactFlow + menus + modal
+  index.css                        Tailwind base + RF overrides + .is-lifted z-index rule
+  main.jsx                         entry; wraps app in AuthProvider → CampaignProvider → Root gatekeeper;
+                                   hash-based route to <MigrateImages /> at #migrate
 
   lib/                             infrastructure & data-access layer
     supabase.js                    single shared Supabase client (reads env vars)
@@ -58,9 +60,28 @@ src/
     nodes.js                       CRUD for nodes + node_sections; shape-marshaling
     connections.js                 CRUD for connections (edges)
     textNodes.js                   CRUD for text annotations
+    imageStorage.js                Storage helpers: transcode → two WebP variants → upload; signed-URL fetch
+    useImageUrl.js                 hook resolving avatar/media values to renderable URLs (handles base64,
+                                   external https, and Storage paths)
+    errorReporting.js              persistWrite() retry wrapper; drives the sync indicator
+    CanvasOpsContext.jsx           context exposing App-level ops (onDeleteNode) to RF custom node
+                                   renderers. Workaround for RF v11's `useReactFlow().setNodes` not
+                                   propagating removals to App's `useNodesState`. See file header.
+
+  hooks/                           reusable hooks extracted from App.jsx and EditModal
+    useSpacebarPan.js              spacebar-held-down panning state
+    useCampaignData.js             load lifecycle for the active campaign (types + nodes + edges + text)
+                                   AND Supabase Realtime subscriptions that mirror remote INSERT/UPDATE/DELETE
+                                   into setNodes/setEdges
+    useEdgeGeometry.js             recomputes spread border points + connection-dot positions when nodes move
+    useNodeHoverSelection.js       returns the four ReactFlow hover/select handlers, all backed by useCanvasUiStore
+    useAutoSave.js                 debounced save with explicit flush; used by EditModal
+    useMorphAnimation.js           modal-from-card morph in/out (useLayoutEffect setup, RAF animate-in,
+                                   returned animateClose for exit); used by EditModal
 
   nodes/
-    CampaignNode.jsx               colored campaign cards
+    CampaignNode.jsx               colored campaign cards; subscribes to useCanvasUiStore; adds .is-lifted
+                                   class so :has() in index.css promotes the wrapper z-index
     TextNode.jsx                   freestanding text annotation blocks (persists directly via lib/textNodes)
     iconRegistry.js                70+ Phosphor icons with keywords; getIcon(), recommendIcons()
     nodeTypes.js                   static NODE_TYPES object — LEGACY, prefer useNodeTypes()
@@ -72,16 +93,39 @@ src/
     Login.jsx                      email+password auth form
     CampaignPicker.jsx             post-login landing; list/create/rename/delete campaigns
     UserAvatar.jsx                 circular profile button with dropdown (sign-out, etc.)
-    UserMenu.jsx                   top-right overlay on the canvas: [Campaigns] + UserAvatar
-    EditModal.jsx                  card detail editor (auto-saves, morph animation)
+    UserMenu.jsx                   top-left breadcrumb chip + UserAvatar overlay on the canvas
+    EditModal.jsx                  orchestration shell: form state + auto-save trigger + composes the
+                                   pieces below. Was 792 lines before Sprint 1.6 — now 228 (state +
+                                   composition only)
+    EditModalHeader.jsx            avatar + title + TypePicker + close button (the type-colored band)
+    BulletSection.jsx              reusable section: DnD-reorder bullets + focus-on-new + add/remove.
+                                   Used three times by EditModal (Story Notes, Hidden Lore, DM Notes).
+                                   Exports `newItem` for parents seeding initial state
+    MediaSection.jsx               Inspiration grid: DnD-reorder image tiles + parallel-safe upload
+                                   (uses a ref to track latest items so concurrent uploads don't clobber)
+    ConnectionsSection.jsx         chip list + node picker with click-outside-to-dismiss
+    TypePicker.jsx                 type dropdown (used inside EditModalHeader) + "Create new type…" row
+    SectionLabel.jsx               tiny uppercase-tracked label utility used across sections
     ContextMenu.jsx                right-click menu on campaign nodes (Edit/Duplicate/Delete)
-    CanvasContextMenu.jsx          right-click menu on empty canvas (Add card / Add text)
+    CanvasContextMenu.jsx          right-click menu on empty canvas (Add card / Add text). Submenu uses
+                                   a 16px invisible hover-bridge + 200ms hover-intent close delay
     CreateTypeModal.jsx            custom card type creation (label + icon + color picker)
+    Lightbox.jsx                   shared <LightboxProvider>; any consumer calls useLightbox().open(value)
+    MigrateImages.jsx              one-shot tool at #migrate to backfill base64 → Storage; safe to delete
+                                   once no campaign has any base64 image entries
+    LockOverlay.jsx                modal that freezes edits on prolonged save failure
+    SyncIndicator.jsx              ambient bottom-left "Edited just now" / "Can't save" chip
+    EditModal.test.jsx             10 happy-path tests pinning down EditModal behavior (open/populate,
+                                   debounced auto-save, connection add/remove, Esc to close, avatar upload)
 
   store/
     useTypeStore.js                Zustand store for node types; persists to localStorage under key "dnd-node-types"
                                    NOTE: built-in types are also seeded into Supabase per campaign. Custom-type
                                    persistence to the DB is a later sprint; currently localStorage-only.
+    useCanvasUiStore.js            Zustand store for transient canvas UI flags (anySelected, anyHovered,
+                                   hoveredEdgeNodeIds). Cards subscribe via narrow selectors so a hover event
+                                   only re-renders cards whose computed state actually changed.
+    useSyncStore.js                Zustand store for write-success/failure tracking (drives SyncIndicator + LockOverlay)
 
   utils/
     labelUtils.js                  sortKey(), labelInitial()
@@ -89,9 +133,15 @@ src/
 
 supabase/
   schema.sql                       full DB schema + RLS policies — run once in the Supabase SQL Editor
+  migrations/
+    001_node_types_per_user.sql    moves node_types from per-campaign to per-user ownership
+    002_card_media_bucket.sql      creates the card-media Storage bucket + SECURITY DEFINER RLS helper
 
 public/
   avatars/                         static avatar images for the sample Strahd data
+
+docs/
+  decisions/                       ADRs covering architecture calls (Supabase, modular sections, image storage, etc.)
 
 Market Research/                   competitive analysis, roadmap, founder memos, this sprint's build plan
 ```
@@ -128,19 +178,30 @@ The data layer marshals DB rows back to the flatter React shape the canvas expec
     id: string,                     // duplicated for convenience
     label: string,
     type: 'character' | 'location' | 'item' | 'faction' | 'story' | string,
-    avatar: string | null,          // URL or base64 data URI
+    avatar: string | null,          // Supabase Storage path (e.g. "<campaignId>/<cardId>/avatar-…full.webp"),
+                                    // OR a /avatars/* external URL for the bundled Strahd sample data.
+                                    // Legacy base64 data URIs render fine via useImageUrl but no new ones are written.
     summary: string,
     storyNotes: string[],           // from node_sections where kind='narrative'
     hiddenLore: string[],           // from node_sections where kind='hidden_lore'
     dmNotes: string[],              // from node_sections where kind='dm_notes'
-    media: string[],                // from node_sections where kind='media'
+    media: Array<                   // from node_sections where kind='media'
+      | string                      //   legacy: a base64 data URI or a /avatars/* URL (still rendered, but new
+                                    //   uploads use the structured shape below)
+      | {                           //   current shape per ADR-0005:
+          path: string,             //     Supabase Storage path
+          alt: string,              //     accessibility text (currently always '' on upload)
+          uploaded_at: string,      //     ISO timestamp at upload time
+        }
+    >,
     locked: boolean,                // in-memory only (lock feature scoped out of V1)
     // UI-only (not persisted):
     isEditing: boolean,
     connectionDots: { x, y, color }[],
-    anySelected: boolean,
-    anyHovered: boolean,
-    hoveredEdgeNodeIds: Set<string>,
+    // NOTE: anySelected, anyHovered, and hoveredEdgeNodeIds USED to live here.
+    // They moved into useCanvasUiStore so a hover event mutates one atomic value
+    // instead of forcing a re-render of every card. CampaignNode now subscribes
+    // to those values directly via narrow Zustand selectors.
   }
 }
 
@@ -224,21 +285,85 @@ const flowPos = rfInstance.project({ x: event.clientX, y: event.clientY })
 
 `createCampaign(name, description)` in `lib/campaigns.js` inserts the campaign row AND inserts the five built-in node types (`character`, `location`, `item`, `faction`, `story`) linked to that campaign. Colors and icon names match `useTypeStore`'s `DEFAULT_TYPES`.
 
+### Hooks layer (`src/hooks/`)
+
+`App.jsx` was 700+ lines after Sprint 1; the post-Sprint-1 refactor pulled four focused hooks out of it. They were extracted so Sprint 1.5 Realtime work had clean places to land instead of more sediment in App.jsx:
+
+- `useSpacebarPan()` — keyboard listeners; returns the `isPanning` boolean.
+- `useCampaignData({ campaignId, setNodes, setEdges })` — owns the load lifecycle (types + nodes + connections + text) AND the Supabase Realtime subscriptions. Returns `{ loading, loadError }`.
+- `useEdgeGeometry({ nodes, edges, setNodes, setEdges })` — recomputes spread border points + connection-dot positions on node movement. Pure derivation; mutates state via the supplied setters.
+- `useNodeHoverSelection({ setEdges })` — returns the four ReactFlow handlers (`onSelectionChange`, `onNodeMouseEnter`, `onNodeMouseLeave`, `onEdgeMouseEnter`, `onEdgeMouseLeave`). All five mutate `useCanvasUiStore`; only `onEdgeMouseEnter`/`onEdgeMouseLeave` also touch the edges array (for stroke styling).
+
+### Realtime sync (Sprint 1.5)
+
+`useCampaignData` opens one Supabase channel per active campaign with four `postgres_changes` listeners — one each for `nodes`, `node_sections`, `connections`, and `text_nodes`. Incoming events are translated back into the React/React Flow shape via the existing marshalers (`dbNodeToReactFlow`, `dbTextNodeToReactFlow`) and merged into `setNodes` / `setEdges`. The channel is torn down when the campaign id changes or the hook unmounts.
+
+- **DB-side filter:** `campaign_id=eq.${campaignId}` on three tables. `node_sections` has no `campaign_id` column, so it's filtered client-side by checking whether `node_id` is in local state; RLS already restricts to the user's own rows.
+- **Required SQL (run once per project):** TWO setup steps — (a) the four tables must be members of the `supabase_realtime` publication; (b) the four tables must be set to `REPLICA IDENTITY FULL` so DELETE broadcasts include all columns. Without (b), the `campaign_id=eq.X` filter rejects DELETE events because the broadcast `old` row only carries the primary key. See both SQL blocks in the Sprint 1.5 + Sprint 1.5b entries of `CHANGELOG.md`. **Apply this `REPLICA IDENTITY FULL` pattern to any future table whose Realtime DELETE events need to pass an RLS or column-filter check.**
+- **No echo filter (V1).** Self-writes round-trip through the channel and re-set identical values. If two tabs simultaneously edit the same field, the last write wins and a character may be dropped — accepted trade-off, revisit only if it becomes noticeable in practice.
+- **UI-only state preservation:** the `text_nodes` UPDATE handler preserves `data.editing` so a remote update can't kick the local tab out of edit mode mid-keystroke. The `nodes` UPDATE handler preserves the in-memory `storyNotes/hiddenLore/dmNotes/media` arrays (those flow through `node_sections` events instead).
+
+### Canvas UI store (`useCanvasUiStore`)
+
+`anySelected`, `anyHovered`, and `hoveredEdgeNodeIds` are NOT per-node `data` fields — they're a Zustand store that every card subscribes to. The previous approach (`setNodes((nds) => nds.map(n => ({ ...n, data: { ...n.data, anyHovered: true } })))`) rewrote every node on every hover and forced React Flow to re-render every card; tolerable at 10 cards, unusable at 500. With the store, a hover event mutates one atomic value and only cards whose computed value flips re-render. Use the `selectIsEdgeHighlighted(nodeId)` helper exported from the store for the per-card edge-highlight subscription.
+
+### Image storage (per ADR-0005)
+
+Card avatars and inspiration images live in the **`card-media` Supabase Storage bucket**, not as base64 inside the database. Two variants per upload (`.thumb.webp` 256px / 40% q, `.full.webp` 1920px / 80% q), generated client-side via Canvas at upload time. The DB stores only the path string (avatars) or `{path, alt, uploaded_at}` object (inspiration entries) — see the React shape above.
+
+- `src/lib/imageStorage.js` owns transcode + upload + delete.
+- `src/lib/useImageUrl.js` is the hook every renderer uses; it accepts a value of any shape and returns either a signed URL, a base64 string passthrough, or null.
+- `src/components/Lightbox.jsx` is the single shared lightbox (provider + hook); CampaignNode and EditModal both call `useLightbox().open(value)`.
+- **Bucket RLS uses a SECURITY DEFINER helper** (`public.user_owns_card_media_path`) instead of inlining the campaign-ownership lookup inside each policy. The inlined version silently fails — the cross-schema query from `storage.objects` to `public.campaigns` returns no rows even when the user owns the campaign, and every upload errors with "new row violates row-level security policy". The helper bypasses RLS on `public.campaigns` while still pinning the check to `auth.uid()`. See [supabase/migrations/002_card_media_bucket.sql](./supabase/migrations/002_card_media_bucket.sql) for the canonical version. **Apply this pattern to any future Storage bucket that needs cross-schema ownership checks.**
+- `#migrate` is a temporary hash route to the migration tool ([src/components/MigrateImages.jsx](src/components/MigrateImages.jsx)) for backfilling any base64 entries; once a campaign has zero base64 entries the page reports "Nothing to migrate" and the route can be removed.
+
+### Z-index lift (CampaignNode + index.css)
+
+When a card is hovered, selected, or part of a hovered edge, it adds `.is-lifted` to its inner div. `index.css` uses `:has(.is-lifted)` to bump the React Flow wrapper's `z-index`, so neighboring cards don't visually cut through the lifted one. `:has()` requires modern Chromium / Safari / Firefox.
+
 ### How connections work
 
-`App.jsx` owns all edge state. It does NOT use React Flow handles. Instead:
+`App.jsx` orchestrates edge state via the hooks above. It does NOT use React Flow handles. Instead:
 
 - `getSpreadBorderPoints()` computes where dots appear on each card border
 - `getBorderIntersection()` computes the edge endpoints
 - Edges carry `data.sourcePoint` / `data.targetPoint` (screen-space `{x, y}`) which `FloatingEdge` reads directly
 - `syncedNodeIds` ref in EditModal tracks which connections have been created as RF edges, preventing duplicates
 
+### EditModal decomposition (Sprint 1.6)
+
+EditModal is the orchestration shell — it owns form state and composes sub-components. State (title, type, summary, bullet sections, media, thumbnail, localConns) lives in EditModal because the auto-save reads from all of them via one `useAutoSave` call. Sub-components are controlled (take `value` + `setter` props):
+
+| Piece | Owns | Receives from EditModal |
+|---|---|---|
+| `<EditModalHeader>` | uploading-avatar state, file-picker ref, `titleRef` (focus on mount) | title/setTitle, type/setType, typeConfig, hdrText, TypeIcon, thumbnail/setThumbnail, campaignId, onClose, onCreateNewType |
+| `<BulletSection>` | DnD context, sensors, refs for focus-on-new, add/remove/update logic | items, onChange, label, placeholder, dotColor, addLabel |
+| `<MediaSection>` | DnD context, file-picker ref, `uploadingCount`, `currentItemsRef` (parallel-upload safety) | items, onChange, cardId, campaignId, slug |
+| `<ConnectionsSection>` | picker open/close, click-outside dismissal, available-nodes filtering + sort | localConns, setLocalConns, allOtherNodes |
+| `<TypePicker>` | dropdown open/close, hover state | type, setType, hdrText, onCreateNewType |
+| `useAutoSave` | doSaveRef pattern, debounce timer | doSave callback, deps array, optional delay |
+| `useMorphAnimation` | useLayoutEffect setup, RAF animate-in, animateClose | modalRef, backdropRef, originRect, onClose |
+
+10 happy-path tests in `EditModal.test.jsx` pin behavior down. Run with `npm test`.
+
 ### How auto-save works (EditModal)
 
-- `doSaveRef` always points to the latest save closure
-- A `useEffect` debounces the save 400ms after any change
-- `handleClose` flushes immediately via `doSaveRef.current()`
-- No Save / Cancel buttons — they were removed
+- `useAutoSave({ doSave, deps, delay })` debounces a save 400ms after any dep changes
+- The hook stores `doSave` in a ref so the timer always calls the latest closure (with the latest state)
+- Returns `flushSave()` for synchronous saves on close (Esc, click-backdrop)
+- No Save / Cancel buttons — they were removed long ago
+
+### React Flow v11 gotchas (real footguns we've hit)
+
+Three issues we've hit in practice that future sessions need to know about. Each has a concrete workaround in the codebase.
+
+1. **`useReactFlow().setNodes((nds) => nds.filter(...))` does not propagate removals to App's `useNodesState`.** RF v11's setNodes only emits `'reset'` changes for kept nodes when controlled-mode `onNodesChange` is wired up — never `'remove'` for nodes that disappeared from the array (unless you remove ALL nodes). The deleted node visually disappears from RF's internal store but App's state still has it; any subsequent re-render re-syncs and the "deleted" node reappears. **Workaround:** [`src/lib/CanvasOpsContext.jsx`](./src/lib/CanvasOpsContext.jsx) exposes App's `onDeleteNode` (which uses App's `setNodes` directly) to RF's custom node renderers. TextNode's trash button uses this.
+
+2. **RF v11's NodeWrapper interferes with React's synthetic event delegation for SELECTED nodes.** `onMouseDown`/`onClick` on toolbar buttons inside a custom node fail to fire after the node has been selected. Native pointer events DO reach the buttons, but React's root-level event listener never sees them — something between the button and React's root is calling `stopPropagation` in the bubble phase. **Workaround:** the `NativeButton` wrapper inside [`src/nodes/TextNode.jsx`](./src/nodes/TextNode.jsx) attaches native `pointerdown` + `click` listeners directly to each toolbar button via a ref + `useEffect`, bypassing React's event delegation. Native `pointerdown` also calls `preventDefault()` so contenteditable focus isn't shifted mid-click (which would otherwise blur, fire save, and unmount the toolbar mid-click).
+
+3. **Programmatic `el.focus()` on a freshly-mounted contenteditable inside a React Flow node is unreliable in Edge/Chromium.** Even with `tabindex=0`, `contenteditable=true`, the element connected, and `document.hasFocus()` returning true, `el.focus()` can be a silent no-op. **Workaround:** [`src/nodes/TextNode.jsx`](./src/nodes/TextNode.jsx) uses HTML `autoFocus` + a retry loop (up to 10 attempts at 50ms intervals) that bails as soon as `document.activeElement === el`.
+
+If you find yourself fighting RF for any of these, don't reinvent — look at the existing workarounds first.
 
 ### How TextNode drag works
 
@@ -302,12 +427,18 @@ Custom user-created types are scoped per campaign in Supabase but the UI flow fo
 - [x] Dynamic icon visibility at extreme zoom-out (no feedback-loop flicker)
 - [x] Icon registry with keyword-based recommendations
 - [x] Position persistence on node drag-stop; text node resize persistence on mouseup
+- [x] **Image storage** in Supabase Storage with thumb + full WebP variants; client-side transcode at upload; signed-URL rendering. EditModal's avatar + inspiration uploads write straight to Storage.
+- [x] **Shared lightbox** — clicking a card avatar (canvas or modal) or any inspiration tile opens the same overlay.
+- [x] **App.jsx refactor** — load lifecycle, edge geometry, hover/select, and spacebar pan all extracted into focused hooks under `src/hooks/`. Hover/select state moved into `useCanvasUiStore` so a hover event no longer re-renders every card.
+- [x] Z-index lift — hovered/selected cards rise above their neighbors via a `:has(.is-lifted)` rule.
+- [x] **Realtime sync** — Supabase Realtime channel in `useCampaignData` mirrors remote `nodes` / `node_sections` / `connections` / `text_nodes` INSERT/UPDATE/DELETE into local state. No echo filter in V1; self-writes round-trip harmlessly. Requires `REPLICA IDENTITY FULL` on each table for DELETE events to pass RLS + filter checks.
+- [x] **EditModal decomposition** — 792-line component split into `<EditModalHeader>`, `<BulletSection>` (×3), `<MediaSection>`, `<ConnectionsSection>`, `<TypePicker>` + `useAutoSave` and `useMorphAnimation` hooks. EditModal itself is now 228 lines of orchestration.
+- [x] **Component tests** — Vitest + React Testing Library + jsdom; `EditModal.test.jsx` covers 10 happy-path scenarios. Run with `npm test`.
 
 ## What Is NOT Built (roadmap)
 
 See README.md "What's Not Built Yet" for the sprint-by-sprint plan. High level:
 
-- **Sprint 1.5:** Realtime sync (Supabase Realtime subscriptions)
 - **Sprint 2:** Undo/redo; card templates per type
 - **Sprint 3:** Modular card sections UI (reorder/add/remove; template editor)
 - **Sprint 4:** Search panel; drag-to-connect; relationship labels on edges; Shift+1 fit-all
@@ -326,6 +457,8 @@ See README.md "What's Not Built Yet" for the sprint-by-sprint plan. High level:
 **"Locked" state is in-memory only.** The Supabase schema has no `locked` column on `nodes`. If we reinstate the lock feature later, add a column and a migration. Until then, do not persist `data.locked`.
 
 **Custom node types are still localStorage-only.** The `node_types` table persists the built-in five per campaign, but user-created custom types (via CreateTypeModal) only live in the browser's localStorage. Migrating custom types to Supabase is a later task; flag it if it becomes user-facing.
+
+**Legacy base64 image entries are read-only.** `useImageUrl` still resolves base64 data URIs (so any old data renders), but EditModal no longer writes new base64 — uploads go to Storage. Once every campaign has zero base64 entries, the legacy branch in `useImageUrl` and the `MigrateImages` component can both be deleted in the same PR.
 
 ---
 
