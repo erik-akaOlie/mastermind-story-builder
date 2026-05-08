@@ -4,10 +4,8 @@ import {
   TextAlignLeft, TextAlignCenter, TextAlignRight,
   TextB, TextItalic, Trash, DotsSixVertical,
 } from '@phosphor-icons/react'
-import {
-  updateTextNode as dbUpdateTextNode,
-  deleteTextNode as dbDeleteTextNode,
-} from '../lib/textNodes.js'
+import { updateTextNode as dbUpdateTextNode } from '../lib/textNodes.js'
+import { useCanvasOps } from '../lib/CanvasOpsContext.jsx'
 
 const DEFAULT_WIDTH = 240
 const MIN_WIDTH     = 80
@@ -32,8 +30,47 @@ const HANDLES = [
   { id: 'w',  cx: 0,   cy: 0.5, cursor: 'ew-resize',   ax: 'left',  ay: null     },
 ]
 
+// ─────────────────────────────────────────────────────────────────────────────
+// NativeButton — toolbar button that uses NATIVE pointerdown + click listeners
+// instead of React's synthetic events.
+//
+// React Flow v11's NodeWrapper attaches event listeners that interfere with
+// React's synthetic event delegation when a node is selected. The result:
+// React's `onMouseDown`/`onClick` on toolbar buttons silently fail to fire
+// once the text node has been selected (i.e., on the second edit session and
+// every one after). Native listeners attached directly to the button element
+// bypass that interference. Native pointerdown also calls `preventDefault()`
+// to keep the contenteditable focused, so blur doesn't fire and the toolbar
+// doesn't unmount mid-click.
+// ─────────────────────────────────────────────────────────────────────────────
+function NativeButton({ onAction, className, title, children }) {
+  const ref = useRef(null)
+  const actionRef = useRef(onAction)
+  actionRef.current = onAction
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const onPointerDown = (e) => { e.preventDefault() }
+    const onClick       = () => actionRef.current?.()
+    el.addEventListener('pointerdown', onPointerDown)
+    el.addEventListener('click',       onClick)
+    return () => {
+      el.removeEventListener('pointerdown', onPointerDown)
+      el.removeEventListener('click',       onClick)
+    }
+  }, [])
+
+  return (
+    <button ref={ref} className={className} title={title}>
+      {children}
+    </button>
+  )
+}
+
 export default function TextNode({ id, data, xPos, yPos }) {
   const { setNodes, getViewport } = useReactFlow()
+  const { onDeleteNode } = useCanvasOps()
 
   const width    = data.width    ?? DEFAULT_WIDTH
   const height   = data.height   ?? null
@@ -54,15 +91,38 @@ export default function TextNode({ id, data, xPos, yPos }) {
   }, [data.editing]) // eslint-disable-line
 
   // ── Initialize editor content + focus on edit mode entry ─────────────────
+  // Focusing the contenteditable is surprisingly unreliable: a single
+  // `el.focus()` (even inside requestAnimationFrame) can silently no-op on
+  // freshly-mounted React Flow nodes — observed in Edge/Chromium where
+  // `document.activeElement` stays on `<body>` despite the call. The HTML
+  // `autoFocus` attribute handles some cases on its own; for the rest, this
+  // retry loop calls focus() up to 10 times at 50ms intervals until the
+  // editor actually receives focus, then sets the caret position.
   useEffect(() => {
     const el = editorRef.current
     if (!editing || !el) return
     el.innerHTML = data.text ?? ''
-    el.focus()
-    const range = document.createRange()
-    range.selectNodeContents(el)
-    window.getSelection()?.removeAllRanges()
-    window.getSelection()?.addRange(range)
+
+    let attempts = 0
+    let timer = null
+    const setCaret = () => {
+      const range = document.createRange()
+      range.selectNodeContents(el)
+      window.getSelection()?.removeAllRanges()
+      window.getSelection()?.addRange(range)
+    }
+    const tryFocus = () => {
+      if (document.activeElement === el) { setCaret(); return }
+      el.focus()
+      if (document.activeElement === el) { setCaret(); return }
+      if (attempts++ < 10) timer = setTimeout(tryFocus, 50)
+    }
+
+    const raf = requestAnimationFrame(tryFocus)
+    return () => {
+      cancelAnimationFrame(raf)
+      if (timer) clearTimeout(timer)
+    }
   }, [editing]) // eslint-disable-line
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -98,30 +158,33 @@ export default function TextNode({ id, data, xPos, yPos }) {
     persistPatch({ text: html })
   }, [id, setNodes, persistPatch])
 
+  // Route through App's onDeleteNode (which uses App's setNodes from
+  // useNodesState + dbDeleteTextNode). Going through useReactFlow().setNodes
+  // here would silently fail to remove the node from App's state — see
+  // CanvasOpsContext.jsx for the full explanation.
   const deleteNode = useCallback(() => {
-    setNodes((nds) => nds.filter((n) => n.id !== id))
-    dbDeleteTextNode(id).catch(console.error)
-  }, [id, setNodes])
+    onDeleteNode(id)
+  }, [id, onDeleteNode])
 
   const syncSelectionState = () => {
     setIsBold(document.queryCommandState('bold'))
     setIsItalic(document.queryCommandState('italic'))
   }
 
-  // execCommand-based bold/italic: apply to selection only
-  const execBold = (e) => {
-    e.preventDefault()
+  // execCommand-based bold/italic: applies to the current selection in the
+  // contenteditable. NativeButton's preventDefault on pointerdown keeps focus
+  // on the editor, so the selection persists through the click.
+  const execBold = useCallback(() => {
     editorRef.current?.focus()
     document.execCommand('bold', false, null)
     syncSelectionState()
-  }
+  }, [])
 
-  const execItalic = (e) => {
-    e.preventDefault()
+  const execItalic = useCallback(() => {
     editorRef.current?.focus()
     document.execCommand('italic', false, null)
     syncSelectionState()
-  }
+  }, [])
 
   // ── Resize drag ───────────────────────────────────────────────────────────
   const startResize = useCallback((handle, e) => {
@@ -247,51 +310,45 @@ export default function TextNode({ id, data, xPos, yPos }) {
           </div>
 
           {FONT_SIZES.map(({ label, px }) => (
-            <button
+            <NativeButton
               key={label}
               className={`px-1.5 py-0.5 rounded text-xs font-semibold transition-colors ${fontSize === px ? 'bg-gray-800 text-white' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-700'}`}
-              onMouseDown={(e) => { e.stopPropagation(); e.preventDefault() }}
-              onClick={() => update({ fontSize: px })}
-            >{label}</button>
+              onAction={() => update({ fontSize: px })}
+            >{label}</NativeButton>
           ))}
 
           <div className="w-px h-4 bg-gray-200 mx-1" />
 
-          <button
+          <NativeButton
             className={`p-1 rounded transition-colors ${align === 'left'   ? 'bg-gray-100 text-gray-800' : 'text-gray-400 hover:bg-gray-50'}`}
-            onMouseDown={(e) => { e.stopPropagation(); e.preventDefault() }}
-            onClick={() => update({ align: 'left' })}
-          ><TextAlignLeft size={14} weight="bold" /></button>
-          <button
+            onAction={() => update({ align: 'left' })}
+          ><TextAlignLeft size={14} weight="bold" /></NativeButton>
+          <NativeButton
             className={`p-1 rounded transition-colors ${align === 'center' ? 'bg-gray-100 text-gray-800' : 'text-gray-400 hover:bg-gray-50'}`}
-            onMouseDown={(e) => { e.stopPropagation(); e.preventDefault() }}
-            onClick={() => update({ align: 'center' })}
-          ><TextAlignCenter size={14} weight="bold" /></button>
-          <button
+            onAction={() => update({ align: 'center' })}
+          ><TextAlignCenter size={14} weight="bold" /></NativeButton>
+          <NativeButton
             className={`p-1 rounded transition-colors ${align === 'right'  ? 'bg-gray-100 text-gray-800' : 'text-gray-400 hover:bg-gray-50'}`}
-            onMouseDown={(e) => { e.stopPropagation(); e.preventDefault() }}
-            onClick={() => update({ align: 'right' })}
-          ><TextAlignRight size={14} weight="bold" /></button>
+            onAction={() => update({ align: 'right' })}
+          ><TextAlignRight size={14} weight="bold" /></NativeButton>
 
           <div className="w-px h-4 bg-gray-200 mx-1" />
 
-          {/* Bold / Italic use onMouseDown so execCommand fires before blur */}
-          <button
+          <NativeButton
             className={`p-1 rounded transition-colors ${isBold   ? 'bg-gray-100 text-gray-800' : 'text-gray-400 hover:bg-gray-50'}`}
-            onMouseDown={execBold}
-          ><TextB size={14} weight="bold" /></button>
-          <button
+            onAction={execBold}
+          ><TextB size={14} weight="bold" /></NativeButton>
+          <NativeButton
             className={`p-1 rounded transition-colors ${isItalic ? 'bg-gray-100 text-gray-800' : 'text-gray-400 hover:bg-gray-50'}`}
-            onMouseDown={execItalic}
-          ><TextItalic size={14} weight="bold" /></button>
+            onAction={execItalic}
+          ><TextItalic size={14} weight="bold" /></NativeButton>
 
           <div className="w-px h-4 bg-gray-200 mx-1" />
 
-          <button
+          <NativeButton
             className="p-1 rounded text-red-400 hover:bg-red-50 hover:text-red-500 transition-colors"
-            onMouseDown={(e) => { e.stopPropagation(); e.preventDefault() }}
-            onClick={deleteNode}
-          ><Trash size={14} weight="bold" /></button>
+            onAction={deleteNode}
+          ><Trash size={14} weight="bold" /></NativeButton>
         </div>
       )}
 
@@ -334,6 +391,8 @@ export default function TextNode({ id, data, xPos, yPos }) {
             ref={editorRef}
             contentEditable
             suppressContentEditableWarning
+            tabIndex={0}
+            autoFocus
             data-placeholder="Type something…"
             style={{ ...textStyle, outline: 'none', minHeight: MIN_HEIGHT - 16 }}
             onInput={syncSelectionState}
