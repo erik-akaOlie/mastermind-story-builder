@@ -14,6 +14,7 @@ import {
   updateNode as dbUpdateNode,
   updateNodeSections as dbUpdateNodeSections,
   deleteNode as dbDeleteNode,
+  buildDeleteCardSnapshot,
 } from './lib/nodes.js'
 import {
   createConnection as dbCreateConnection,
@@ -232,6 +233,27 @@ export default function App() {
         positionY: flowPos.y,
       })
       setNodes((nds) => [...nds, newNode])
+
+      // Record the create AFTER the persist succeeds, so canApplyInverse's
+      // existence check can rely on the card being in DB. dbRow captures
+      // the inputs that recreate the card on redo (with explicit id).
+      useUndoStore.getState().recordAction({
+        type: ACTION_TYPES.CREATE_CARD,
+        campaignId: activeCampaignId,
+        label: 'Add card',
+        timestamp: new Date().toISOString(),
+        cardId: newNode.id,
+        dbRow: {
+          typeId,
+          typeKey,
+          label:     '',
+          summary:   '',
+          avatarUrl: null,
+          positionX: flowPos.x,
+          positionY: flowPos.y,
+        },
+      })
+
       setEditingNode({ node: newNode, connectedNodes: [], allOtherNodes: nodes, originRect: null })
     } catch (err) {
       console.error('Failed to create card:', err)
@@ -436,16 +458,47 @@ export default function App() {
   // ── Delete (DB-backed, cascades to sections + connections) ──────────────
   const onDeleteNode = useCallback((nodeId) => {
     const target = nodes.find((n) => n.id === nodeId)
+    if (!target) return
+
+    if (target.type === 'textNode') {
+      // Optimistic removal + persist. Text-node undo lands in phase 8.
+      setNodes((nds) => nds.filter((n) => n.id !== nodeId))
+      setEdges((eds) => eds.filter((e) => e.source !== nodeId && e.target !== nodeId))
+      dbDeleteTextNode(nodeId).catch(console.error)
+      return
+    }
+
+    // Card delete: snapshot dependents BEFORE the optimistic removal so the
+    // inverse can rebuild card + sections + connections (per ADR-0006 §8).
+    const snapshot = buildDeleteCardSnapshot(nodeId, {
+      nodes,
+      edges,
+      campaignId: activeCampaignId,
+      typeIdByKey: useTypeStore.getState().idByKey,
+    })
+
     // Optimistic removal
     setNodes((nds) => nds.filter((n) => n.id !== nodeId))
     setEdges((eds) => eds.filter((e) => e.source !== nodeId && e.target !== nodeId))
-    // Persist
-    if (target?.type === 'textNode') {
-      dbDeleteTextNode(nodeId).catch(console.error)
-    } else {
-      dbDeleteNode(nodeId).catch(console.error)
+
+    if (snapshot) {
+      useUndoStore.getState().recordAction({
+        type: ACTION_TYPES.DELETE_CARD,
+        campaignId: activeCampaignId,
+        label: `Delete "${snapshot.dbCardRow.label || 'card'}"`,
+        timestamp: new Date().toISOString(),
+        dbCardRow:        snapshot.dbCardRow,
+        dbSectionRows:    snapshot.dbSectionRows,
+        dbConnectionRows: snapshot.dbConnectionRows,
+      })
     }
-  }, [nodes, setNodes, setEdges])
+
+    // Persist; rollback the undo entry if the write fails.
+    dbDeleteNode(nodeId).catch((err) => {
+      console.error(err)
+      if (snapshot) useUndoStore.getState().popLastAction()
+    })
+  }, [nodes, edges, activeCampaignId, setNodes, setEdges])
 
   // ── Render ──────────────────────────────────────────────────────────────
   if (loading) {

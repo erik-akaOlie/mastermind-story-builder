@@ -49,8 +49,14 @@ export async function loadNodes(campaignId, nodeTypesById) {
 // ----------------------------------------------------------------------------
 // Insert a new card node + its four default (empty) sections.
 // Returns the full React-shaped node.
+//
+// `id` is optional. Pass it to recreate a node at a known UUID — used by
+// the undo system when redoing a createCard (after it was undone via delete)
+// so that any subsequent action records still pointing at that id keep
+// working. Without `id`, Postgres assigns a fresh one.
 // ----------------------------------------------------------------------------
 export async function createNode({
+  id,
   campaignId,
   typeId,
   typeKey,
@@ -65,17 +71,20 @@ export async function createNode({
   media = [],
 }) {
   return persistWrite(async () => {
+    const insertRow = {
+      campaign_id: campaignId,
+      type_id: typeId,
+      label,
+      summary,
+      avatar_url: avatarUrl,
+      position_x: positionX,
+      position_y: positionY,
+    }
+    if (id) insertRow.id = id
+
     const { data: node, error } = await supabase
       .from('nodes')
-      .insert({
-        campaign_id: campaignId,
-        type_id: typeId,
-        label,
-        summary,
-        avatar_url: avatarUrl,
-        position_x: positionX,
-        position_y: positionY,
-      })
+      .insert(insertRow)
       .select()
       .single()
     if (error) throw error
@@ -129,6 +138,80 @@ export async function deleteNode(id) {
     const { error } = await supabase.from('nodes').delete().eq('id', id)
     if (error) throw error
   }, 'this deletion')
+}
+
+// ----------------------------------------------------------------------------
+// Build a DB-shape snapshot of everything a deleteCard cascade will remove
+// (per ADR-0006 §8). Capture this BEFORE issuing the delete so the inverse
+// can rebuild the card with its sections and connections intact.
+//
+// `typeIdByKey` is passed in (rather than read from useTypeStore here) to
+// keep this module free of store dependencies. App.jsx supplies the lookup
+// at call time.
+//
+// Returns null if the card isn't in local state.
+// ----------------------------------------------------------------------------
+export function buildDeleteCardSnapshot(cardId, { nodes, edges, campaignId, typeIdByKey }) {
+  const node = nodes.find((n) => n.id === cardId)
+  if (!node) return null
+
+  const dbCardRow = {
+    id:          node.id,
+    campaign_id: campaignId,
+    type_id:     typeIdByKey?.[node.data.type] ?? null,
+    label:       node.data.label   ?? '',
+    summary:     node.data.summary ?? '',
+    avatar_url:  node.data.avatar  ?? null,
+    position_x:  node.position.x,
+    position_y:  node.position.y,
+  }
+
+  const dbSectionRows = [
+    { node_id: cardId, kind: 'narrative',   content: node.data.storyNotes || [], sort_order: 0 },
+    { node_id: cardId, kind: 'hidden_lore', content: node.data.hiddenLore || [], sort_order: 1 },
+    { node_id: cardId, kind: 'dm_notes',    content: node.data.dmNotes    || [], sort_order: 2 },
+    { node_id: cardId, kind: 'media',       content: node.data.media      || [], sort_order: 3 },
+  ]
+
+  const dbConnectionRows = (edges || [])
+    .filter((e) => e.source === cardId || e.target === cardId)
+    .map((e) => ({
+      id:             e.id,
+      campaign_id:    campaignId,
+      source_node_id: e.source,
+      target_node_id: e.target,
+    }))
+
+  return { dbCardRow, dbSectionRows, dbConnectionRows }
+}
+
+// ----------------------------------------------------------------------------
+// Inverse of a card delete: re-insert the card row, its four section rows,
+// and any connections that touched it. Order matters — connections reference
+// the card via FK, so the card row must land first. Per ADR-0006 §"Trade-offs
+// accepted", this is non-transactional; partial-restore failure is rare in
+// practice and would warrant a Postgres RPC if it becomes real.
+//
+// Realtime echoes these INSERTs back to all subscribers (including this tab),
+// but useCampaignData's handlers are idempotent — they skip rows whose ids
+// already exist locally. So the optimistic setNodes/setEdges in the dispatcher
+// won't be double-applied.
+// ----------------------------------------------------------------------------
+export async function restoreCardWithDependents({ dbCardRow, dbSectionRows, dbConnectionRows }) {
+  return persistWrite(async () => {
+    const { error: nodeErr } = await supabase.from('nodes').insert(dbCardRow)
+    if (nodeErr) throw nodeErr
+
+    if (dbSectionRows?.length) {
+      const { error: secErr } = await supabase.from('node_sections').insert(dbSectionRows)
+      if (secErr) throw secErr
+    }
+
+    if (dbConnectionRows?.length) {
+      const { error: connErr } = await supabase.from('connections').insert(dbConnectionRows)
+      if (connErr) throw connErr
+    }
+  }, 'this restore')
 }
 
 // ============================================================================

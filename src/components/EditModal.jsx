@@ -94,9 +94,17 @@ export default function EditModal({
   // Recomputed each render and stashed in a ref so handleClose reads fresh
   // values without re-attaching its useCallback (and the Esc keydown listener)
   // every keystroke.
+  //
+  // Empty labels persist as '' (not 'Untitled'). Display-time fallback to
+  // 'Untitled' lives in CampaignNode + ConnectionsSection. A persist-time
+  // fold here used to corrupt the undo chain on freshly-created empty cards:
+  // createCard recorded dbRow.label='', the mount auto-save folded that to
+  // 'Untitled' in DB, and any subsequent editCardField captured `before:
+  // 'Untitled'`. Redo-create then landed at '', and redo-edit's `before='Untitled'`
+  // mismatched and got silently rejected.
   const livePersistedRef = useRef(null)
   livePersistedRef.current = {
-    label:      title.trim() || 'Untitled',
+    label:      title.trim(),
     type,
     summary,
     storyNotes: storyNotes.filter((b) => b.value.trim()).map((b) => b.value),
@@ -108,9 +116,9 @@ export default function EditModal({
 
   // Per-field session start snapshot (ADR-0006 §7). Captured ONCE on mount
   // from the same persisted-shape projection the close-time diff uses, so
-  // a no-op open/close (or the initial mount auto-save folding `'' → 'Untitled'`)
-  // doesn't generate spurious undo entries. handleClose diffs this against
-  // livePersistedRef.current and emits one editCardField per changed field.
+  // a no-op open/close doesn't generate spurious undo entries. handleClose
+  // diffs this against livePersistedRef.current and emits one editCardField
+  // per changed field.
   const sessionStartRef = useRef(null)
   useEffect(() => {
     sessionStartRef.current = livePersistedRef.current

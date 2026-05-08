@@ -344,6 +344,35 @@ describe('EditModal — undo entries (phase 4)', () => {
     expect(recordActionMock).not.toHaveBeenCalled()
   })
 
+  it('records before:"" (raw, not "Untitled") when the user types into a freshly-created empty card', () => {
+    // Regression: an earlier version persisted `title.trim() || "Untitled"`,
+    // so the snapshot captured "Untitled" while createCard.dbRow.label stayed
+    // "". Redo-create restored "" and redo-edit then refused (`before` !==
+    // current). The fix: persist the raw label and let CampaignNode handle
+    // the display-time fallback.
+    const emptyCard = {
+      ...sampleNode,
+      data: { ...sampleNode.data, label: '' },
+    }
+    renderModal({ node: emptyCard })
+    flushSave()
+    recordActionMock.mockClear()
+
+    // Find title input by placeholder ("Untitled" is the input placeholder).
+    const titleInput = screen.getByPlaceholderText('Untitled')
+    fireEvent.change(titleInput, { target: { value: 'My Title' } })
+    fireEvent.keyDown(window, { key: 'Escape' })
+
+    expect(recordActionMock).toHaveBeenCalledTimes(1)
+    const entry = recordActionMock.mock.calls[0][0]
+    expect(entry).toMatchObject({
+      type: 'editCardField',
+      field: 'label',
+      before: '',           // raw — used to be 'Untitled'
+      after:  'My Title',
+    })
+  })
+
   it('captures bullet-list edits as a single editCardField action on close', () => {
     renderModal()
     flushSave()

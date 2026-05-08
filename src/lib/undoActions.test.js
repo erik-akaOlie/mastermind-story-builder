@@ -1,17 +1,27 @@
-// Dispatcher tests. Phase 3 wired moveCard; phase 4 wires editCardField.
-// The remaining cases are still skeleton (canApply* return ok:true, apply*
-// throw notWired).
+// Dispatcher tests. Phase 3 wired moveCard; phase 4 wired editCardField;
+// phase 5 wires createCard + deleteCard. Remaining cases are skeleton
+// (canApply* return ok:true, apply* throw notWired).
 //
-// updateNode + updateNodeSections are mocked because the real implementations
-// hit Supabase. useTypeStore is the live Zustand store; tests seed it with
-// idByKey lookups via setState as needed for the 'type' field path.
+// All Supabase-touching helpers are mocked. useTypeStore is the live Zustand
+// store; tests seed it with idByKey lookups via setState as needed for the
+// 'type' field path and the deleteCard React-shape rebuild.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-vi.mock('./nodes.js', () => ({
-  updateNode: vi.fn(async () => {}),
-  updateNodeSections: vi.fn(async () => {}),
-}))
+vi.mock('./nodes.js', async () => {
+  // Pull in the real dbNodeToReactFlow so the deleteCard inverse rebuild
+  // exercises the real DB→React marshaling (it's a pure function with no
+  // Supabase dependency).
+  const actual = await vi.importActual('./nodes.js')
+  return {
+    ...actual,
+    createNode:                 vi.fn(async () => ({ id: 'mock-react-node' })),
+    deleteNode:                 vi.fn(async () => {}),
+    updateNode:                 vi.fn(async () => {}),
+    updateNodeSections:         vi.fn(async () => {}),
+    restoreCardWithDependents:  vi.fn(async () => {}),
+  }
+})
 
 import {
   ACTION_TYPES,
@@ -21,20 +31,33 @@ import {
   applyForward,
   deepEqual,
 } from './undoActions'
-import { updateNode, updateNodeSections } from './nodes.js'
+import {
+  createNode,
+  deleteNode,
+  updateNode,
+  updateNodeSections,
+  restoreCardWithDependents,
+} from './nodes.js'
 import { useTypeStore } from '../store/useTypeStore.js'
 
 const KNOWN = Object.values(ACTION_TYPES)
 
-// Action types that are still skeleton (no real validation / implementation
-// yet). Phases 3 and 4 wired moveCard and editCardField, so they're not here.
+// Action types that are still skeleton. Phases 3-5 wired moveCard,
+// editCardField, createCard, and deleteCard.
 const UNWIRED = KNOWN.filter(
-  (t) => t !== ACTION_TYPES.MOVE_CARD && t !== ACTION_TYPES.EDIT_CARD_FIELD,
+  (t) =>
+    t !== ACTION_TYPES.MOVE_CARD &&
+    t !== ACTION_TYPES.EDIT_CARD_FIELD &&
+    t !== ACTION_TYPES.CREATE_CARD &&
+    t !== ACTION_TYPES.DELETE_CARD,
 )
 
 beforeEach(() => {
+  createNode.mockClear()
+  deleteNode.mockClear()
   updateNode.mockClear()
   updateNodeSections.mockClear()
+  restoreCardWithDependents.mockClear()
 })
 
 describe('undoActions — exports + catalog', () => {
@@ -70,12 +93,12 @@ describe('undoActions — phase-skeleton stubs', () => {
     }
   })
 
-  it('applyInverse throws "not wired" for unwired known types (e.g. createCard)', async () => {
-    await expect(applyInverse({ type: ACTION_TYPES.CREATE_CARD })).rejects.toThrow(/not wired/i)
+  it('applyInverse throws "not wired" for unwired known types (e.g. addConnection)', async () => {
+    await expect(applyInverse({ type: ACTION_TYPES.ADD_CONNECTION })).rejects.toThrow(/not wired/i)
   })
 
   it('applyForward throws "not wired" for unwired known types', async () => {
-    await expect(applyForward({ type: ACTION_TYPES.CREATE_CARD })).rejects.toThrow(/not wired/i)
+    await expect(applyForward({ type: ACTION_TYPES.ADD_CONNECTION })).rejects.toThrow(/not wired/i)
   })
 })
 
@@ -454,5 +477,243 @@ describe('undoActions — deepEqual', () => {
     expect(deepEqual({ a: 1 }, { a: 1, b: 2 })).toBe(false)
     expect(deepEqual([{ x: 1 }], [{ x: 1 }])).toBe(true)
     expect(deepEqual([{ x: 1 }], [{ x: 2 }])).toBe(false)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// createCard — phase 5.
+// Entry shape: { type, cardId, dbRow: { typeId, typeKey, label, summary,
+// avatarUrl, positionX, positionY }, campaignId, label, timestamp }.
+// Inverse = deleteNode(cardId). Forward = createNode({ id: cardId, ... }).
+// ─────────────────────────────────────────────────────────────────────────────
+
+const createEntry = (overrides = {}) => ({
+  type: ACTION_TYPES.CREATE_CARD,
+  campaignId: 'c1',
+  label: 'Add card',
+  timestamp: '2026-04-30T17:00:00.000Z',
+  cardId: 'card-new',
+  dbRow: {
+    typeId:    'type-character-uuid',
+    typeKey:   'character',
+    label:     '',
+    summary:   '',
+    avatarUrl: null,
+    positionX: 100,
+    positionY: 200,
+  },
+  ...overrides,
+})
+
+describe('undoActions — createCard canApply*', () => {
+  it('canApplyInverse passes when the card still exists (we are about to delete it)', () => {
+    expect(canApplyInverse(createEntry(), { nodes: [{ id: 'card-new' }] }))
+      .toEqual({ ok: true })
+  })
+
+  it('canApplyInverse refuses when the card was already deleted elsewhere', () => {
+    const result = canApplyInverse(createEntry(), { nodes: [] })
+    expect(result.ok).toBe(false)
+    expect(result.reason).toMatch(/no longer exists/i)
+  })
+
+  it('canApplyForward passes when nothing currently holds the recorded id', () => {
+    expect(canApplyForward(createEntry(), { nodes: [{ id: 'someone-else' }] }))
+      .toEqual({ ok: true })
+  })
+
+  it('canApplyForward refuses when something already holds that id', () => {
+    const result = canApplyForward(createEntry(), { nodes: [{ id: 'card-new' }] })
+    expect(result.ok).toBe(false)
+    expect(result.reason).toMatch(/already exists/i)
+  })
+})
+
+describe('undoActions — createCard applyInverse', () => {
+  it('removes the card from local state and persists the delete', async () => {
+    const setNodes = vi.fn()
+    const setEdges = vi.fn()
+    await applyInverse(createEntry(), { setNodes, setEdges })
+
+    // Optimistic filter: card-new dropped, others kept.
+    const nodeUpdater = setNodes.mock.calls[0][0]
+    expect(nodeUpdater([
+      { id: 'card-new' }, { id: 'other' },
+    ])).toEqual([{ id: 'other' }])
+
+    // Edges touching the removed card are dropped too.
+    const edgeUpdater = setEdges.mock.calls[0][0]
+    expect(edgeUpdater([
+      { id: 'e1', source: 'card-new', target: 'other' },
+      { id: 'e2', source: 'a', target: 'b' },
+    ])).toEqual([{ id: 'e2', source: 'a', target: 'b' }])
+
+    expect(deleteNode).toHaveBeenCalledWith('card-new')
+  })
+})
+
+describe('undoActions — createCard applyForward', () => {
+  it('recreates the card via createNode using the recorded UUID + dbRow', async () => {
+    createNode.mockResolvedValueOnce({ id: 'card-new', position: { x: 100, y: 200 }, data: {} })
+    const setNodes = vi.fn()
+    await applyForward(createEntry(), { setNodes })
+
+    expect(createNode).toHaveBeenCalledWith({
+      id:         'card-new',
+      campaignId: 'c1',
+      typeId:     'type-character-uuid',
+      typeKey:    'character',
+      label:      '',
+      summary:    '',
+      avatarUrl:  null,
+      positionX:  100,
+      positionY:  200,
+    })
+
+    // Appended to local state, but only if not already present.
+    const updater = setNodes.mock.calls[0][0]
+    expect(updater([{ id: 'other' }])).toHaveLength(2)
+    expect(updater([{ id: 'card-new' }])).toEqual([{ id: 'card-new' }])
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// deleteCard — phase 5 (the hard one).
+// Entry carries the full DB-shape snapshot of the card + sections + edges
+// captured before deletion. Inverse rebuilds React state from snapshot then
+// calls restoreCardWithDependents. Forward = deleteNode + optimistic filter.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const dbCardRow = {
+  id:          'card-doomed',
+  campaign_id: 'c1',
+  type_id:     'type-character-uuid',
+  label:       'Strahd',
+  summary:     'Vampire lord',
+  avatar_url:  'avatars/strahd.webp',
+  position_x:  300,
+  position_y:  400,
+}
+const dbSectionRows = [
+  { node_id: 'card-doomed', kind: 'narrative',   content: ['born ~1346'], sort_order: 0 },
+  { node_id: 'card-doomed', kind: 'hidden_lore', content: ['truly believes'], sort_order: 1 },
+  { node_id: 'card-doomed', kind: 'dm_notes',    content: ['voice: slow'], sort_order: 2 },
+  { node_id: 'card-doomed', kind: 'media',       content: [], sort_order: 3 },
+]
+const dbConnectionRows = [
+  { id: 'edge-1', campaign_id: 'c1', source_node_id: 'card-doomed', target_node_id: 'ireena' },
+]
+const deleteEntry = (overrides = {}) => ({
+  type: ACTION_TYPES.DELETE_CARD,
+  campaignId: 'c1',
+  label: 'Delete "Strahd"',
+  timestamp: '2026-04-30T17:00:00.000Z',
+  dbCardRow,
+  dbSectionRows,
+  dbConnectionRows,
+  ...overrides,
+})
+
+describe('undoActions — deleteCard canApply*', () => {
+  it('canApplyInverse passes when the card id is currently absent (about to recreate)', () => {
+    expect(canApplyInverse(deleteEntry(), { nodes: [{ id: 'other' }] }))
+      .toEqual({ ok: true })
+  })
+
+  it('canApplyInverse refuses if something already holds that id', () => {
+    const result = canApplyInverse(deleteEntry(), { nodes: [{ id: 'card-doomed' }] })
+    expect(result.ok).toBe(false)
+    expect(result.reason).toMatch(/already exists/i)
+  })
+
+  it('canApplyForward passes when the card still exists (about to delete again)', () => {
+    expect(canApplyForward(deleteEntry(), { nodes: [{ id: 'card-doomed' }] }))
+      .toEqual({ ok: true })
+  })
+
+  it('canApplyForward refuses when the card has already been removed elsewhere', () => {
+    expect(canApplyForward(deleteEntry(), { nodes: [] }).ok).toBe(false)
+  })
+})
+
+describe('undoActions — deleteCard applyInverse (the hard one)', () => {
+  beforeEach(() => {
+    // Seed the type lookup so dbNodeToReactFlow can resolve type_id → key
+    // for the optimistic React-shape rebuild.
+    useTypeStore.setState({
+      types:   { character: { label: 'Character', color: '#0EA5E9' } },
+      idByKey: { character: 'type-character-uuid' },
+    })
+  })
+
+  it('persists the restore via restoreCardWithDependents with the snapshot intact', async () => {
+    await applyInverse(deleteEntry(), {})
+    expect(restoreCardWithDependents).toHaveBeenCalledWith({
+      dbCardRow,
+      dbSectionRows,
+      dbConnectionRows,
+    })
+  })
+
+  it('optimistically appends a React-shaped card to setNodes (with sections marshaled)', async () => {
+    const setNodes = vi.fn()
+    await applyInverse(deleteEntry(), { setNodes })
+
+    const updater = setNodes.mock.calls[0][0]
+    const result = updater([{ id: 'unrelated' }])
+    expect(result).toHaveLength(2)
+
+    const restored = result.find((n) => n.id === 'card-doomed')
+    expect(restored).toBeTruthy()
+    expect(restored.position).toEqual({ x: 300, y: 400 })
+    expect(restored.data.label).toBe('Strahd')
+    expect(restored.data.type).toBe('character')
+    expect(restored.data.storyNotes).toEqual(['born ~1346'])
+    expect(restored.data.hiddenLore).toEqual(['truly believes'])
+    expect(restored.data.dmNotes).toEqual(['voice: slow'])
+  })
+
+  it('optimistically restores connection edges via setEdges (idempotent on duplicates)', async () => {
+    const setEdges = vi.fn()
+    await applyInverse(deleteEntry(), { setEdges })
+
+    const updater = setEdges.mock.calls[0][0]
+    expect(updater([{ id: 'unrelated' }])).toEqual([
+      { id: 'unrelated' },
+      { id: 'edge-1', source: 'card-doomed', target: 'ireena', type: 'floating' },
+    ])
+
+    // If the edge id is already present (Realtime echo), the updater no-ops.
+    const have = [{ id: 'edge-1', source: 'card-doomed', target: 'ireena' }]
+    expect(updater(have)).toBe(have)
+  })
+
+  it('does not append the node when an entry with the same id is already in state', async () => {
+    const setNodes = vi.fn()
+    await applyInverse(deleteEntry(), { setNodes })
+    const updater = setNodes.mock.calls[0][0]
+    const have = [{ id: 'card-doomed' }]
+    expect(updater(have)).toBe(have)
+  })
+})
+
+describe('undoActions — deleteCard applyForward', () => {
+  it('removes the card optimistically and re-issues the delete', async () => {
+    const setNodes = vi.fn()
+    const setEdges = vi.fn()
+    await applyForward(deleteEntry(), { setNodes, setEdges })
+
+    const nodeUpdater = setNodes.mock.calls[0][0]
+    expect(nodeUpdater([
+      { id: 'card-doomed' }, { id: 'other' },
+    ])).toEqual([{ id: 'other' }])
+
+    const edgeUpdater = setEdges.mock.calls[0][0]
+    expect(edgeUpdater([
+      { id: 'e1', source: 'card-doomed', target: 'ireena' },
+      { id: 'e2', source: 'a', target: 'b' },
+    ])).toEqual([{ id: 'e2', source: 'a', target: 'b' }])
+
+    expect(deleteNode).toHaveBeenCalledWith('card-doomed')
   })
 })
