@@ -235,6 +235,33 @@ Subject to revision at sprint start.
   stay specific to alignment?
 - **Size:** S–M depending on design scope
 
+### Undo/redo residual flicker
+- **Problem.** When chaining several Ctrl+Z presses through
+  create → move → delete (or similar), a card can occasionally exhibit
+  a sub-frame visual stutter — appearing-then-reappearing during a
+  single undo step, or briefly settling on an intermediate position
+  before the final one. Functionally correct: no data loss, no state
+  corruption, no duplicate items, the undo history is intact. Cosmetic.
+- **Why it's not blocking.** Round-trip property holds (verified by
+  `undoIntegration.test.js`). The flicker is render-cascade roughness,
+  not logical incorrectness. ADR-0006's success criteria are met.
+- **Likely cause.** Even after the no-op-echo guards in
+  `useCampaignData` (commit `bd5eb3d`), some flicker remains. Suspects:
+  (1) `useEdgeGeometry` re-running on every `setNodes` and itself
+  calling `setNodes` to refresh `connectionDots` — chained re-renders
+  even when geometry didn't change; (2) React Flow v11's internal
+  reconciliation when card object references change but ids/positions
+  match; (3) cross-table Realtime event ordering — `nodes INSERT`
+  vs `node_sections INSERT` arriving in unpredictable order during a
+  delete-card inverse, with the local optimistic state already correct.
+- **Where to investigate first.** React DevTools profiler during a
+  Ctrl+Z sequence: count re-renders of `CampaignNode` per undo. If a
+  single undo triggers more than 2 renders of the affected card, the
+  cascade is the smoking gun. Then either memoize `CampaignNode` more
+  aggressively or move `connectionDots` out of `node.data` (it's
+  derived; doesn't need to live in the React Flow node object).
+- **Size:** S (investigation) → M (fix)
+
 ---
 
 ## Process habits

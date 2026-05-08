@@ -22,9 +22,11 @@
 //     incoming row against current local state and returns the array
 //     unchanged if every field already matches — a true no-op echo causes
 //     no re-render. Legitimate remote updates (any value differs) flow
-//     through the apply branch unchanged. This kills the undo/redo
-//     visual flicker that came from cascading re-renders during a
-//     self-write echo storm without suppressing actual cross-tab edits.
+//     through the apply branch unchanged. The guards killed most of the
+//     undo/redo visual flicker; some sub-frame stutter remains in chained
+//     Ctrl+Z sequences. Cosmetic, not a correctness issue. Tracked as
+//     "Undo/redo residual flicker" in BACKLOG.md (Tier 4 polish), with
+//     suspected root cause in useEdgeGeometry's render cascade.
 //   - node_sections has no campaign_id column, so it can't be DB-filtered
 //     by campaign. RLS already restricts events to the user's own rows;
 //     handlers additionally drop events whose node_id isn't in local state.
