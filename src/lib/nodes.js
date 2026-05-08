@@ -149,7 +149,8 @@ async function writeSections(nodeId, { storyNotes = [], hiddenLore = [], dmNotes
   if (error) throw error
 }
 
-function dbNodeToReactFlow(n, sections, nodeTypesById) {
+// Exported for unit testing; this is the marshaling boundary the tests cover.
+export function dbNodeToReactFlow(n, sections, nodeTypesById) {
   const typeInfo = nodeTypesById?.[n.type_id]
   return {
     id: n.id,
