@@ -72,6 +72,33 @@ Final pick lands at sprint start.
 
 ## Quick Win
 
+### Fix stale EditModal avatar-upload test
+- **Problem.** `src/components/EditModal.test.jsx` →
+  *"EditModal — avatar upload › uploads the selected file and saves the
+  returned path to thumbnail"* fails because it queries for a hidden
+  `<input type="file">` inside EditModalHeader that no longer exists.
+  The header was refactored in commit `01565b2`
+  ("Image upload: thumbnail integration with Swap, replace, and remove
+  (chunk 3)") to route avatar uploads through the shared Upload Image
+  modal instead of a local file input. The test was not updated when
+  the file input was removed and has been failing since then. Confirmed
+  pre-existing — not caused by the chunk-2 pipeline refactor (commit
+  `12efbd2`) which just made the failure visible.
+- **Success.** Test rewritten to drive the new flow: assert that
+  clicking the avatar's empty state or Swap button opens the Upload
+  Image modal with `mode: 'thumbnail'` and a card pipeline; simulate
+  a file pick / cropper save inside the modal; assert the returned
+  path is written to `thumbnail` and propagated through `onUpdate`.
+  Suite returns to all-green.
+- **Notes.** Likely needs a thin wrapper or context shim so the test
+  can intercept the Upload Image modal's `pipeline.upload` call without
+  hitting real Supabase. The other 22 EditModal tests already mock
+  Supabase; mirror that pattern.
+- **Dependencies.** None.
+- **Size:** S
+- **Sequencing.** Erik flagged this for the next sprint
+  (2026-05-09 conversation).
+
 ### Dynamic card width
 - **Problem.** Long words and long titles in card headers either overflow
   or get cut off. Cards are fixed-width.
