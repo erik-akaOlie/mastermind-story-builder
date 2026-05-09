@@ -4,6 +4,113 @@ A running log of meaningful changes to MasterMind: Story Builder. Append-only. N
 
 ## [Unreleased]
 
+### Sprint 3 — Image upload + cropper (2026-05-08)
+
+A new Upload Image modal replaces the old direct-to-Storage file
+picker for both card thumbnails and image-section tiles. Users can
+pick a file or paste from the clipboard, position and scale the
+image inside a crop frame, and Save commits a single coherent
+upload. Per [ADR-0007](./docs/decisions/0007-deferred-image-persistence.md),
+no Storage or DB writes happen until the user explicitly Saves;
+Cancel discards everything cleanly.
+
+Two cropping modes:
+
+- **Image-section mode** (e.g., the "Inspiration" section). Frame
+  defaults to the source image's natural aspect ratio (clamped to
+  1:3–3:1). Four corner handles on the frame let the user reshape it
+  freely within those bounds; default anchor is the opposite corner,
+  Ctrl/Alt switches to symmetric (anchor at frame center). Image
+  cover-fits the frame; mouse wheel zooms within cover-min and 5x
+  cover. Saved output capped at the 1920×1080 strict box.
+- **Thumbnail mode** (the card avatar). Frame is a fixed 280×224
+  rectangle centered in the cropper canvas. No frame corner handles.
+  Source larger than the frame enters at native pixel size with its
+  top-left aligned to the frame's top-left, bleeding right and
+  bottom. Source smaller scales up to cover. The image gets four
+  corner handles for uniform scaling; same modifier convention as
+  image-section. Saved output is exactly 280×224.
+
+The card thumbnail's pencil edit-button is replaced by a Phosphor
+`Swap` icon. Clicking opens the Upload Image modal pre-loaded with
+the existing thumbnail; from there the user can re-crop, paste a
+new image, or click an in-cropper "Remove image" button. Remove
+clears the cropper to the empty state and marks the modal as
+pending-removal — the user has to press Save to commit (which
+deletes the old variants from Storage), or Cancel to discard.
+Empty-state thumbnail click opens the modal in fresh-upload mode.
+
+Image-section tiles keep their existing × / + flow — no in-place
+replace. To swap a tile, the user removes (×) and uploads a new
+one (+).
+
+**Added**
+- [`src/components/UploadImageModal.jsx`](./src/components/UploadImageModal.jsx)
+  — the modal itself. Document-level paste listener (capture phase)
+  so it fires before any focused input's paste handler. Esc handler
+  also uses capture phase + `stopImmediatePropagation` so closing
+  the upload modal doesn't bubble up and close the parent EditModal.
+  OS-aware paste-key label (Cmd+V on Mac, Ctrl+V elsewhere).
+- [`src/components/UploadImageProvider.jsx`](./src/components/UploadImageProvider.jsx)
+  — context that lets components inside an EditModal open the
+  modal. Mirrors LightboxProvider.
+- [`src/components/ImageCropper.jsx`](./src/components/ImageCropper.jsx)
+  — the cropper component. `forwardRef` so the parent modal can ask
+  for the cropped Blob on Save via `computeCroppedBlob()`. Pointer
+  events with capture for drag tracking; native wheel listener
+  (`{ passive: false }`) so `preventDefault` on zoom doesn't trip
+  React 18's passive-by-default behavior on root-level synthetic
+  listeners. Cropper canvas has a slightly grey background
+  (`bg-gray-100`) so pure-white images keep visible edges against
+  the crop surface.
+- [ADR-0007](./docs/decisions/0007-deferred-image-persistence.md)
+  — records the deferred-save pattern: image data is held in
+  browser memory between paste/pick and Save; no Storage or DB
+  writes until the user explicitly commits. Deliberate exception to
+  ADR-0003's optimistic-write rule, scoped to the
+  staging-not-commitment user state of the upload modal.
+
+**Changed**
+- [`src/components/MediaSection.jsx`](./src/components/MediaSection.jsx)
+  — the +Add button now opens the Upload Image modal via
+  `useUploadImage().open(...)` instead of triggering a hidden file
+  input directly. Removed the parallel-upload tracking
+  (`uploadingCount`, spinner placeholders, `currentItemsRef`) — the
+  modal handles one image at a time and shows its own progress.
+- [`src/components/EditModalHeader.jsx`](./src/components/EditModalHeader.jsx)
+  — pencil edit-button replaced with Phosphor `Swap`. Empty-state
+  avatar click and Swap button click both route through the Upload
+  Image modal in thumbnail mode. Removed the local upload-progress
+  state and the file input.
+- [`src/components/EditModal.jsx`](./src/components/EditModal.jsx)
+  — wrapped in `<UploadImageProvider>` so MediaSection and
+  EditModalHeader can reach the modal.
+
+**Trade-offs accepted**
+- **Replace asymmetry between thumbnail and image-section.** The
+  thumbnail supports single-click replace via the Swap button;
+  image-section tiles don't (they use × + + only). Justified by
+  frequency: swapping a card's avatar is routine, replacing an
+  image-section tile is rare and the existing × → + flow is two
+  single clicks anyway.
+- **No re-cropping a previously-saved image without supplying a
+  new file.** The cropper is reached only via fresh upload
+  (image-section) or via Swap (thumbnail). When re-cropping a saved
+  thumbnail, the user is working with the previously-cropped,
+  capped output — the original source is not retained.
+- **No drag-and-drop, no web-address upload.** File picker +
+  clipboard paste only.
+- **Multi-image clipboards take the first silently.** Multiple
+  images on the clipboard aren't a supported batch path.
+- **Storage orphan window on undo of a removal/replace.** Replace
+  and remove paths delete the old image's two variants best-effort.
+  If the user undoes the resulting `editCardField` action, the
+  database reference is restored but Storage no longer has the file
+  — the rendered avatar will fail to load. The orphan-cleanup
+  script (ADR-0005 §7) is the long-term fix for the inverse
+  direction; tightening the Save → DB-update → Storage-delete
+  ordering is on the table if this becomes an issue in practice.
+
 ### Sprint 2 — Undo / redo + chip-style feedback toasts (2026-05-04)
 
 Closes [ADR-0006](./docs/decisions/0006-undo-redo.md). Recovery from
