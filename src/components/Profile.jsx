@@ -6,15 +6,27 @@
 // CampaignPicker so it reads as a top-level MasterMind surface, not a
 // canvas surface.
 //
-// V1 contents: read-only email + change-password form. Username and avatar
-// upload are intentionally deferred (separate backlog items).
+// V1 contents:
+//   - Profile photo (avatar) with upload + remove
+//   - Read-only email
+//   - Change-password form
+//
+// The avatar section uses the shared UploadImageModal in 'profile-avatar'
+// mode (256×256 square crop) wired to profileAvatarPipeline. Profile rows
+// in public.profiles store the storage path; UserAvatar (top-left chip)
+// reads the same path so the change shows up everywhere immediately.
+// Display name is in the schema but not yet wired up in the UI.
 // ============================================================================
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ArrowLeft, WarningCircle, CheckCircle } from '@phosphor-icons/react'
 import { useAuth } from '../lib/AuthContext.jsx'
+import { useImageUrl } from '../lib/useImageUrl.js'
+import { profileAvatarPipeline } from '../lib/imageStorage.js'
+import { getProfile, setAvatarPath, clearAvatar } from '../lib/profile.js'
 import UserAvatar from './UserAvatar.jsx'
 import PasswordInput from './PasswordInput.jsx'
+import { UploadImageProvider, useUploadImage } from './UploadImageProvider.jsx'
 
 const MIN_PASSWORD_LENGTH = 6  // Supabase Auth's default minimum
 
@@ -22,8 +34,29 @@ function navigateBack() {
   window.location.hash = ''
 }
 
+// Public entry: wraps the contents in UploadImageProvider so the avatar
+// section can call useUploadImage() to open the shared modal.
 export default function Profile() {
+  return (
+    <UploadImageProvider>
+      <ProfileContents />
+    </UploadImageProvider>
+  )
+}
+
+function ProfileContents() {
   const { user, updatePassword } = useAuth()
+  const upload = useUploadImage()
+
+  // Profile row state: { id, avatar_path, display_name, ... } or null while loading.
+  const [profile, setProfile] = useState(null)
+  const [profileError, setProfileError] = useState(null)
+
+  // Resolved signed URL for the avatar — null when no avatar set.
+  const avatarUrl = useImageUrl(profile?.avatar_path, { bucket: 'profile-media' })
+
+  // Initial fallback (first letter of email, uppercase). Mirrors UserAvatar.
+  const initial = (user?.email?.[0] ?? '?').toUpperCase()
 
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -31,6 +64,61 @@ export default function Profile() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(false)
+
+  // Load the profile on mount.
+  useEffect(() => {
+    let cancelled = false
+    getProfile()
+      .then((p) => { if (!cancelled) setProfile(p) })
+      .catch((err) => {
+        console.error('Failed to load profile', err)
+        if (!cancelled) setProfileError(err)
+      })
+    return () => { cancelled = true }
+  }, [])
+
+  // Open the Upload Image modal in profile-avatar mode. Pre-loads the
+  // existing avatar (if any) for the replace flow. onSave + onRemove keep
+  // local profile state in sync; the modal handles storage I/O via the
+  // injected pipeline.
+  function openUploadModal() {
+    if (!user) return
+    upload.open({
+      mode: 'profile-avatar',
+      pipeline: profileAvatarPipeline({ userId: user.id }),
+      existingImage: profile?.avatar_path ?? undefined,
+      onSave: async (newPath) => {
+        try {
+          await setAvatarPath(newPath)
+          setProfile((p) => ({ ...(p || {}), avatar_path: newPath }))
+        } catch (err) {
+          console.error('Failed to save avatar path', err)
+        }
+      },
+      onRemove: async () => {
+        // Modal also calls pipeline.delete(existingImage) on its
+        // pending-removal save path; here we just null the column.
+        try {
+          await setAvatarPath(null)
+          setProfile((p) => ({ ...(p || {}), avatar_path: null }))
+        } catch (err) {
+          console.error('Failed to clear avatar path', err)
+        }
+      },
+    })
+  }
+
+  // Inline Remove (outside the modal): clearAvatar nulls the column AND
+  // deletes the storage object in one call.
+  async function handleInlineRemove() {
+    if (!profile?.avatar_path) return
+    try {
+      await clearAvatar()
+      setProfile((p) => ({ ...(p || {}), avatar_path: null }))
+    } catch (err) {
+      console.error('Failed to remove avatar', err)
+    }
+  }
 
   function clearForm() {
     setCurrentPassword('')
@@ -94,6 +182,49 @@ export default function Profile() {
         <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-100">
             <h2 className="text-sm font-medium text-gray-900">Profile</h2>
+          </div>
+
+          <div className="px-6 py-5 border-b border-gray-100">
+            <div className="text-[0.6875rem] uppercase tracking-wide text-gray-500 mb-3">
+              Photo
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="w-20 h-20 rounded-full overflow-hidden bg-sky-600 text-white flex items-center justify-center text-2xl font-semibold flex-shrink-0 shadow-sm ring-1 ring-black/5">
+                {avatarUrl ? (
+                  <img
+                    src={avatarUrl}
+                    alt="Profile photo"
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <span aria-hidden="true">{initial}</span>
+                )}
+              </div>
+              <div className="flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={openUploadModal}
+                  className="px-3 py-1.5 text-xs font-medium text-white bg-sky-600 rounded-md hover:bg-sky-700"
+                >
+                  {profile?.avatar_path ? 'Change photo' : 'Upload photo'}
+                </button>
+                {profile?.avatar_path && (
+                  <button
+                    type="button"
+                    onClick={handleInlineRemove}
+                    className="px-3 py-1.5 text-xs font-medium text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
+                  >
+                    Remove photo
+                  </button>
+                )}
+              </div>
+            </div>
+            {profileError && (
+              <div className="flex items-start gap-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2 mt-3">
+                <WarningCircle size={16} weight="fill" className="flex-shrink-0 mt-px" />
+                <span>Couldn’t load your profile. Refresh to try again.</span>
+              </div>
+            )}
           </div>
 
           <div className="px-6 py-5 border-b border-gray-100">
