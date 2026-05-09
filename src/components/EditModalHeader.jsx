@@ -1,20 +1,27 @@
 // EditModalHeader — the type-colored band at the top of EditModal.
 // Composes:
-//   - Avatar (with upload via pencil button + lightbox on click)
+//   - Avatar (with click-to-replace via Upload Image modal + lightbox on click)
 //   - Title input (focused on mount)
 //   - TypePicker (the type dropdown)
 //   - Close button
 //
-// State for `title`, `type`, and `thumbnail` lives in the parent (EditModal)
-// because auto-save reads them. The header owns its own avatar upload state
-// (`uploadingAvatar`) since EditModal doesn't need to know about it.
+// Avatar has two states:
+//   - Empty (no thumbnail): clicking the letter-initial circle opens the
+//     Upload Image modal in thumbnail mode (no existing image).
+//   - Filled: clicking the image opens the lightbox; clicking the Swap
+//     button (hover affordance) opens the Upload Image modal pre-loaded
+//     with the existing thumbnail. Save in the modal replaces; Cancel
+//     preserves the old image.
+//
+// State for `title`, `type`, and `thumbnail` lives in the parent
+// (EditModal) because auto-save reads them. The Upload Image modal
+// handles its own upload progress and Storage writes.
 
-import { useEffect, useRef, useState } from 'react'
-import { toast } from 'sonner'
-import { PencilSimple } from '@phosphor-icons/react'
+import { useEffect, useRef } from 'react'
+import { Swap } from '@phosphor-icons/react'
 import { useImageUrl } from '../lib/useImageUrl'
-import { uploadCardImage } from '../lib/imageStorage'
 import { useLightbox } from './Lightbox'
+import { useUploadImage } from './UploadImageProvider'
 import { labelInitial } from '../utils/labelUtils'
 import TypePicker from './TypePicker'
 
@@ -33,35 +40,40 @@ export default function EditModalHeader({
   onClose,
   onCreateNewType,
 }) {
-  const titleRef = useRef(null)
-  const fileInputRef = useRef(null)
-  const lightbox = useLightbox()
+  const titleRef     = useRef(null)
+  const lightbox     = useLightbox()
+  const upload       = useUploadImage()
   const thumbnailUrl = useImageUrl(thumbnail, 'thumb')
-  const [uploadingAvatar, setUploadingAvatar] = useState(false)
 
-  // Auto-focus the title field on mount so the user can start typing immediately.
+  // Auto-focus the title field on mount so the user can start typing
+  // immediately.
   useEffect(() => { titleRef.current?.focus() }, [])
 
-  const handleThumbnailUpload = async (e) => {
-    const file = e.target.files?.[0]
-    e.target.value = ''
-    if (!file || !campaignId) return
-    setUploadingAvatar(true)
-    try {
-      const path = await uploadCardImage({
-        campaignId,
-        cardId: node.id,
-        section: 'avatar',
-        slug: title || node.data.label,
-        file,
-      })
-      setThumbnail(path)
-    } catch (err) {
-      console.error('Avatar upload failed', err)
-      toast.error(`Couldn't upload avatar: ${err.message}`)
-    } finally {
-      setUploadingAvatar(false)
-    }
+  // Both empty-state and Swap-button paths route through the Upload Image
+  // modal in thumbnail mode. The replace path passes `existingImage` so
+  // the modal pre-loads the cropper with the current thumbnail and
+  // deletes the old variants from Storage on Save.
+  const openUploadFresh = () => {
+    upload.open({
+      mode: 'thumbnail',
+      cardId: node.id,
+      campaignId,
+      slug: title || node.data.label,
+      section: 'avatar',
+      onSave: (newPath) => setThumbnail(newPath),
+    })
+  }
+  const openUploadReplace = () => {
+    upload.open({
+      mode: 'thumbnail',
+      cardId: node.id,
+      campaignId,
+      slug: title || node.data.label,
+      section: 'avatar',
+      existingImage: thumbnail,
+      onSave: (newPath) => setThumbnail(newPath),
+      onRemove: () => setThumbnail(null),
+    })
   }
 
   return (
@@ -69,18 +81,12 @@ export default function EditModalHeader({
       className="flex items-center gap-4 p-2 flex-shrink-0 select-none"
       style={{ backgroundColor: typeConfig.color }}
     >
-      {/* Avatar — click to lightbox; hover the pencil to change */}
+      {/* Avatar — click to lightbox; hover the Swap button to replace */}
       <div className="flex-shrink-0">
-        <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleThumbnailUpload} />
         <div
           className="relative group w-16 h-16 rounded-[0.5rem] overflow-hidden flex items-center justify-center"
           style={{ backgroundColor: typeConfig.color, filter: 'brightness(0.75)' }}
         >
-          {uploadingAvatar && (
-            <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/50">
-              <div className="w-5 h-5 rounded-full border-2 border-white/30 border-t-white animate-spin" />
-            </div>
-          )}
           {thumbnailUrl ? (
             <>
               <img
@@ -92,16 +98,16 @@ export default function EditModalHeader({
               />
               <button
                 className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
-                onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click() }}
-                aria-label="Change avatar"
+                onClick={(e) => { e.stopPropagation(); openUploadReplace() }}
+                aria-label="Swap avatar"
               >
-                <PencilSimple size={11} weight="bold" />
+                <Swap size={11} weight="bold" />
               </button>
             </>
           ) : (
             <button
               className="absolute inset-0 flex items-center justify-center cursor-pointer"
-              onClick={() => fileInputRef.current?.click()}
+              onClick={openUploadFresh}
               aria-label="Add avatar"
             >
               <span className="font-bold text-2xl select-none relative z-10" style={{ color: hdrText }}>

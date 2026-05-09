@@ -118,12 +118,12 @@ Final pick lands at sprint start.
     tile's image, the user removes it (existing **×** button) and
     uploads a new one (**+** button) — no in-place replace.
   - **Card thumbnail.** Click the image opens the lightbox. A new
-    **cameraswitch** icon (Material Symbols) replaces today's pencil
-    edit-button. Click cameraswitch → Upload Image modal opens with the
+    **Swap** icon (Phosphor `Swap`) replaces today's pencil
+    edit-button. Click Swap → Upload Image modal opens with the
     existing image already loaded; Save replaces (writes new path →
     deletes old image's two variants), Cancel preserves the old image.
   - **Replace asymmetry.** The card thumbnail supports single-click
-    replace via cameraswitch; image-section tiles do not. The
+    replace via the Swap button; image-section tiles do not. The
     thumbnail's exception is justified by frequency — swapping a card's
     avatar is a routine action, while replacing an image-section tile
     is rare and the existing × → + flow is two single clicks anyway.

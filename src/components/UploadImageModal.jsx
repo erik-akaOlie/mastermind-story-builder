@@ -12,7 +12,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { uploadCardImage } from '../lib/imageStorage'
+import { uploadCardImage, deleteCardImage, getImageUrl } from '../lib/imageStorage'
 import ImageCropper from './ImageCropper'
 
 // OS-aware paste hint label
@@ -29,18 +29,65 @@ export default function UploadImageModal({
   campaignId,
   slug,
   section,         // storage path component, e.g. 'inspiration', 'avatar'
-  // existingImage: present in thumbnail replace flow (chunk 3) — opens
-  // the cropper pre-loaded with the existing image. Unused in chunk 1.
+  // existingImage: present in thumbnail replace flow — the modal opens
+  // pre-loaded with the existing image and surfaces a Remove button
+  // inside the cropper.
   existingImage,
   onSave,          // (path) => void — called with the new Storage path
+  onRemove,        // () => void  — called when the user clears the existing
+                   //               image (replace flow only). Optional.
   onClose,         // () => void
 }) {
-  const [imageBlob, setImageBlob] = useState(null)
-  const [uploading, setUploading] = useState(false)
+  const [imageBlob,       setImageBlob]       = useState(null)
+  const [uploading,       setUploading]       = useState(false)
+  const [loadingExisting, setLoadingExisting] = useState(false)
+  // hasNewSource: flips true once the user pastes or picks a new image.
+  // Used to hide the Remove UI — once they've supplied a replacement,
+  // they're committed to replacing rather than removing.
+  const [hasNewSource,    setHasNewSource]    = useState(false)
+  // pendingRemoval: set true when the user clicks "Remove image" in the
+  // cropper. Clears the image from the cropper but doesn't commit the
+  // removal — the user has to press Save (which sees pendingRemoval and
+  // calls onRemove + deletes old variants) or Cancel (which discards).
+  const [pendingRemoval,  setPendingRemoval]  = useState(false)
   const fileInputRef = useRef(null)
   const cropperRef   = useRef(null)
   // Note: the ImageCropper handles its own object URL lifecycle for the
   // image preview, so we don't keep a separate previewUrl here anymore.
+
+  // ── If opened with `existingImage`, fetch its full variant and seed
+  // the cropper with it. Cancellation handles unmount mid-fetch and the
+  // case where the user picks or pastes a new image while the existing
+  // one is still downloading (we only seed if imageBlob is still null).
+  // pendingRemoval is in deps so that clicking Remove cancels any
+  // in-flight fetch and the new run exits early without re-fetching.
+  useEffect(() => {
+    if (!existingImage || pendingRemoval) {
+      setLoadingExisting(false)
+      return
+    }
+    let cancelled = false
+    setLoadingExisting(true)
+    ;(async () => {
+      try {
+        const url = await getImageUrl(existingImage, 'full')
+        if (cancelled || !url) return
+        const res = await fetch(url)
+        if (cancelled) return
+        const blob = await res.blob()
+        if (cancelled) return
+        setImageBlob((current) => current ?? blob)
+      } catch (err) {
+        if (!cancelled) {
+          console.error('Failed to load existing image', err)
+          toast.error("Couldn't load the existing image — pick or paste to start fresh")
+        }
+      } finally {
+        if (!cancelled) setLoadingExisting(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [existingImage, pendingRemoval])
 
   // Document-level paste listener using the capture phase so we run before
   // any focused input's own paste handler. We only preventDefault when we
@@ -55,6 +102,10 @@ export default function UploadImageModal({
           if (file) {
             e.preventDefault()
             setImageBlob(file)
+            setHasNewSource(true)
+            // If the user had clicked Remove, supplying a new image
+            // overrides that intent — they're now replacing.
+            setPendingRemoval(false)
             return // first image only — multi-image clipboards take the first silently
           }
         }
@@ -83,11 +134,49 @@ export default function UploadImageModal({
     e.target.value = ''
     if (file && file.type.startsWith('image/')) {
       setImageBlob(file)
+      setHasNewSource(true)
+      setPendingRemoval(false)
     }
   }
 
+  // Remove flow: clears the cropper to the empty state and marks the
+  // modal as "pending removal." Doesn't commit anything — Save commits
+  // the removal (delete old variants + onRemove callback), Cancel
+  // discards. This lets the user see the empty state before confirming
+  // and gives them a chance to paste/pick a replacement instead.
+  const handleRemove = () => {
+    if (!existingImage || uploading) return
+    setImageBlob(null)
+    setHasNewSource(false)
+    setPendingRemoval(true)
+  }
+
   const handleSave = async () => {
-    if (!imageBlob || !campaignId || uploading) return
+    if (uploading) return
+
+    // Pending-removal path: commit the removal, no new upload.
+    if (pendingRemoval) {
+      if (!existingImage) return
+      setUploading(true)
+      try {
+        if (onRemove) onRemove()
+        // Best-effort delete of old variants. If this fails, the
+        // orphan-cleanup script (ADR-0005 §7) reaps dead variants;
+        // user-visible state (no thumbnail) is already correct.
+        try {
+          await deleteCardImage(existingImage)
+        } catch (err) {
+          console.error('Failed to delete old image variants', err)
+        }
+        onClose()
+      } finally {
+        setUploading(false)
+      }
+      return
+    }
+
+    // Upload path: requires a loaded image and a ready cropper.
+    if (!imageBlob || !campaignId) return
     if (!cropperRef.current) {
       toast.error("Cropper isn't ready yet — try again in a moment")
       return
@@ -95,17 +184,27 @@ export default function UploadImageModal({
     setUploading(true)
     try {
       // Per ADR-0007: cropper produces the final cropped Blob (already
-      // capped to the 1920x1080 strict box). uploadCardImage transcodes
+      // capped to the 1920x1080 strict box for image-section, or
+      // exactly 280x224 for thumbnail). uploadCardImage transcodes
       // that into the two WebP variants and writes both to Storage.
       const croppedBlob = await cropperRef.current.computeCroppedBlob()
-      const path = await uploadCardImage({
+      const newPath = await uploadCardImage({
         campaignId,
         cardId,
         section,
         slug,
         file: croppedBlob,
       })
-      onSave(path)
+      onSave(newPath)
+      // Replace flow: delete the old image's two variants AFTER the new
+      // path has been handed back. Same best-effort note as above.
+      if (existingImage && existingImage !== newPath) {
+        try {
+          await deleteCardImage(existingImage)
+        } catch (err) {
+          console.error('Failed to delete old image variants', err)
+        }
+      }
       onClose()
     } catch (err) {
       console.error('Upload failed', err)
@@ -115,7 +214,15 @@ export default function UploadImageModal({
     }
   }
 
-  const saveDisabled = !imageBlob || uploading
+  // Save is enabled when there's an image to upload, OR when the user
+  // has clicked Remove and is committing that removal.
+  const saveDisabled = uploading || (!imageBlob && !pendingRemoval)
+  const cancelDisabled = uploading
+  // Show the Remove UI only while we still have the original existing
+  // image loaded (no replacement supplied yet, no removal already
+  // pending). Once the user pastes/picks a new image, hide it; once
+  // they click Remove, the cropper isn't rendered so this is moot.
+  const showRemove = !!existingImage && !hasNewSource && !pendingRemoval
 
   return (
     <>
@@ -166,7 +273,12 @@ export default function UploadImageModal({
                 ref={cropperRef}
                 imageBlob={imageBlob}
                 mode={mode}
+                onRemove={showRemove ? handleRemove : undefined}
               />
+            ) : loadingExisting ? (
+              <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
+                <div className="w-8 h-8 rounded-full border-2 border-gray-300 border-t-gray-500 animate-spin" />
+              </div>
             ) : (
               <div className="flex flex-col items-center gap-4 text-gray-700">
                 <p className="text-base">
@@ -187,7 +299,8 @@ export default function UploadImageModal({
           <div className="flex justify-end gap-3 px-4 pb-4">
             <button
               onClick={onClose}
-              className="px-4 py-2 border border-sky-600 text-sky-600 rounded font-semibold hover:bg-sky-50 transition-colors"
+              disabled={cancelDisabled}
+              className="px-4 py-2 border border-sky-600 text-sky-600 rounded font-semibold hover:bg-sky-50 transition-colors disabled:border-gray-300 disabled:text-gray-400 disabled:cursor-not-allowed"
             >
               Cancel
             </button>
