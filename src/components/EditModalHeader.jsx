@@ -20,6 +20,7 @@
 import { useEffect, useRef } from 'react'
 import { Swap } from '@phosphor-icons/react'
 import { useImageUrl } from '../lib/useImageUrl'
+import { cardImagePipeline } from '../lib/imageStorage'
 import { useLightbox } from './Lightbox'
 import { useUploadImage } from './UploadImageProvider'
 import { labelInitial } from '../utils/labelUtils'
@@ -53,23 +54,24 @@ export default function EditModalHeader({
   // modal in thumbnail mode. The replace path passes `existingImage` so
   // the modal pre-loads the cropper with the current thumbnail and
   // deletes the old variants from Storage on Save.
+  const buildPipeline = () => cardImagePipeline({
+    campaignId,
+    cardId: node.id,
+    section: 'avatar',
+    slug: title || node.data.label,
+  })
+
   const openUploadFresh = () => {
     upload.open({
       mode: 'thumbnail',
-      cardId: node.id,
-      campaignId,
-      slug: title || node.data.label,
-      section: 'avatar',
+      pipeline: buildPipeline(),
       onSave: (newPath) => setThumbnail(newPath),
     })
   }
   const openUploadReplace = () => {
     upload.open({
       mode: 'thumbnail',
-      cardId: node.id,
-      campaignId,
-      slug: title || node.data.label,
-      section: 'avatar',
+      pipeline: buildPipeline(),
       existingImage: thumbnail,
       onSave: (newPath) => setThumbnail(newPath),
       onRemove: () => setThumbnail(null),

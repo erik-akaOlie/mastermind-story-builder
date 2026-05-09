@@ -18,6 +18,7 @@ import { SortableContext, useSortable, arrayMove, rectSortingStrategy } from '@d
 import { CSS } from '@dnd-kit/utilities'
 import { DotsSixVertical } from '@phosphor-icons/react'
 import { useImageUrl } from '../lib/useImageUrl'
+import { cardImagePipeline } from '../lib/imageStorage'
 import { useLightbox } from './Lightbox'
 import { useUploadImage } from './UploadImageProvider'
 import SectionLabel from './SectionLabel'
@@ -77,10 +78,7 @@ export default function MediaSection({
     if (!campaignId) return
     upload.open({
       mode: 'image-section',
-      cardId,
-      campaignId,
-      slug,
-      section: 'inspiration',
+      pipeline: cardImagePipeline({ campaignId, cardId, section: 'inspiration', slug }),
       onSave: (path) => {
         const entry = { path, alt: '', uploaded_at: new Date().toISOString() }
         const insertPosition = items.length

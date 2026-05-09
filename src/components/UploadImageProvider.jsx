@@ -1,8 +1,11 @@
-// UploadImageProvider — context that lets any consumer inside an EditModal
-// open the Upload Image modal. Mirrors Lightbox.jsx's provider/hook shape.
+// UploadImageProvider — context that lets any consumer open the shared
+// Upload Image modal. Mirrors Lightbox.jsx's provider/hook shape.
 //
-// Consumers call useUploadImage().open({ mode, cardId, campaignId, slug,
-// section, existingImage?, onSave }) and the provider renders the modal.
+// Consumers call useUploadImage().open({ mode, pipeline, existingImage?,
+// onSave, onRemove? }) and the provider renders the modal. The `pipeline`
+// is built via cardImagePipeline() or profileAvatarPipeline() in
+// imageStorage.js so the modal stays domain-agnostic.
+//
 // Closing the modal clears the config; reopening replaces it.
 
 import { createContext, useCallback, useContext, useState } from 'react'

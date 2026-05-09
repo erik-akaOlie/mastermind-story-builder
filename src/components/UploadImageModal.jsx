@@ -1,18 +1,19 @@
 // UploadImageModal — overlay that captures a single image (file pick or
-// clipboard paste) and uploads it via the existing imageStorage pipeline
-// when the user presses Save.
+// clipboard paste), runs it through the cropper, and uploads it via a
+// caller-supplied pipeline when the user presses Save.
 //
 // Per ADR-0007, no Storage or DB writes occur until Save. Cancel discards
 // everything cleanly.
 //
-// Chunk 2 scope: empty state + ImageCropper (drag, scale, free-form
-// aspect ratio with 1:3 / 3:1 bounds in image-section mode; fixed 5:4
-// in thumbnail mode) + Save/Cancel plumbing. Save fetches the cropped
-// Blob from the cropper and routes it through uploadCardImage.
+// The modal is pipeline-agnostic. Callers pass a `pipeline` prop with three
+// async functions: { upload(blob) → path, delete(path) → void, getUrl(path)
+// → signedUrl }. The two domains today are card images (cardImagePipeline)
+// and profile avatars (profileAvatarPipeline) — both factory-built in
+// imageStorage.js. New image domains drop in by adding a new factory; this
+// modal does not need to know about them.
 
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { uploadCardImage, deleteCardImage, getImageUrl } from '../lib/imageStorage'
 import ImageCropper from './ImageCropper'
 
 // OS-aware paste hint label
@@ -21,17 +22,16 @@ const isMac = typeof navigator !== 'undefined' &&
 const PASTE_KEY_LABEL = isMac ? 'Cmd+V' : 'Ctrl+V'
 
 export default function UploadImageModal({
-  // mode: 'image-section' | 'thumbnail' — informational in chunk 1 (no
-  // cropper differentiation yet); used in chunk 2+ to set the cropper's
-  // aspect-ratio behavior.
+  // mode: 'image-section' | 'thumbnail' | 'profile-avatar' — drives the
+  // cropper's frame-shape and output-size behavior.
   mode,
-  cardId,
-  campaignId,
-  slug,
-  section,         // storage path component, e.g. 'inspiration', 'avatar'
-  // existingImage: present in thumbnail replace flow — the modal opens
-  // pre-loaded with the existing image and surfaces a Remove button
-  // inside the cropper.
+  // pipeline: { upload(blob) → path, delete(path) → void, getUrl(path) →
+  // signedUrl }. Bind via cardImagePipeline() or profileAvatarPipeline()
+  // from imageStorage.js so the modal stays domain-agnostic.
+  pipeline,
+  // existingImage: present in replace flows — the modal opens pre-loaded
+  // with the existing image (fetched via pipeline.getUrl) and surfaces a
+  // Remove button inside the cropper.
   existingImage,
   onSave,          // (path) => void — called with the new Storage path
   onRemove,        // () => void  — called when the user clears the existing
@@ -70,7 +70,7 @@ export default function UploadImageModal({
     setLoadingExisting(true)
     ;(async () => {
       try {
-        const url = await getImageUrl(existingImage, 'full')
+        const url = await pipeline.getUrl(existingImage)
         if (cancelled || !url) return
         const res = await fetch(url)
         if (cancelled) return
@@ -87,7 +87,7 @@ export default function UploadImageModal({
       }
     })()
     return () => { cancelled = true }
-  }, [existingImage, pendingRemoval])
+  }, [existingImage, pendingRemoval, pipeline])
 
   // Document-level paste listener using the capture phase so we run before
   // any focused input's own paste handler. We only preventDefault when we
@@ -160,13 +160,13 @@ export default function UploadImageModal({
       setUploading(true)
       try {
         if (onRemove) onRemove()
-        // Best-effort delete of old variants. If this fails, the
-        // orphan-cleanup script (ADR-0005 §7) reaps dead variants;
+        // Best-effort delete of the old object(s). If this fails, the
+        // orphan-cleanup script (ADR-0005 §7) reaps the leftovers;
         // user-visible state (no thumbnail) is already correct.
         try {
-          await deleteCardImage(existingImage)
+          await pipeline.delete(existingImage)
         } catch (err) {
-          console.error('Failed to delete old image variants', err)
+          console.error('Failed to delete old image', err)
         }
         onClose()
       } finally {
@@ -176,33 +176,28 @@ export default function UploadImageModal({
     }
 
     // Upload path: requires a loaded image and a ready cropper.
-    if (!imageBlob || !campaignId) return
+    if (!imageBlob || !pipeline) return
     if (!cropperRef.current) {
       toast.error("Cropper isn't ready yet — try again in a moment")
       return
     }
     setUploading(true)
     try {
-      // Per ADR-0007: cropper produces the final cropped Blob (already
-      // capped to the 1920x1080 strict box for image-section, or
-      // exactly 280x224 for thumbnail). uploadCardImage transcodes
-      // that into the two WebP variants and writes both to Storage.
+      // Per ADR-0007: cropper produces the final cropped Blob (size
+      // depends on mode — capped at 1920×1080 for image-section,
+      // exactly 280×224 for thumbnail, exactly 256×256 for
+      // profile-avatar). pipeline.upload handles transcoding and
+      // bucket-specific path construction for that domain.
       const croppedBlob = await cropperRef.current.computeCroppedBlob()
-      const newPath = await uploadCardImage({
-        campaignId,
-        cardId,
-        section,
-        slug,
-        file: croppedBlob,
-      })
+      const newPath = await pipeline.upload(croppedBlob)
       onSave(newPath)
-      // Replace flow: delete the old image's two variants AFTER the new
-      // path has been handed back. Same best-effort note as above.
+      // Replace flow: delete the old object(s) AFTER the new path has
+      // been handed back. Same best-effort note as above.
       if (existingImage && existingImage !== newPath) {
         try {
-          await deleteCardImage(existingImage)
+          await pipeline.delete(existingImage)
         } catch (err) {
-          console.error('Failed to delete old image variants', err)
+          console.error('Failed to delete old image', err)
         }
       }
       onClose()

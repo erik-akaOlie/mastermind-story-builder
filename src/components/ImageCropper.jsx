@@ -1,7 +1,7 @@
 // ImageCropper — the working surface inside UploadImageModal once an image
 // has been picked or pasted.
 //
-// Two modes, each with its own UX:
+// Three modes, each with its own UX:
 //
 //   image-section mode
 //     - Frame is sized to fit the cropper canvas with padding. Aspect
@@ -30,6 +30,12 @@
 //     - Saved output is always exactly 280×224 — the frame's contents
 //       resampled to those dimensions.
 //
+//   profile-avatar mode
+//     - Same UX as thumbnail mode (image-corner handles, no frame
+//       reshape, cover-fit on entry) but with a fixed 256×256 SQUARE
+//       frame and a 256×256 saved output. Used by the Profile page to
+//       crop a user-supplied photo into an avatar.
+//
 // The component exposes computeCroppedBlob() via ref so the parent
 // modal can fetch the final cropped image on Save. Per ADR-0007, no
 // Storage or DB writes happen here — this component only produces a
@@ -54,7 +60,23 @@ const STRICT_BOX_H     = 1080    // image-section saved-size height cap
 const THUMBNAIL_FRAME_W = 280    // thumbnail saved width (and on-screen frame width)
 const THUMBNAIL_FRAME_H = 224    // thumbnail saved height (and on-screen frame height)
 const THUMBNAIL_RATIO  = 5 / 4   // = 280 / 224
+const PROFILE_AVATAR_FRAME_PX = 256 // profile-avatar mode: square frame + saved size
 const BOTTOM_RESERVED_PX = 128   // vertical space reserved below frame for the Remove UI (gap + button + dashes + paste hint)
+
+// Modes whose frame is a fixed size (no user reshape via frame corner handles).
+// Both 'thumbnail' and 'profile-avatar' fall here; their frame dimensions
+// differ but everything else (image-corner handles, cover-fit, wheel zoom,
+// fixed-pixel output) is the same.
+function isFixedFrameMode(mode) {
+  return mode === 'thumbnail' || mode === 'profile-avatar'
+}
+
+// Frame size for fixed-frame modes. Returns null for image-section mode.
+function fixedFrameSizeForMode(mode) {
+  if (mode === 'thumbnail')      return { w: THUMBNAIL_FRAME_W,    h: THUMBNAIL_FRAME_H }
+  if (mode === 'profile-avatar') return { w: PROFILE_AVATAR_FRAME_PX, h: PROFILE_AVATAR_FRAME_PX }
+  return null
+}
 
 // OS-aware paste hint label (mirrors UploadImageModal's logic).
 const isMac = typeof navigator !== 'undefined' &&
@@ -122,11 +144,14 @@ const ImageCropper = forwardRef(function ImageCropper({ imageBlob, mode, onRemov
     if (!imageData || !containerSize) return
     const containerCenter = { x: containerSize.w / 2, y: containerSize.h / 2 }
 
-    if (mode === 'thumbnail') {
-      // Frame: fixed 280×224. Centered horizontally; vertically centered
-      // in the area above the bottom-reserved Remove UI when onRemove is
-      // provided, otherwise centered in the full canvas.
-      const fSize = { w: THUMBNAIL_FRAME_W, h: THUMBNAIL_FRAME_H }
+    if (isFixedFrameMode(mode)) {
+      // Fixed-frame modes (thumbnail and profile-avatar): frame size is
+      // mode-specific (280×224 for thumbnail, 256×256 for profile-avatar).
+      // Frame is centered horizontally; vertically centered in the area
+      // above the bottom-reserved Remove UI when onRemove is provided,
+      // otherwise centered in the full canvas. Image cover-fits the frame
+      // and aligns its top-left to the frame's top-left on entry.
+      const fSize = fixedFrameSizeForMode(mode)
       const bottomReserved = onRemove ? BOTTOM_RESERVED_PX : 0
       const usableH = Math.max(fSize.h, containerSize.h - bottomReserved)
       const fPos = { x: containerSize.w / 2, y: usableH / 2 }
@@ -376,7 +401,7 @@ const ImageCropper = forwardRef(function ImageCropper({ imageBlob, mode, onRemov
   // Ctrl/Alt: image center stays put; the dragged corner and its
   // opposite move mirror-image around that center.
   const onImageHandlePointerDown = (corner) => (e) => {
-    if (mode !== 'thumbnail' || !imageData || !imgPos) return
+    if (!isFixedFrameMode(mode) || !imageData || !imgPos) return
     e.stopPropagation()
     e.target.setPointerCapture(e.pointerId)
     const imgSize = { w: imageData.width * scale, h: imageData.height * scale }
@@ -528,12 +553,14 @@ const ImageCropper = forwardRef(function ImageCropper({ imageBlob, mode, onRemov
       const srcLeft = Math.max(0, Math.min(imageData.width  - srcCropW, srcLeftRaw))
       const srcTop  = Math.max(0, Math.min(imageData.height - srcCropH, srcTopRaw))
 
-      // Output size: thumbnail = exactly 280×224; image-section =
-      // source-pixel size capped at 1920×1080 strict-box.
+      // Output size: thumbnail = exactly 280×224; profile-avatar =
+      // exactly 256×256; image-section = source-pixel size capped at the
+      // 1920×1080 strict-box.
       let outW, outH
-      if (mode === 'thumbnail') {
-        outW = THUMBNAIL_FRAME_W
-        outH = THUMBNAIL_FRAME_H
+      if (isFixedFrameMode(mode)) {
+        const fixedSize = fixedFrameSizeForMode(mode)
+        outW = fixedSize.w
+        outH = fixedSize.h
       } else {
         outW = srcCropW
         outH = srcCropH
@@ -649,8 +676,8 @@ const ImageCropper = forwardRef(function ImageCropper({ imageBlob, mode, onRemov
             </>
           )}
 
-          {/* Image corner handles — thumbnail mode only. */}
-          {mode === 'thumbnail' && (
+          {/* Image corner handles — fixed-frame modes (thumbnail + profile-avatar). */}
+          {isFixedFrameMode(mode) && (
             <>
               <Handle x={imgLeft}  y={imgTop}    cursor="nwse-resize"
                 onPointerDown={onImageHandlePointerDown('tl')}
@@ -673,12 +700,12 @@ const ImageCropper = forwardRef(function ImageCropper({ imageBlob, mode, onRemov
         </>
       )}
 
-      {/* Remove UI — thumbnail mode only, when onRemove is provided
-          (i.e. a replace flow with an existing thumbnail still in
-          place). Anchored 32px below the frame's bottom edge.
-          Reserves BOTTOM_RESERVED_PX of vertical space below the frame
-          so this block has room. */}
-      {mode === 'thumbnail' && onRemove && ready && (
+      {/* Remove UI — fixed-frame modes (thumbnail + profile-avatar) when
+          onRemove is provided (i.e. a replace flow with an existing image
+          still in place). Anchored 32px below the frame's bottom edge.
+          Reserves BOTTOM_RESERVED_PX of vertical space below the frame so
+          this block has room. */}
+      {isFixedFrameMode(mode) && onRemove && ready && (
         <div
           className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center gap-2"
           style={{ top: frameTop + frameSize.h + 32 }}

@@ -1,26 +1,41 @@
 // ============================================================================
 // Image Storage helper
 // ----------------------------------------------------------------------------
-// Owns the Supabase Storage interactions for card images. Per ADR-0005:
+// Owns the Supabase Storage interactions for two image domains:
 //
-//   - Bucket: card-media (private)
-//   - Path:   {campaign_id}/{card_id}/{section}-{timestamp_ms}-{slug}.{variant}.webp
-//   - Variants: thumb (256px / 40%) and full (1920px / 80%), both WebP
-//   - Transcoding: browser Canvas API at upload time
+//   1. Card images (avatars + inspiration) — bucket `card-media`, two
+//      variants (thumb 256px / full 1920px), per ADR-0005.
+//      Path: {campaign_id}/{card_id}/{section}-{timestamp_ms}-{slug}.{variant}.webp
 //
-// The rest of the app uses uploadCardImage() to add an image, deleteCardImage()
-// to remove one, and getImageUrl() / useImageUrl() to render. Migration code
-// uses base64ToBlob() + uploadCardImageBlob() to backfill existing data.
+//   2. Profile avatars — bucket `profile-media`, single 256×256 variant
+//      per migration 003. Profile photos never render larger than ~64px
+//      in real UI; one variant is sufficient.
+//      Path: {user_id}/avatar-{timestamp_ms}.webp
+//
+// Domain-specific entry points:
+//   - Card:    uploadCardImage(), deleteCardImage(), cardImagePipeline()
+//   - Profile: uploadProfileAvatar(), deleteProfileAvatar(), profileAvatarPipeline()
+//
+// Shared by both: getImageUrl() (takes a bucket parameter), the transcoding
+// helpers, and useImageUrl() (the hook in useImageUrl.js).
+//
+// The pipeline factories return a { upload, delete, getUrl } trio so
+// UploadImageModal can be pipeline-agnostic — it doesn't know whether it's
+// editing a card image or a profile avatar; it just calls the trio its
+// caller handed it.
 // ============================================================================
 
 import { supabase } from './supabase.js'
 
-const BUCKET = 'card-media'
+const BUCKET_CARD     = 'card-media'
+const BUCKET_PROFILE  = 'profile-media'
 
 const VARIANTS = {
   thumb: { maxEdge: 256,  quality: 0.4 },
   full:  { maxEdge: 1920, quality: 0.8 },
 }
+
+const PROFILE_AVATAR_QUALITY = 0.85   // single 256×256 variant
 
 const SIGNED_URL_TTL_SECONDS = 60 * 60 // 1 hour; cached on the CDN edge
 
@@ -145,7 +160,7 @@ export async function uploadCardImage({ campaignId, cardId, section, slug, file,
   const paths = {}
   for (const [variant, blob] of Object.entries(variants)) {
     const path = buildImagePath({ campaignId, cardId, section, slug: cleanSlug, timestamp, variant })
-    const { error } = await supabase.storage.from(BUCKET).upload(path, blob, {
+    const { error } = await supabase.storage.from(BUCKET_CARD).upload(path, blob, {
       contentType: 'image/webp',
       upsert: false,
     })
@@ -167,21 +182,100 @@ export async function deleteCardImage(path) {
   if (!isStoragePath(path)) return
   const fullPath = pathForVariant(path, 'full')
   const thumbPath = pathForVariant(path, 'thumb')
-  const { error } = await supabase.storage.from(BUCKET).remove([fullPath, thumbPath])
+  const { error } = await supabase.storage.from(BUCKET_CARD).remove([fullPath, thumbPath])
   if (error) throw error
 }
 
-// Resolve a path into a signed URL for the requested variant. Returns null
-// for falsy input or signing failure (caller decides how to render absence).
-export async function getImageUrl(path, variant = 'full') {
+// Resolve a path into a signed URL. The variant suffix swap only applies to
+// card-media paths (which carry .full.webp / .thumb.webp suffixes). Profile
+// avatars are single-variant; passing a profile path with any variant value
+// is harmless because pathForVariant no-ops on paths without the suffix.
+//
+// Returns null for falsy input or signing failure (caller decides how to
+// render absence).
+export async function getImageUrl(path, variant = 'full', bucket = BUCKET_CARD) {
   if (!isStoragePath(path)) return null
   const targetPath = pathForVariant(path, variant)
   const { data, error } = await supabase.storage
-    .from(BUCKET)
+    .from(bucket)
     .createSignedUrl(targetPath, SIGNED_URL_TTL_SECONDS)
   if (error) {
-    console.error(`Failed to sign URL for ${targetPath}`, error)
+    console.error(`Failed to sign URL for ${targetPath} in ${bucket}`, error)
     return null
   }
   return data.signedUrl
+}
+
+// ----------------------------------------------------------------------------
+// Profile avatars — single 256×256 variant, profile-media bucket
+// ----------------------------------------------------------------------------
+
+// Build the storage path for a profile avatar.
+export function buildProfileAvatarPath({ userId, timestamp = Date.now() }) {
+  return `${userId}/avatar-${timestamp}.webp`
+}
+
+// Convert an already-cropped 256×256 Blob into a single WebP variant. The
+// cropper for profile-avatar mode outputs exactly 256×256, so this is a
+// format conversion only — no resize step.
+export async function transcodeProfileAvatar(input, quality = PROFILE_AVATAR_QUALITY) {
+  const objectUrl = URL.createObjectURL(input)
+  try {
+    const img = await loadHtmlImage(objectUrl)
+    const canvas = document.createElement('canvas')
+    canvas.width  = img.naturalWidth
+    canvas.height = img.naturalHeight
+    const ctx = canvas.getContext('2d')
+    ctx.drawImage(img, 0, 0)
+    return await new Promise((resolve, reject) => {
+      canvas.toBlob(
+        (blob) => (blob ? resolve(blob) : reject(new Error('Canvas toBlob returned null'))),
+        'image/webp',
+        quality
+      )
+    })
+  } finally {
+    URL.revokeObjectURL(objectUrl)
+  }
+}
+
+// Upload a cropped profile avatar Blob. Returns the storage path.
+export async function uploadProfileAvatar({ userId, blob, timestamp = Date.now() }) {
+  const webp = await transcodeProfileAvatar(blob)
+  const path = buildProfileAvatarPath({ userId, timestamp })
+  const { error } = await supabase.storage.from(BUCKET_PROFILE).upload(path, webp, {
+    contentType: 'image/webp',
+    upsert: false,
+  })
+  if (error) throw error
+  return path
+}
+
+// Delete a profile avatar object. Single variant, single object.
+export async function deleteProfileAvatar(path) {
+  if (!isStoragePath(path)) return
+  const { error } = await supabase.storage.from(BUCKET_PROFILE).remove([path])
+  if (error) throw error
+}
+
+// ----------------------------------------------------------------------------
+// Pipeline factories — used by UploadImageModal so the modal stays
+// pipeline-agnostic. Each factory returns { upload, delete, getUrl } async
+// functions bound to the right bucket and path conventions for that domain.
+// ----------------------------------------------------------------------------
+
+export function cardImagePipeline({ campaignId, cardId, section, slug }) {
+  return {
+    upload: (blob) => uploadCardImage({ campaignId, cardId, section, slug, file: blob }),
+    delete: (path) => deleteCardImage(path),
+    getUrl: (path) => getImageUrl(path, 'full', BUCKET_CARD),
+  }
+}
+
+export function profileAvatarPipeline({ userId }) {
+  return {
+    upload: (blob) => uploadProfileAvatar({ userId, blob }),
+    delete: (path) => deleteProfileAvatar(path),
+    getUrl: (path) => getImageUrl(path, 'full', BUCKET_PROFILE),
+  }
 }
