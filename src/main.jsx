@@ -5,6 +5,7 @@ import './index.css'
 import App from './App.jsx'
 import { AuthProvider, useAuth } from './lib/AuthContext.jsx'
 import { CampaignProvider, useCampaign } from './lib/CampaignContext.jsx'
+import { ProfileProvider } from './lib/ProfileContext.jsx'
 import { useOnlineListener, useProbeLoop } from './lib/useSyncLifecycle.js'
 import Login from './components/Login.jsx'
 import CampaignPicker from './components/CampaignPicker.jsx'
@@ -66,7 +67,9 @@ createRoot(document.getElementById('root')).render(
   <StrictMode>
     <AuthProvider>
       <CampaignProvider>
-        <Root />
+        <ProfileProvider>
+          <Root />
+        </ProfileProvider>
       </CampaignProvider>
     </AuthProvider>
   </StrictMode>,

@@ -18,12 +18,13 @@
 // Display name is in the schema but not yet wired up in the UI.
 // ============================================================================
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { ArrowLeft, WarningCircle, CheckCircle } from '@phosphor-icons/react'
 import { useAuth } from '../lib/AuthContext.jsx'
+import { useProfile } from '../lib/ProfileContext.jsx'
 import { useImageUrl } from '../lib/useImageUrl.js'
 import { profileAvatarPipeline } from '../lib/imageStorage.js'
-import { getProfile, setAvatarPath, clearAvatar } from '../lib/profile.js'
+import { setAvatarPath, clearAvatar } from '../lib/profile.js'
 import UserAvatar from './UserAvatar.jsx'
 import PasswordInput from './PasswordInput.jsx'
 import { UploadImageProvider, useUploadImage } from './UploadImageProvider.jsx'
@@ -46,11 +47,8 @@ export default function Profile() {
 
 function ProfileContents() {
   const { user, updatePassword } = useAuth()
+  const { profile, error: profileError, updateProfile } = useProfile()
   const upload = useUploadImage()
-
-  // Profile row state: { id, avatar_path, display_name, ... } or null while loading.
-  const [profile, setProfile] = useState(null)
-  const [profileError, setProfileError] = useState(null)
 
   // Resolved signed URL for the avatar — null when no avatar set.
   const avatarUrl = useImageUrl(profile?.avatar_path, { bucket: 'profile-media' })
@@ -65,22 +63,10 @@ function ProfileContents() {
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(false)
 
-  // Load the profile on mount.
-  useEffect(() => {
-    let cancelled = false
-    getProfile()
-      .then((p) => { if (!cancelled) setProfile(p) })
-      .catch((err) => {
-        console.error('Failed to load profile', err)
-        if (!cancelled) setProfileError(err)
-      })
-    return () => { cancelled = true }
-  }, [])
-
   // Open the Upload Image modal in profile-avatar mode. Pre-loads the
-  // existing avatar (if any) for the replace flow. onSave + onRemove keep
-  // local profile state in sync; the modal handles storage I/O via the
-  // injected pipeline.
+  // existing avatar (if any) for the replace flow. onSave + onRemove patch
+  // shared profile state so UserAvatar (and any other consumer) sees the
+  // change immediately; the modal handles storage I/O via the injected pipeline.
   function openUploadModal() {
     if (!user) return
     upload.open({
@@ -90,7 +76,7 @@ function ProfileContents() {
       onSave: async (newPath) => {
         try {
           await setAvatarPath(newPath)
-          setProfile((p) => ({ ...(p || {}), avatar_path: newPath }))
+          updateProfile({ avatar_path: newPath })
         } catch (err) {
           console.error('Failed to save avatar path', err)
         }
@@ -100,7 +86,7 @@ function ProfileContents() {
         // pending-removal save path; here we just null the column.
         try {
           await setAvatarPath(null)
-          setProfile((p) => ({ ...(p || {}), avatar_path: null }))
+          updateProfile({ avatar_path: null })
         } catch (err) {
           console.error('Failed to clear avatar path', err)
         }
@@ -114,7 +100,7 @@ function ProfileContents() {
     if (!profile?.avatar_path) return
     try {
       await clearAvatar()
-      setProfile((p) => ({ ...(p || {}), avatar_path: null }))
+      updateProfile({ avatar_path: null })
     } catch (err) {
       console.error('Failed to remove avatar', err)
     }

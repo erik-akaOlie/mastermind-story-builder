@@ -2,10 +2,14 @@
 // UserAvatar
 // ----------------------------------------------------------------------------
 // Circular profile button + dropdown menu. Shows the user's profile image if
-// present, otherwise the first letter of their email inside a colored circle.
+// present (via public.profiles.avatar_path → profile-media bucket signed URL),
+// otherwise the first letter of their email inside a colored circle.
 // Click toggles a dropdown with account context and a Sign out action.
 //
-// Reusable across the canvas overlay (UserMenu) and the campaign picker.
+// Reusable across the canvas overlay (UserMenu), the campaign picker, and
+// the Profile page header. All instances read from the shared
+// ProfileContext so an avatar change on the Profile page propagates here
+// immediately without a reload.
 //
 // Keyboard / pointer affordances:
 //  - Click avatar to toggle
@@ -16,6 +20,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { SignOut, UserCircle } from '@phosphor-icons/react'
 import { useAuth } from '../lib/AuthContext.jsx'
+import { useProfile } from '../lib/ProfileContext.jsx'
+import { useImageUrl } from '../lib/useImageUrl.js'
 
 // Derive the placeholder initial from the user's email.
 function initialFor(user) {
@@ -26,6 +32,8 @@ function initialFor(user) {
 
 export default function UserAvatar({ menuAlign = 'right' }) {
   const { user, signOut } = useAuth()
+  const { profile } = useProfile()
+  const avatarUrl = useImageUrl(profile?.avatar_path, { bucket: 'profile-media' })
   const [open, setOpen] = useState(false)
   const wrapperRef = useRef(null)
 
@@ -54,7 +62,6 @@ export default function UserAvatar({ menuAlign = 'right' }) {
 
   if (!user) return null
 
-  const avatarUrl = user.user_metadata?.avatar_url ?? null
   const initial = initialFor(user)
 
   return (
