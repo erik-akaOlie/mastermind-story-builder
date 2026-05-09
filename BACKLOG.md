@@ -52,13 +52,19 @@ Likely candidates from the top of Foundational Progress:
 
 | Item | Band | Size |
 |---|---|---|
+| Card-type defaults in code (Option B) | Foundational Progress | M |
 | Manage Card Templates | Foundational Progress | M |
 | Markdown export | Foundational Progress | S–M |
 
+**Card-type defaults in code** is a sequencing prerequisite for
+Manage Card Templates — it moves built-in card-type defaults out of
+the database and into code, with a sparse override table for user
+customizations. Documented in
+[ADR-0008](./docs/decisions/0008-card-type-defaults-in-code.md).
 Manage Card Templates closes the localStorage-only custom-types
 divergence flagged in CLAUDE.md and unblocks Tailor Card Types (a
-V2 AI-prerequisite). Markdown export is a small companion that
-gets data ownership in place before AI features ship.
+V2 AI-prerequisite). Markdown export is a small companion that gets
+data ownership in place before AI features ship.
 
 Final pick lands at sprint start.
 
@@ -84,6 +90,38 @@ Final pick lands at sprint start.
 > within the band reflects current sequencing intent, but is reviewed
 > sprint-by-sprint.
 
+### Card-type defaults in code (Option B)
+- **Problem.** Built-in card types (Character, Location, Item, Faction,
+  Story) are stored as rows in the `node_types` table, cloned per user
+  from a code constant (`BUILT_IN_TYPES`) at signup. The two copies
+  drift: when the code constant changes — visual-language refinement,
+  icon swap, label rename — existing users' rows do not update. Each
+  default change becomes a manual data migration. Surfaced concretely
+  on 2026-05-09 during the Faction icon swap (committed `78df33d`),
+  which required an out-of-band SQL update for the user's existing row.
+  At multi-user scale this is a recurring tax on architectural
+  integrity and on the visual language's freedom to evolve.
+- **Success.** Built-in card-type defaults live in code only
+  (`src/lib/cardTypes.js`). A new `card_type_overrides` table stores
+  *only* the specific fields a user has customized. Render path merges
+  built-in + override at lookup time. Custom (user-created) card types
+  continue to live as rows in `node_types`, distinguished by an
+  `is_builtin` flag. Default changes propagate to all non-customized
+  fields instantly. Existing data migrated with zero override rows
+  generated for any field that already matches the current default.
+- **Notes.** Documented in
+  [ADR-0008](./docs/decisions/0008-card-type-defaults-in-code.md).
+  Implementation chooses **B1** (preserve `nodes.type_id` foreign key by
+  keeping minimal stub rows in `node_types` for built-ins) over **B2**
+  (`type_key` TEXT migration on `nodes`); B2 deferred indefinitely. The
+  `layout` field is included in the schema as forward-looking storage
+  for Tailor Card Types.
+- **Dependencies.** None — pure architectural foundation.
+- **Sequencing.** Must ship **before** Manage Card Templates. MCT's
+  customization flows depend on the override table existing and the
+  merge-on-read render path.
+- **Size:** M
+
 ### Manage Card Templates
 - **Problem.** Custom card types live in `useTypeStore` (localStorage)
   with no UI to list, duplicate, or delete them — only `CreateTypeModal`
@@ -99,8 +137,12 @@ Final pick lands at sprint start.
 - **Notes.** This is the *system-level* CRUD on card types. Per-type
   *section structure* (alignment, motivations, geography, etc.) is the
   separate Tailor Card Types item below — split this sprint so each can
-  ship independently.
-- **Dependencies.** None — purely additive.
+  ship independently. Built-in types remain protected: cannot be deleted;
+  edits to label / color / icon write to `card_type_overrides` per
+  ADR-0008 (so global default changes still propagate to fields a user
+  hasn't customized).
+- **Dependencies.** Card-type defaults in code (Option B) ships first —
+  the override table and merge-on-read path are MCT's substrate.
 - **Size:** M
 
 ### Tailor Card Types
