@@ -206,7 +206,7 @@ export default function CampaignNode({ data, selected }) {
   //   - active   (hovered / edge-highlighted / selected)        → full
   //   - dimmed   (something ELSE is active — pulled out of focus) → way back
   //   - resting  (nothing on the canvas is active right now)     → slightly dimmed
-  // Locked cards halve every level. The 0.25 "way back" is intentional — it
+  // Locked cards halve every level. The 0.15 "way back" is intentional — it
   // signals "this isn't what you're looking at" without losing the card.
   const baseOpacity = data.locked ? 0.5 : 1
   const isResting = !isActive && !anythingActive && !anySelected && !data.isEditing
@@ -216,7 +216,7 @@ export default function CampaignNode({ data, selected }) {
   } else if (isActive) {
     opacity = baseOpacity
   } else if (anythingActive || anySelected) {
-    opacity = baseOpacity * 0.25
+    opacity = baseOpacity * 0.15
   } else {
     opacity = baseOpacity * 0.85
   }

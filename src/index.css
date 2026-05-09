@@ -70,6 +70,15 @@ input[type="password"]::-ms-clear {
   cursor: grabbing !important;
 }
 
+/* While the spacebar is held, every element on the canvas should be inert
+   so the only thing the mouse can do is pan the camera. Disabling pointer
+   events on nodes and edges lets clicks fall through to the .react-flow__pane
+   underneath, which is configured for pan-on-drag during this state. */
+.is-panning .react-flow__node,
+.is-panning .react-flow__edge {
+  pointer-events: none !important;
+}
+
 /* Remove React Flow's selection/focus indicators from the node wrapper div.
    Safe to use here — these target the RF wrapper, not our content div,
    so there's no conflict with our inline box-shadow on the inner card. */

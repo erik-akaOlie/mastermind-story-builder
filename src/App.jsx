@@ -33,6 +33,7 @@ import { useUndoShortcuts } from './hooks/useUndoShortcuts'
 import { useCustomMarquee } from './hooks/useCustomMarquee'
 import MarqueeRect from './components/MarqueeRect'
 import { useUndoStore } from './store/useUndoStore'
+import { useCanvasUiStore } from './store/useCanvasUiStore'
 import { ACTION_TYPES } from './lib/undo/index.js'
 import { CanvasOpsProvider } from './lib/CanvasOpsContext.jsx'
 import { setPanToTargetImpl } from './lib/cameraOps.js'
@@ -63,6 +64,19 @@ export default function App() {
   })
 
   const isPanning = useSpacebarPan()
+
+  // When the user enters spacebar pan mode, every element on the canvas
+  // becomes inert (CSS pointer-events: none on .react-flow__node and
+  // .react-flow__edge while .is-panning is on the wrapper). The CSS rule
+  // suppresses any new hover events while panning, but a card that was
+  // already lit when the spacebar was pressed would otherwise stay glowing.
+  // Drop the lit state here so pan mode starts clean.
+  useEffect(() => {
+    if (isPanning) {
+      useCanvasUiStore.getState().clearHover()
+    }
+  }, [isPanning])
+
   const [contextMenu, setContextMenu] = useState(null)  // { nodeId, x, y }
   const [canvasMenu,  setCanvasMenu]  = useState(null)  // { x, y, flowPos }
   const rfInstanceRef = useRef(null)
@@ -131,7 +145,7 @@ export default function App() {
     onNodeMouseLeave,
     onEdgeMouseEnter,
     onEdgeMouseLeave,
-  } = useNodeHoverSelection({ setEdges })
+  } = useNodeHoverSelection()
 
   // Ctrl+Z / Ctrl+Shift+Z (Cmd on macOS, Ctrl+Y also accepted on Windows).
   // The hook captures nodes/edges/setters in a ref so the keydown listener
