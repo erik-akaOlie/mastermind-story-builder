@@ -24,7 +24,7 @@ Source of truth for any AI session working on this codebase. When this file conf
 | Drag-to-reorder | `@dnd-kit/core`, `@dnd-kit/sortable`, `@dnd-kit/utilities` | used in EditModal for bullets and images |
 | State management | Zustand v5 | two stores: `useTypeStore` (node types, localStorage-persisted) and `useCanvasUiStore` (transient hover/select flags). Campaign data lives in React state hydrated from Supabase. |
 | Auth + Database | **Supabase** (Postgres + Auth + RLS) | `@supabase/supabase-js` client; schema in `supabase/schema.sql` |
-| Image storage | **Supabase Storage** (`card-media` bucket) | private bucket; client requests signed URLs per render. See ADR-0005. |
+| Image storage | **Supabase Storage** (`card-media` + `profile-media` buckets) | both private; clients request signed URLs per render. card-media holds card avatars + inspiration images (two variants per upload). profile-media holds user profile avatars (single 256×256 variant). See ADR-0005 (card-media) and migration 003 (profile-media). |
 
 Firebase was previously installed but never wired; it has been uninstalled. Do not reintroduce.
 
@@ -49,8 +49,9 @@ Never use or reference the `service_role` key in client code.
 src/
   App.jsx                          canvas orchestration: composes hooks, renders ReactFlow + menus + modal
   index.css                        Tailwind base + RF overrides + .is-lifted z-index rule
-  main.jsx                         entry; wraps app in AuthProvider → CampaignProvider → Root gatekeeper;
-                                   hash-based route to <MigrateImages /> at #migrate
+  main.jsx                         entry; wraps app in AuthProvider → CampaignProvider → ProfileProvider →
+                                   Root gatekeeper; hash routes to <MigrateImages /> at #migrate and to
+                                   <Profile /> at #profile
 
   lib/                             infrastructure & data-access layer
     supabase.js                    single shared Supabase client (reads env vars)
@@ -58,6 +59,12 @@ src/
                                    useUndoStore.clearAllForUser(userId) before Supabase clears the session
                                    so a different next user can't inherit prior undo history.
     CampaignContext.jsx            active-campaign-id context; persists to localStorage
+    ProfileContext.jsx             single source of truth for the signed-in user's public.profiles row
+                                   (avatar_path, display_name, future user-level metadata). Loaded once
+                                   per user, exposed via useProfile() with { profile, loading, error,
+                                   updateProfile, refresh }. Mirrors AuthProvider / CampaignProvider.
+    profile.js                     CRUD for the public.profiles row: getProfile, setAvatarPath,
+                                   clearAvatar (nulls column + best-effort storage delete), setDisplayName.
     campaigns.js                   CRUD for campaigns + listNodeTypes
     nodes.js                       CRUD for nodes + node_sections; shape-marshaling. Includes
                                    buildDeleteCardSnapshot + restoreCardWithDependents for undo's delete-card
@@ -65,9 +72,16 @@ src/
     connections.js                 CRUD for connections (edges)
     textNodes.js                   CRUD for text annotations; includes restoreTextNode for undo's delete-text
                                    round-trip.
-    imageStorage.js                Storage helpers: transcode → two WebP variants → upload; signed-URL fetch
+    imageStorage.js                Storage helpers for both image domains. Card images: transcode → two
+                                   WebP variants → upload to card-media. Profile avatars: single 256×256
+                                   WebP variant → upload to profile-media. getImageUrl(path, variant,
+                                   bucket) is bucket-aware. Two pipeline factories — cardImagePipeline()
+                                   and profileAvatarPipeline() — bundle {upload, delete, getUrl} so
+                                   UploadImageModal stays domain-agnostic.
     useImageUrl.js                 hook resolving avatar/media values to renderable URLs (handles base64,
-                                   external https, and Storage paths)
+                                   external https, and Storage paths). Signature: useImageUrl(input,
+                                   {variant, bucket}); a string second arg is treated as {variant} for
+                                   backward compat. Default bucket is 'card-media'.
     errorReporting.js              persistWrite() retry wrapper; on final failure, fires toastSaveFailed
                                    (chip-toast, no longer Sonner)
     feedbackToasts.jsx             public push API for undo / redo / conflict / save-fail chip toasts.
@@ -172,6 +186,12 @@ supabase/
   migrations/
     001_node_types_per_user.sql    moves node_types from per-campaign to per-user ownership
     002_card_media_bucket.sql      creates the card-media Storage bucket + SECURITY DEFINER RLS helper
+    003_profiles_and_profile_media.sql
+                                   creates the public.profiles table (avatar_path + display_name +
+                                   timestamps), the on_auth_user_created trigger that auto-creates a
+                                   profile row per new sign-up, the profile-media Storage bucket, and
+                                   same-schema RLS policies pinning every object to its owner's
+                                   auth.uid() prefix
 
 public/
   avatars/                         static avatar images for the sample Strahd data
@@ -192,7 +212,8 @@ docs/
 
 | Table | Purpose |
 |---|---|
-| `auth.users` | Supabase-managed; referenced by `campaigns.owner_id` |
+| `auth.users` | Supabase-managed; referenced by `campaigns.owner_id` and `profiles.id` |
+| `profiles` | one row per user — canonical home for app-level user metadata (`avatar_path`, `display_name`, future fields). Auto-created by an `auth.users` INSERT trigger; backfilled in migration 003 |
 | `campaigns` | one row per campaign; owned by a user |
 | `node_types` | card types per campaign (built-in five + any custom); `is_system` flags the built-ins |
 | `nodes` | cards on the canvas (label, summary, avatar_url, position, type_id) |
@@ -315,7 +336,7 @@ const flowPos = rfInstance.project({ x: event.clientX, y: event.clientY })
 
 ### Auth flow
 
-- `src/main.jsx` wraps the app in `AuthProvider` → `CampaignProvider` → `Root`.
+- `src/main.jsx` wraps the app in `AuthProvider` → `CampaignProvider` → `ProfileProvider` → `Root`.
 - `Root` gatekeeper: loading → null; not signed in → `<Login />`; signed in with no active campaign → `<CampaignPicker />`; signed in with active campaign → `<App /> + <UserMenu />`.
 - Active campaign id is persisted in localStorage (`mastermind:activeCampaignId`) so refresh returns to the same campaign.
 
@@ -354,6 +375,17 @@ Card avatars and inspiration images live in the **`card-media` Supabase Storage 
 - `src/components/Lightbox.jsx` is the single shared lightbox (provider + hook); CampaignNode and EditModal both call `useLightbox().open(value)`.
 - **Bucket RLS uses a SECURITY DEFINER helper** (`public.user_owns_card_media_path`) instead of inlining the campaign-ownership lookup inside each policy. The inlined version silently fails — the cross-schema query from `storage.objects` to `public.campaigns` returns no rows even when the user owns the campaign, and every upload errors with "new row violates row-level security policy". The helper bypasses RLS on `public.campaigns` while still pinning the check to `auth.uid()`. See [supabase/migrations/002_card_media_bucket.sql](./supabase/migrations/002_card_media_bucket.sql) for the canonical version. **Apply this pattern to any future Storage bucket that needs cross-schema ownership checks.**
 - `#migrate` is a temporary hash route to the migration tool ([src/components/MigrateImages.jsx](src/components/MigrateImages.jsx)) for backfilling any base64 entries; once a campaign has zero base64 entries the page reports "Nothing to migrate" and the route can be removed.
+
+### Profile avatars (per migration 003)
+
+User profile avatars live in a **separate `profile-media` Supabase Storage bucket**, distinct from `card-media`. Why separate: profile photos are user-scoped (path: `{user_id}/avatar-{timestamp_ms}.webp`), not campaign-scoped, so the access rules differ. Single 256×256 WebP variant — profile avatars never render larger than ~64px in real UI.
+
+- `public.profiles` is the canonical home for app-level user metadata. One row per `auth.users` row, linked 1:1 by `id`. Currently holds `avatar_path` and `display_name` (the latter has no UI yet — schema-ready for future surfaces). Auto-created by an `on_auth_user_created` trigger so app code can assume every signed-in user has a profile row; backfilled in migration 003 for users that pre-date the trigger.
+- `src/lib/profile.js` is the data-access layer: `getProfile`, `setAvatarPath`, `clearAvatar`, `setDisplayName`. `clearAvatar` updates the DB column first, then best-effort deletes the storage object — the user-visible state is correct even if the storage delete fails (orphan-cleanup per ADR-0005 §7).
+- `src/lib/ProfileContext.jsx` is the shared store. One `getProfile()` per signed-in user, exposed via `useProfile() → { profile, loading, error, updateProfile, refresh }`. Profile.jsx and UserAvatar.jsx both subscribe so an avatar change on the Profile page propagates to the top-left chip immediately, without a reload.
+- **The `profile-media` bucket does NOT need a SECURITY DEFINER helper** because its RLS check is same-schema: `(storage.foldername(name))[1] = auth.uid()::text`. The cross-schema gymnastics that `card-media` needs only kick in when storage policies have to JOIN against tables in `public`. Profile-bucket policies live entirely against the path prefix and `auth.uid()` — pure storage, no cross-schema lookups.
+- The same `UploadImageModal` handles both card images and profile avatars. Domain switching is via the `pipeline` prop — built by `cardImagePipeline({...})` or `profileAvatarPipeline({...})` from `imageStorage.js`. The modal does not know what kind of image it is editing. New image domains in the future drop in by adding a third factory.
+- `ImageCropper` adds a `profile-avatar` mode alongside the existing `image-section` and `thumbnail` modes. Behavior is identical to thumbnail (image-corner handles, no frame reshape, cover-fit on entry, fixed-pixel save) but with a 256×256 square frame and 256×256 saved output.
 
 ### Z-index lift (CampaignNode + index.css)
 
@@ -475,6 +507,7 @@ Custom user-created types are scoped per campaign in Supabase but the UI flow fo
 - [x] **Undo / redo** — Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y reverses recent campaign actions. Per-tab, per-(user × campaign), capped at 75. Conflict-aware in both directions (refuses + toasts when state has drifted from another tab's Realtime updates). 14 action types covered; sessionStorage-backed for F5 protection. Word-style typing exemption: `Ctrl+Z` inside an input/textarea/contenteditable is left to the browser. See [ADR-0006](./docs/decisions/0006-undo-redo.md).
 - [x] **Bottom-left feedback strip** — `FeedbackChipBar` composes the existing `SyncIndicator` (light, ambient "Edited Nm ago") with a chip-toast slot (dark, transient action feedback). Toasts slide in from behind the chip via CSS @keyframes (no JS state ping-pong, no entry delay), masked by an `overflow:hidden` container so no toast pixels are visible left of the chip's left edge. Undo/redo toasts lead with a Phosphor curved-arrow icon (`ArrowUUpLeft` / `ArrowUUpRight`) followed by the entry's label. 2s visible, 300ms fadeout, hover pauses both phases (including freezing the visual opacity transition mid-fadeout). Replaces Sonner for these toasts; persist-fail uses the same chip family with a sticky id.
 - [x] **Sign-out cleanup** — `AuthContext.signOut` calls `useUndoStore.clearAllForUser(userId)` before Supabase clears the session, wiping the in-memory undo stack AND every `mastermind:undo:${userId}:*` sessionStorage entry across any campaigns the user touched in this tab.
+- [x] **Profile avatars** — Profile page lets the user upload, replace, and remove a profile photo (1:1 crop, 256×256 WebP, stored in the new `profile-media` Supabase Storage bucket). `public.profiles` row holds `avatar_path` + `display_name` (latter has no UI yet). Auto-create trigger on `auth.users` INSERT so every sign-up gets a profile row. Shared `ProfileContext` so the top-left UserAvatar chip updates immediately when the photo changes — same source of truth as the Profile page header. Cropper gains a `profile-avatar` mode (square frame, 256×256 output); UploadImageModal becomes pipeline-agnostic via `cardImagePipeline()` / `profileAvatarPipeline()` factories so the same UI shell handles both image domains. See migration 003.
 
 ## What Is NOT Built (roadmap)
 
