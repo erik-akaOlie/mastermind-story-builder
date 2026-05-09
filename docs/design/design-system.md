@@ -36,7 +36,7 @@ Color encodes node type. Each type has a distinct assigned color and a Phosphor 
 | Character | Purple (`#7C3AED`) | UserCircle |
 | Location | Green (`#16A34A`) | MapPin |
 | Item | Orange (`#EA580C`) | Backpack |
-| Faction | Blue (`#2563EB`) | ShieldPlus |
+| Faction | Blue (`#2563EB`) | ShieldCheckered |
 | Story | Warm gray (`#9CA3AF`) | BookOpen |
 | Custom (user-defined) | User-selected from 2D color picker | User-selected from icon library |
 

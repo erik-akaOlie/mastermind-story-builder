@@ -1,6 +1,6 @@
 import {
   UserCircle, User, Users, UsersThree, Crown, MaskHappy, Ghost, Skull, Star, Eye,
-  Handshake, Shield, ShieldPlus, ShieldCheck, Person, Detective,
+  Handshake, Shield, ShieldCheckered, ShieldPlus, ShieldCheck, Person, Detective,
   MapPin, MapTrifold, CastleTurret, House, Mountains, Tree, Door, Compass, Globe, Island,
   Tent, Lighthouse, Church, Anchor, Warehouse, Boat,
   Backpack, Key, Diamond, Scroll, Flask, Fire, Lightning, Snowflake,
@@ -24,7 +24,8 @@ export const ICON_REGISTRY = [
   { name: 'Eye',         component: Eye,         keywords: ['spy', 'watcher', 'seer', 'observer', 'secret', 'vision', 'oracle', 'beholder'] },
   { name: 'Handshake',   component: Handshake,   keywords: ['ally', 'treaty', 'deal', 'merchant', 'diplomat', 'trade', 'agreement'] },
   { name: 'Shield',      component: Shield,      keywords: ['warrior', 'fighter', 'guard', 'paladin', 'protector', 'defender', 'knight'] },
-  { name: 'ShieldPlus',  component: ShieldPlus,  keywords: ['faction', 'order', 'knight', 'crest', 'heraldry', 'guild', 'emblem'] },
+  { name: 'ShieldCheckered', component: ShieldCheckered, keywords: ['faction', 'order', 'knight', 'crest', 'heraldry', 'guild', 'emblem'] },
+  { name: 'ShieldPlus',  component: ShieldPlus,  keywords: ['order', 'knight', 'crest', 'heraldry', 'guild', 'emblem', 'medic', 'aid'] },
   { name: 'ShieldCheck', component: ShieldCheck, keywords: ['paladin', 'holy', 'guardian', 'sworn', 'justice', 'lawful', 'divine'] },
   { name: 'Person',      component: Person,      keywords: ['character', 'humanoid', 'commoner', 'mortal', 'figure', 'individual'] },
   { name: 'Detective',   component: Detective,   keywords: ['detective', 'investigator', 'spy', 'mystery', 'sleuth', 'inquisitor', 'rogue'] },

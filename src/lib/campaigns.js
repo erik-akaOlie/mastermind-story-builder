@@ -16,7 +16,7 @@ export const BUILT_IN_TYPES = [
   { key: 'character', label: 'Character', color: '#7C3AED', icon_name: 'UserCircle', sort_order: 0 },
   { key: 'location',  label: 'Location',  color: '#16A34A', icon_name: 'MapPin',     sort_order: 1 },
   { key: 'item',      label: 'Item',      color: '#EA580C', icon_name: 'Backpack',   sort_order: 2 },
-  { key: 'faction',   label: 'Faction',   color: '#2563EB', icon_name: 'ShieldPlus', sort_order: 3 },
+  { key: 'faction',   label: 'Faction',   color: '#2563EB', icon_name: 'ShieldCheckered', sort_order: 3 },
   { key: 'story',     label: 'Story',     color: '#9CA3AF', icon_name: 'BookOpen',   sort_order: 4 },
 ]
 
