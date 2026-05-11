@@ -9,6 +9,7 @@
 
 import { useState } from 'react'
 import { useNodeTypes } from '../store/useTypeStore'
+import { track } from '../lib/analytics.js'
 
 // Color helpers — duplicated from EditModal so this component is independent.
 // If a fourth consumer appears, lift these into a shared `colorUtils` file.
@@ -71,7 +72,11 @@ export default function TypePicker({ type, setType, hdrText, onCreateNewType }) 
                   style={{ height: '2.5rem', backgroundColor: bg, color: fg }}
                   onMouseEnter={() => setHoveredType(key)}
                   onMouseLeave={() => setHoveredType(null)}
-                  onClick={() => { setType(key); setShowPicker(false) }}
+                  onClick={() => {
+                    if (key !== type) track('card_type_changed', { from: type, to: key })
+                    setType(key)
+                    setShowPicker(false)
+                  }}
                 >
                   <Icon size={16} weight="fill" color={isActive ? fg : cfg.color} />
                   <span className="text-sm font-medium">{cfg.label}</span>

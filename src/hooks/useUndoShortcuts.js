@@ -18,6 +18,7 @@
 
 import { useEffect, useRef } from 'react'
 import { useUndoStore } from '../store/useUndoStore.js'
+import { track } from '../lib/analytics.js'
 
 export function useUndoShortcuts({ nodes, edges, setNodes, setEdges }) {
   const stateRef = useRef({ nodes, edges, setNodes, setEdges })
@@ -39,9 +40,11 @@ export function useUndoShortcuts({ nodes, edges, setNodes, setEdges }) {
       const key = e.key?.toLowerCase()
       if (key === 'z' && !e.shiftKey) {
         e.preventDefault()
+        track('undo_invoked')
         useUndoStore.getState().undo(stateRef.current)
       } else if ((key === 'z' && e.shiftKey) || key === 'y') {
         e.preventDefault()
+        track('redo_invoked')
         useUndoStore.getState().redo(stateRef.current)
       }
     }

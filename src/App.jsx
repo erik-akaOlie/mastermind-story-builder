@@ -37,6 +37,16 @@ import { useCanvasUiStore } from './store/useCanvasUiStore'
 import { ACTION_TYPES } from './lib/undo/index.js'
 import { CanvasOpsProvider } from './lib/CanvasOpsContext.jsx'
 import { setPanToTargetImpl } from './lib/cameraOps.js'
+import { track } from './lib/analytics.js'
+
+// Analytics thresholds (per ADR-0009). pan_burst fires when the user
+// completes >= THRESHOLD discrete pan gestures in WINDOW_MS, then resets.
+// card_repositioned_quickly fires if a freshly-created card is dragged
+// within RECENT_CREATE_WINDOW_MS of being placed. These defaults are
+// starting points; tune from real tester data after the first cycle.
+const PAN_BURST_WINDOW_MS = 5000
+const PAN_BURST_THRESHOLD = 5
+const RECENT_CREATE_WINDOW_MS = 10000
 
 const nodeTypes = {
   campaignNode: CampaignNode,
@@ -152,6 +162,17 @@ export default function App() {
   // always sees fresh values without re-attaching every render.
   useUndoShortcuts({ nodes, edges, setNodes, setEdges })
 
+  // ── Analytics scratch state (per ADR-0009) ───────────────────────────────
+  // Map<cardId, createdAtMs> for card_repositioned_quickly. Entries are
+  // self-cleaning after RECENT_CREATE_WINDOW_MS via setTimeout in addCardNode.
+  const recentlyCreatedRef = useRef(new Map())
+  // Last reported viewport for distinguishing pure pans from zoom changes
+  // inside onMoveEnd. ReactFlow's onMoveEnd fires once per discrete gesture,
+  // which is the granularity we want for both zoom_changed and pan_burst.
+  const lastViewportRef = useRef(null)
+  // Sliding window of pan-only onMoveEnd timestamps for pan_burst detection.
+  const panTimestampsRef = useRef([])
+
   // ── Persist node position on drag end ────────────────────────────────────
   // Per-node start positions captured at drag start drive (a) the 4px-jitter
   // filter on the undo entry and (b) the entry's `before` snapshot. Stored
@@ -197,6 +218,20 @@ export default function App() {
       const movedFar =
         start &&
         Math.hypot(n.position.x - start.x, n.position.y - start.y) >= 4
+
+      // card_repositioned_quickly: friction signal for "I dropped it wrong" —
+      // a card created within the recent window is moved before its timer
+      // expires. Fires once per such drag; the entry is cleared so a later
+      // re-drag of the same card doesn't keep counting as "quickly."
+      if (movedFar && n.type === 'campaignNode') {
+        const createdAt = recentlyCreatedRef.current.get(n.id)
+        if (createdAt) {
+          track('card_repositioned_quickly', {
+            msSinceCreate: Date.now() - createdAt,
+          })
+          recentlyCreatedRef.current.delete(n.id)
+        }
+      }
 
       if (n.type === 'campaignNode') {
         const persist = dbUpdateNode(n.id, {
@@ -293,6 +328,7 @@ export default function App() {
     event.preventDefault()
     setCanvasMenu(null)
     setContextMenu({ nodeId: node.id, x: event.clientX, y: event.clientY })
+    track('right_click_menu_opened', { surface: 'node', nodeType: node.type })
   }, [])
 
   const closeContextMenu = useCallback(() => setContextMenu(null), [])
@@ -306,6 +342,7 @@ export default function App() {
     })
     setContextMenu(null)
     setCanvasMenu({ x: event.clientX, y: event.clientY, flowPos })
+    track('right_click_menu_opened', { surface: 'canvas' })
   }, [])
 
   // ── Add card (DB-backed) ─────────────────────────────────────────────────
@@ -326,6 +363,15 @@ export default function App() {
         positionY: flowPos.y,
       })
       setNodes((nds) => [...nds, newNode])
+
+      // Analytics: card creation, plus a window for card_repositioned_quickly.
+      // The Map entry self-cleans after RECENT_CREATE_WINDOW_MS so a card
+      // repositioned later isn't counted as "quickly." Per ADR-0009.
+      track('card_created', { typeKey })
+      recentlyCreatedRef.current.set(newNode.id, Date.now())
+      setTimeout(() => {
+        recentlyCreatedRef.current.delete(newNode.id)
+      }, RECENT_CREATE_WINDOW_MS)
 
       // Record the create AFTER the persist succeeds, so canApplyInverse's
       // existence check can rely on the card being in DB. dbRow captures
@@ -373,6 +419,8 @@ export default function App() {
       newTextNode.dragHandle = '.text-node-drag-handle'
       newTextNode.data = { ...newTextNode.data, editing: true }
       setNodes((nds) => [...nds, newTextNode])
+
+      track('text_node_created')
 
       // Record AFTER the persist succeeds so canApplyInverse's existence
       // check can rely on the row being in DB. dbRow captures the fields
@@ -441,6 +489,7 @@ export default function App() {
       n.id === nodeId ? { ...n, data: { ...n.data, isEditing: true } } : n
     ))
     setEditingNode(state)
+    track('card_edit_opened', { source: 'context_menu', typeKey: state.node.data?.type })
   }, [buildEditingState, setNodes])
 
   const onNodeDoubleClick = useCallback((_, node) => {
@@ -456,6 +505,7 @@ export default function App() {
       n.id === node.id ? { ...n, data: { ...n.data, isEditing: true } } : n
     ))
     setEditingNode(state)
+    track('card_edit_opened', { source: 'double_click', typeKey: state.node.data?.type })
   }, [buildEditingState, setNodes])
 
   // ── Update node (DB-backed) ─────────────────────────────────────────────
@@ -663,12 +713,48 @@ export default function App() {
       })
     }
 
+    track('card_deleted', {
+      typeKey: target.data?.type,
+      connectionCount: snapshot?.dbConnectionRows?.length ?? 0,
+    })
+
     // Persist; rollback the undo entry if the write fails.
     dbDeleteNode(nodeId).catch((err) => {
       console.error(err)
       if (snapshot) useUndoStore.getState().popLastAction()
     })
   }, [nodes, edges, activeCampaignId, setNodes, setEdges])
+
+  // ── Viewport analytics (per ADR-0009) ────────────────────────────────────
+  // onMoveEnd fires once per discrete pan/zoom gesture, which is the right
+  // granularity for both events. Pure pans feed the burst window; zoom
+  // changes fire their own event. Zoom-with-pan counts as zoom only — we
+  // don't want pan_burst inflated by user re-centering after a zoom.
+  const onMoveEnd = useCallback((_event, viewport) => {
+    const prev = lastViewportRef.current
+    lastViewportRef.current = viewport
+    if (!prev) return
+
+    const zoomChanged = viewport.zoom !== prev.zoom
+    const panned = viewport.x !== prev.x || viewport.y !== prev.y
+
+    if (zoomChanged) {
+      track('zoom_changed', { from: prev.zoom, to: viewport.zoom })
+      return
+    }
+
+    if (!panned) return
+
+    const now = Date.now()
+    const arr = panTimestampsRef.current
+    arr.push(now)
+    while (arr.length > 0 && arr[0] < now - PAN_BURST_WINDOW_MS) arr.shift()
+    if (arr.length >= PAN_BURST_THRESHOLD) {
+      track('pan_burst', { panCount: arr.length, windowMs: PAN_BURST_WINDOW_MS })
+      // Reset so we don't fire repeatedly inside one extended hunt.
+      arr.length = 0
+    }
+  }, [])
 
   // ── Render ──────────────────────────────────────────────────────────────
   if (loading) {
@@ -715,6 +801,7 @@ export default function App() {
         onNodeDoubleClick={onNodeDoubleClick}
         onPaneClick={() => { closeContextMenu(); setCanvasMenu(null) }}
         onPaneContextMenu={onPaneContextMenu}
+        onMoveEnd={onMoveEnd}
         onInit={(rf) => { rfInstanceRef.current = rf }}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
@@ -776,6 +863,7 @@ export default function App() {
           originRect={editingNode.originRect}
           onUpdate={onUpdateNode}
           onClose={() => {
+            track('card_edit_closed', { typeKey: editingNode.node.data?.type })
             setNodes(nds => nds.map(n =>
               n.id === editingNode.node.id
                 ? { ...n, data: { ...n.data, isEditing: false } }

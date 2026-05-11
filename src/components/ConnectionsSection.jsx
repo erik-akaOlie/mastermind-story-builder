@@ -14,6 +14,7 @@ import { useState } from 'react'
 import { useNodeTypes } from '../store/useTypeStore'
 import { sortKey } from '../utils/labelUtils'
 import SectionLabel from './SectionLabel'
+import { track } from '../lib/analytics.js'
 
 // Same readability formula used elsewhere — chosen background determines
 // whether the chip's label/× text is dark or white. Inlined here to avoid
@@ -43,10 +44,34 @@ export default function ConnectionsSection({ localConns, setLocalConns, allOther
       ...prev,
       { id: crypto.randomUUID(), nodeId: n.id, label: n.data.label, type: n.data.type, isNew: true },
     ])
+    // Picker close path on selection is "completion," not abandonment.
+    track('connection_completed', { targetType: n.data?.type })
     setShowPicker(false)
   }
-  const removeConnection = (nodeId) =>
+  const removeConnection = (nodeId) => {
+    const removed = localConns.find((c) => c.nodeId === nodeId)
     setLocalConns((prev) => prev.filter((c) => c.nodeId !== nodeId))
+    // Intent-level event: fires when the user clicks × on a chip. The actual
+    // DB delete happens later via EditModal flush — fine, we want intent.
+    track('connection_deleted', { targetType: removed?.type })
+  }
+
+  // Wraps setShowPicker so we can attribute opens vs. abandonment closes.
+  // addConnection closes via setShowPicker(false) directly and does NOT
+  // go through this — that path is completion, not abandonment.
+  const togglePicker = () => {
+    if (showPicker) {
+      track('connection_abandoned')
+      setShowPicker(false)
+    } else {
+      track('connection_started')
+      setShowPicker(true)
+    }
+  }
+  const dismissPicker = () => {
+    track('connection_abandoned')
+    setShowPicker(false)
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -85,13 +110,13 @@ export default function ConnectionsSection({ localConns, setLocalConns, allOther
         <div className="relative">
           <button
             className="flex items-center gap-1 text-base font-light text-[#6b7280] hover:text-gray-600 transition-colors"
-            onClick={() => setShowPicker((v) => !v)}
+            onClick={togglePicker}
           >
             <span className="text-xl leading-none">+</span>Add connection
           </button>
           {showPicker && (
             <>
-              <div className="fixed inset-0 z-[10000]" onClick={() => setShowPicker(false)} />
+              <div className="fixed inset-0 z-[10000]" onClick={dismissPicker} />
               <div className="absolute bottom-full left-0 mb-1 bg-white border border-gray-200 rounded-lg shadow-xl z-[10001] w-72 max-h-52 overflow-y-auto">
                 {availableNodes.map((n) => {
                   const cfg = NODE_TYPES[n.data?.type] || { color: '#6B7280', label: n.data?.type }
