@@ -14,6 +14,7 @@ import LockOverlay from './components/LockOverlay.jsx'
 import FeedbackChipBar from './components/FeedbackChipBar.jsx'
 import MigrateImages from './components/MigrateImages.jsx'
 import Profile from './components/Profile.jsx'
+import AnalyticsBootstrap from './components/AnalyticsBootstrap.jsx'
 
 // Tiny hash-based router. We don't need React Router for one ad-hoc page;
 // the `#migrate` route is temporary and gets removed once Phase 5 lands.
@@ -68,6 +69,7 @@ createRoot(document.getElementById('root')).render(
     <AuthProvider>
       <CampaignProvider>
         <ProfileProvider>
+          <AnalyticsBootstrap />
           <Root />
         </ProfileProvider>
       </CampaignProvider>

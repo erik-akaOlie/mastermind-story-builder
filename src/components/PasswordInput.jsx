@@ -29,7 +29,11 @@ export default function PasswordInput({
         autoComplete={autoComplete}
         required={required}
         minLength={minLength}
-        className="w-full pl-3 pr-10 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-sky-600 focus:border-transparent"
+        // .ph-mask is read by the PostHog session-replay maskInputFn/maskTextFn
+        // (see src/lib/analytics.js) so the value is masked regardless of
+        // whether the eye toggle has flipped type from password → text. PostHog
+        // already masks type=password by default; this covers the visible state.
+        className="ph-mask w-full pl-3 pr-10 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-sky-600 focus:border-transparent"
         {...rest}
       />
       <button

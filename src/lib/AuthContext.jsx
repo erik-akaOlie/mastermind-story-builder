@@ -11,6 +11,7 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { supabase } from './supabase.js'
 import { useUndoStore } from '../store/useUndoStore.js'
+import { resetAnalytics } from './analytics.js'
 
 const AuthContext = createContext(null)
 
@@ -50,6 +51,9 @@ export function AuthProvider({ children }) {
       // next on this tab can't inherit the prior user's history. Capture
       // the userId here while it's still available.
       useUndoStore.getState().clearAllForUser(session?.user?.id)
+      // Per ADR-0009: close the PostHog session and forget the identified
+      // user. No-op when analytics is dormant (non-tester).
+      resetAnalytics()
       return supabase.auth.signOut()
     },
     // Verify current password (Supabase's updateUser doesn't require it),
