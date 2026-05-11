@@ -154,9 +154,13 @@ slots in opportunistically alongside any of the above.
   named events (~10–15) covers the friction signals Erik wants to
   observe — explicitly *not* a vanity-metrics dashboard. Consent is
   human-to-human during the invite conversation, not via an in-app
-  modal. Card-content text is masked in replays so spoilers stay
-  private. Erik can pull a tester's replay and the matching named-event
-  timeline side-by-side after a session.
+  modal. Everything the tester does is recorded, including the actual
+  content they type into cards — the *how DMs write* signal is part of
+  the research, not noise to hide. The only exception is passwords,
+  which are never recorded (login screen renders pre-init, and any
+  future password field is auto-blurred via the standard input type).
+  Erik can pull a tester's replay and the matching named-event timeline
+  side-by-side after a session.
 - **Notes.** Documented in
   [ADR-0009](./docs/decisions/0009-behavioral-analytics-session-replay.md).
   Free tier (5K recordings + 1M events per month) is sufficient for a

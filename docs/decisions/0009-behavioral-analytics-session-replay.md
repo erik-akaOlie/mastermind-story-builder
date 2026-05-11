@@ -113,25 +113,36 @@ abandoned attempts) are inherently behavioral and qualitative;
 they're easy to spot in a 90-second clip and nearly impossible to
 detect with event counts alone.
 
-**Content masking.** PostHog supports CSS-selector-based masking that
-replaces matched element contents with a blocked-out placeholder in
-replays. Apply masking to:
+**What's recorded.** Everything the tester does on the canvas is
+captured, including the actual content they type into cards (titles,
+summaries, bullet lists, text annotations) and the text they put into
+freestanding text annotations. This is intentional: the research
+questions are about *how DMs build campaigns*, which means the words
+they use to describe characters, the way their lore evolves, and the
+iteration patterns on their writing are themselves signal. Hiding
+that content would amount to watching DMs work with a black bar over
+their writing — defeats the point.
 
-- Card title (`.card-title`)
-- Card summary (`.card-summary`)
-- All bullet lists (`.card-bullets li`)
-- Text annotation contents (`.text-node-content`)
-- Card type label is *not* masked — type is structural, not
-  spoilery; we need to see *which type* of card a tester is
-  interacting with to read their behavior.
-- Avatar images are not masked — they're often public reference
-  imagery, not original creative content. Revisit if testers report
-  this as a concern.
+**The one exception: passwords.** No password — current or future
+new password — is ever recorded. Three layers of protection apply:
 
-Implementation: a `data-ph-mask` attribute or a `ph-no-capture` class
-applied at the component level. The masking shows replay viewers that
-"text was here, the user was interacting with it" without exposing
-the actual text content.
+- The sign-in screen is rendered *before* the profile loads, which is
+  *before* PostHog initializes. The login form is therefore never in
+  any recording, full stop.
+- For any password field that may exist inside the app in the future
+  (e.g., a "change password" form), PostHog's default behavior auto-
+  masks any input of type `password`. As long as those fields use the
+  standard HTML password input type — which they must, in order for
+  browsers to show black dots and for password managers to work — the
+  values are blurred in replays automatically. No per-element work
+  required.
+- On sign-out, PostHog is reset (the running session is closed and
+  the identified user is forgotten). If a different user signs in on
+  the same browser, their sign-in screen is also not recorded, for
+  the same reason as above.
+
+Avatar images are recorded; they're often public reference imagery,
+not original creative content.
 
 ### Named events
 
@@ -171,9 +182,9 @@ invite explicitly says:
 - You're being invited to an early research program.
 - Your sessions will be recorded so I can review them after our
   conversations.
-- The content of your cards (titles, lore, notes) is masked in the
-  recordings. Structural interaction is recorded; creative content
-  is not.
+- The recordings capture everything you do in the app, including the
+  actual content you type into cards and text annotations. The single
+  exception is your password, which is never recorded.
 - You can opt out at any time and your data will be deleted from
   PostHog.
 
@@ -207,9 +218,9 @@ decision and their own consent model.
 - **Research signal aligned with research questions.** Recording the
   ~10 testers who matter, not the noise of any-and-all sign-ups.
   Replays of cognitive friction are directly observable.
-- **Trust preserved.** Testers know they're being recorded and why.
-  Creative content is masked. No silent surveillance, no surprise
-  about scope.
+- **Trust preserved.** Testers know they're being recorded and why,
+  including that the content they type is recorded along with the
+  interaction. No silent surveillance, no surprise about scope.
 - **Operationally cheap.** Free tier handles the load. No backend
   infrastructure; PostHog SDK is a single client-side dependency.
   Adding/removing testers is a one-row Supabase update.
@@ -232,11 +243,6 @@ decision and their own consent model.
 - **PostHog vendor dependency.** If PostHog changes pricing,
   policies, or shuts down, we'd need to migrate or replace. Risk
   is bounded — the event list is small and the SDK is replaceable.
-- **Content masking is selector-based.** If the DOM structure
-  changes in a future refactor without updating the masking
-  selectors, content could leak into replays. Mitigation: a
-  test that walks the rendered DOM and asserts the masking
-  selectors still match. Captured as a follow-up.
 - **One-week-of-recording quota.** 5K recordings/month is plenty for
   10 testers at typical session frequency, but if recording length
   per session is unusually long (a tester doing a 3-hour worldbuilding
