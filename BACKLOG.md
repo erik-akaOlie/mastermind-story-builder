@@ -44,29 +44,49 @@ Version-level scope (V1, V2+, V3+, out) lives in [`docs/product/roadmap.md`](./d
 
 ## Current sprint candidate — next
 
-The previous sprint shipped **Image upload + cropper** (see
-[CHANGELOG.md](./CHANGELOG.md), Sprint 3). The next sprint hasn't
-been planned yet.
+The previous sprint shipped **Profile avatars + canvas UX polish**
+(see [CHANGELOG.md](./CHANGELOG.md)). The next sprint is **planned
+and locked** (2026-05-11 conversation):
 
-Likely candidates from the top of Foundational Progress:
+**Sprint shape: "Open the doors to testers."** Two pieces of new work
+sequenced into three deliverables, with two weeks of runway before
+the first tester invites go out.
 
-| Item | Band | Size |
-|---|---|---|
-| Card-type defaults in code (Option B) | Foundational Progress | M |
-| Manage Card Templates | Foundational Progress | M |
-| Markdown export | Foundational Progress | S–M |
+| # | Deliverable | Band | Size |
+|---|---|---|---|
+| 1 | Behavioral analytics + session replay (PostHog, invited testers only) | Foundational Progress | S–M (3–4 days) |
+| 2 | Zoom-to-node-view v1 (morph + interaction, no perf optimization) | Foundational Progress | M–L (7–10 days) |
+| — | **Invites go out** | | |
+| 3 | Zoom-to-node-view v2 (viewport + connection-line culling for 500-card scale) | Foundational Progress | M (3–5 days) |
 
-**Card-type defaults in code** is a sequencing prerequisite for
-Manage Card Templates — it moves built-in card-type defaults out of
-the database and into code, with a sparse override table for user
-customizations. Documented in
-[ADR-0008](./docs/decisions/0008-card-type-defaults-in-code.md).
-Manage Card Templates closes the localStorage-only custom-types
-divergence flagged in CLAUDE.md and unblocks Tailor Card Types (a
-V2 AI-prerequisite). Markdown export is a small companion that gets
-data ownership in place before AI features ship.
+**Why this shape.** Erik wants to invite ~5–10 DMs to start using the
+product within the next two weeks. Two pieces of work are
+invite-blocking. First, analytics needs to be live before invites or
+the early-tester signal is lost — session replay + a small set of
+named events tied to research questions about cognitive friction (graph
+mental model adoption, "feels alive" moments, where overload sets in).
+Second, the current zoom-out limit is critical daily friction for Erik
+(blocking demos, structural campaign assessment, and spatial placement
+decisions); testers experiencing the wounded zoom on day one would burn
+research budget on a known problem.
 
-Final pick lands at sprint start.
+**Sequencing decision (Option B from the 2026-05-11 conversation).**
+Analytics ships first as the "if anything else slips, this is still
+done" insurance. Zoom v1 follows. Then invites go out with both pieces
+live. Zoom v2 (the 500-card performance optimization) ships during the
+early observation period — tester campaigns will start small and won't
+hit the scaling wall for weeks.
+
+**Three previously-queued items defer behind this sprint:** Card-type
+defaults in code, Manage Card Templates, Markdown export. The Quick
+Win *Fix stale EditModal avatar-upload test* (committed `0274693`)
+slots in opportunistically alongside any of the above.
+
+**Documented in:**
+[ADR-0009](./docs/decisions/0009-behavioral-analytics-session-replay.md)
+(analytics) and
+[ADR-0010](./docs/decisions/0010-zoom-progressive-disclosure.md)
+(zoom-to-node-view).
 
 ---
 
@@ -96,8 +116,9 @@ Final pick lands at sprint start.
   Supabase; mirror that pattern.
 - **Dependencies.** None.
 - **Size:** S
-- **Sequencing.** Erik flagged this for the next sprint
-  (2026-05-09 conversation).
+- **Sequencing.** Slot opportunistically alongside the analytics + zoom
+  sprint (2026-05-11 conversation). Was originally next-sprint, has been
+  reshuffled but is small enough to drop in any time.
 
 ### Dynamic card width
 - **Problem.** Long words and long titles in card headers either overflow
@@ -116,6 +137,132 @@ Final pick lands at sprint start.
 > All items in this section target **V1** unless otherwise noted. Order
 > within the band reflects current sequencing intent, but is reviewed
 > sprint-by-sprint.
+
+### Behavioral analytics + session replay (PostHog)
+- **Problem.** Erik plans to invite ~5–10 DMs to start using the product
+  in the next two weeks. The biggest product risk right now is not "is
+  feature X used" — it's "do real DMs build the right cognitive
+  relationship with the graph mental model?" Without instrumentation,
+  the early-tester period is wasted: friction signals (cognitive
+  overload, abandoned connection attempts, rage clicks, zoom thrash,
+  spatial-organization struggles, high undo frequency) go unobserved.
+  Live observational sessions on Zoom/Meet add color but can't run
+  while testers explore solo, where most "stub your toe" moments happen.
+- **Success.** PostHog Cloud is integrated. Session replay is enabled
+  only for users marked `is_test_user = true` on `public.profiles`
+  (Erik can flag himself in for stress-test sessions). A small set of
+  named events (~10–15) covers the friction signals Erik wants to
+  observe — explicitly *not* a vanity-metrics dashboard. Consent is
+  human-to-human during the invite conversation, not via an in-app
+  modal. Card-content text is masked in replays so spoilers stay
+  private. Erik can pull a tester's replay and the matching named-event
+  timeline side-by-side after a session.
+- **Notes.** Documented in
+  [ADR-0009](./docs/decisions/0009-behavioral-analytics-session-replay.md).
+  Free tier (5K recordings + 1M events per month) is sufficient for a
+  friend-sized pool by a wide margin. Long-term, this is the *research*
+  backbone for the onboarding work that comes after the first
+  observation cycle.
+- **Dependencies.** None — strictly additive. New `is_test_user` column
+  on `public.profiles` ships in the same migration.
+- **Sequencing.** Ships **first** in the current sprint. Must be live
+  before (or alongside) the first tester invites.
+- **Size:** S–M (3–4 days)
+
+### Zoom-to-node-view v1 — morph + interaction
+- **Problem.** The current zoom-out limit caps below the threshold
+  needed to see a meaningful slice of any real campaign at once. Erik
+  cannot comfortably demo MasterMind, assess structural campaign
+  progress, or reason about *where* to place a new node — all of which
+  require seeing the campaign as a whole. As campaigns scale toward
+  hundreds of cards, the absence of an altitude view turns from
+  annoyance into a structural blocker on the product's core promise
+  ("the campaign starts feeling like a living world").
+- **Success.** Below a defined zoom threshold, each card morphs into a
+  circular node — type-colored border, the card's thumbnail centered,
+  type icon as the no-thumbnail fallback. Connection lines stay
+  rendered between circles. Text annotations stay zoom-stable (regional
+  labels). Hovering or selecting a circle expands it back into a
+  fully-readable card at *normal* card size — decoupled from canvas
+  zoom — so the user can read content without zooming all the way in.
+  Multi-select uses the existing card multi-select treatment
+  (opacity/scale/shadow), not expansion. The morph is triggered by
+  crossing the threshold (zoom direction) or by hover/select
+  (per-node); animations are interruptible and reversible from current
+  visual state. Connection lines fade out during the morph and fade
+  back in at their new anchor positions the instant the new shape
+  locks. Full canvas interaction (drag, right-click, click-to-edit)
+  preserved at node zoom.
+- **Notes.** Documented in
+  [ADR-0010](./docs/decisions/0010-zoom-progressive-disclosure.md).
+  V1 includes three deliberate fidelity reductions to ship faster:
+  connection lines fade rather than anchor-interpolate during morph;
+  hover-expand replaces tooltip entirely (one component cut); selection
+  visuals on circles inherit card states rather than getting bespoke
+  styling. Perf optimization for 500 cards is **deferred to v2** — V1
+  is unblocking Erik's daily friction and the demo experience; the
+  scaling wall isn't relevant until tester campaigns grow.
+- **Dependencies.** Analytics ships first (insurance against zoom-v1
+  slipping). No code dependency.
+- **Sequencing.** Ships **second** in the current sprint. Must be live
+  before (or simultaneously with) the first tester invites.
+- **Size:** M–L (7–10 days)
+
+### Zoom-to-node-view v2 — performance for 500+ cards
+- **Problem.** Zoom v1 ships without performance optimization. As
+  testers add cards over the first few weeks, the canvas will start to
+  feel sluggish before any individual tester campaign hits ~200 cards
+  — drag responsiveness degrades, hover latency increases, morph
+  animations stutter when many circles are visible at once.
+- **Success.** Comfortably support 500 cards with explicit fidelity
+  targets: cold page load under 3s, drag stays at 60fps, hover-state
+  transitions feel instant, morph animations remain visually smooth at
+  any zoom. Headroom toward 1000 cards. Implementation: viewport
+  culling (only render circles inside the visible canvas area),
+  connection-line culling (hide lines below a pixel-length threshold
+  or fully outside the viewport), and render-time memoization of
+  per-node hover/select selectors.
+- **Notes.** Same ADR as v1
+  ([ADR-0010](./docs/decisions/0010-zoom-progressive-disclosure.md)).
+  V2 ships *during* the first observation cycle — not invite-blocking,
+  because new tester campaigns start small.
+- **Dependencies.** Zoom v1 ships first.
+- **Sequencing.** Ships **third** in the current sprint, after invites
+  go out.
+- **Size:** M (3–5 days)
+
+### Onboarding + first-session scaffolding
+- **Problem.** MasterMind asks users to think with a graph mental model
+  — nodes, edges, spatial organization, free-floating annotations.
+  Every alternative tool they've used (Obsidian, Notion, Google Docs,
+  Roll20, OneNote, plain folders) trains them to think hierarchically.
+  Without onboarding, first-time DMs will likely import their old
+  folder/document mental model into MasterMind, which produces
+  cognitive friction that masks itself as "this tool is weird" rather
+  than "I haven't learned this paradigm." This is plausibly a larger
+  adoption risk than any rendering or interaction polish.
+- **Success.** A first-session experience that teaches graph thinking
+  through *doing*, not reading. The specific shape is intentionally
+  undefined here because it must be **evidence-based**: built after the
+  first 4–6 weeks of tester observation reveal the 3–5 most common
+  confusion patterns. Candidate elements (none committed yet):
+  guided walkthrough on first login, empty-state prompts that scaffold
+  the "create a card → connect it to another card → notice the
+  structure emerging" loop, contextual hints that appear when behavioral
+  signals (excessive panning, repeated zoom thrash, rage clicks)
+  suggest the user is fighting the mental model, optional sample
+  campaigns to explore.
+- **Notes.** **This work should NOT precede analytics + zoom.**
+  Designing onboarding in a vacuum produces guesswork. Designing it
+  after sitting with real session replays produces evidence-based
+  decisions. Surfaced as the biggest substantive gap in the
+  2026-05-11 ChatGPT critique of the planning conversation.
+- **Dependencies.** Analytics shipped + first observation cycle
+  complete (4–6 weeks of real tester usage).
+- **Sequencing.** **Post-observation, high-priority next sprint after
+  the observation cycle.** This is the bet that adoption lives or dies
+  here.
+- **Size:** L (4–10 days, depending on what observation reveals)
 
 ### Card-type defaults in code (Option B)
 - **Problem.** Built-in card types (Character, Location, Item, Faction,
@@ -386,6 +533,42 @@ Final pick lands at sprint start.
 ---
 
 ## Exploration
+
+### Physics layout layer — repulsion, auto-arrange, force-directed clustering
+- **Problem (sketch).** Today, cards stay exactly where the user
+  places them. As campaigns grow and zoom-out reveals dense clusters,
+  cards can visually crowd each other; new cards dropped near a busy
+  region overlap existing ones. The hover-expand interaction in zoom v1
+  also produces transient overlap with neighboring circles. A physics
+  layer — nodes that gently repel each other so they can't share
+  space — would resolve overlap automatically and produce organic,
+  breathing layouts.
+- **Why it's an exploration, not a sprint item.** Introducing physics
+  changes the foundational paradigm of the canvas. Erik's Strahd
+  campaign has carefully positioned cards in specific spatial
+  relationships — Strahd's tower here, Madam Eva's vardo there. A naive
+  physics layer would disturb that intentionality. The decision space
+  is product-shaping: is physics the *layout system* (Obsidian's graph
+  view) or a *layer separate from manual placement* (force only kicks
+  in during auto-arrange commands, or on newly-dropped cards before
+  they settle)?
+- **What the spike has to answer.**
+  - Three positions to evaluate: (1) no physics, z-index handles
+    overlap; (2) physics on a separate layer from manual — repulsion
+    only on creation or via explicit "auto-arrange"; (3) physics as the
+    primary layout system, like Obsidian's graph view.
+  - Performance at 500–1000 nodes during simulation.
+  - Interaction with the zoom v1 hover-expand: should an expanded card
+    push neighbors out transiently? Or is z-index always sufficient?
+  - References: D3-force, Cytoscape.js, React Flow's force layout
+    plugin, Obsidian's graph view, Heptabase, Kosmik, Tinderbox.
+- **Notes.** Surfaced 2026-05-11 during zoom-v1 design discussion. Erik
+  raised it as a potential answer to hover-expand overlap; deferred from
+  zoom v1 because the decision is large enough to deserve its own
+  conversation. Zoom v1 ships with z-index for overlap.
+- **Dependencies.** None (independent paradigm exploration).
+- **Target version:** V2+ (likely; reassess after spike)
+- **Size:** XL (spike, then product call, then likely a sprint)
 
 ### Undo/redo residual flicker
 - **Problem.** When chaining several Ctrl+Z presses through
