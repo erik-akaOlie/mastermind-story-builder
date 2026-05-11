@@ -1,0 +1,37 @@
+-- ============================================================================
+-- 005_default_test_user_true.sql
+-- ----------------------------------------------------------------------------
+-- Flips the default value of public.profiles.is_test_user from false to true.
+--
+-- WHY:
+--
+-- During the invite-only research stage (per ADR-0009), every sign-up is a
+-- friend Erik has personally invited — the URL hasn't escaped his circle.
+-- Defaulting new accounts to is_test_user = true matches that reality:
+-- anyone who signs up IS an invited tester, so they should be recorded
+-- from their first session, not after a manual flag flip in Supabase.
+--
+-- WHAT THIS DOES:
+--
+--   1. Changes the column default for future INSERTs. Existing rows are
+--      NOT touched — their current values stay as-is. (Erik's own row
+--      remains false unless he flipped it for a verification run.)
+--
+--   2. The handle_new_user trigger (migration 003) inserts new profile
+--      rows without specifying is_test_user, so it picks up whatever the
+--      column default is. Going forward, that's true.
+--
+-- IMPORTANT — REVERT BEFORE PUBLIC LAUNCH:
+--
+-- This default is appropriate ONLY while sign-ups are invite-only. The
+-- moment the app opens to public sign-ups, this default must flip back
+-- to false, and we'd build a real tester allowlist (a small tester_emails
+-- table the handle_new_user trigger checks against). Captured here so a
+-- future reader sees the constraint without needing to dig through git
+-- history.
+--
+-- Idempotent. Safe to run more than once.
+-- ============================================================================
+
+ALTER TABLE public.profiles
+  ALTER COLUMN is_test_user SET DEFAULT true;

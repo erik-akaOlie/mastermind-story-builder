@@ -79,15 +79,26 @@ alter table public.profiles
 ```
 
 The PostHog SDK initializes only when `profile.is_test_user === true`.
-For all other users — present and future — PostHog is never loaded,
-never identifies the user, never records a session. There is no
-opt-in toggle in user settings, no in-app consent modal, no anonymous
-analytics layer for non-testers.
+When the flag is false, PostHog is never loaded, never identifies the
+user, never records a session. There is no opt-in toggle in user
+settings, no in-app consent modal, no anonymous analytics layer for
+non-testers.
 
-Erik's own row defaults to `false`. He can flip himself on for
-specific stress-test or exploratory sessions by updating his profile
-directly in Supabase, and flip himself off when done. His sessions
-are clearly segmented from real tester data.
+**Default value during the invite-only stage.** Migration 004 introduced
+the column with `default false`, then migration 005 flipped the default
+to `true`. The reasoning: while sign-ups are invite-only — the URL is
+shared person-to-person with consent up front — anyone who signs up IS
+an invited tester, and recording from session one matches reality.
+Existing rows (including Erik's, created before migration 004) keep
+their original `false` value; Erik flips himself in for specific
+exploratory sessions and back out when done, so his power-user behavior
+stays segmented from the real tester data.
+
+**Revert before public launch.** The moment the app opens to non-invite
+sign-ups, migration 005's default must be reverted to `false` and a
+real allowlist mechanism added (a small `tester_emails` table the
+`handle_new_user` trigger checks against). Captured in migration 005's
+header for forward-looking visibility.
 
 ### Identification
 
