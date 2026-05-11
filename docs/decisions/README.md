@@ -33,3 +33,7 @@ What does this enable? What does it prevent? What are the trade-offs?
 - [ADR-0004: Inline `@`-mention syntax for cross-card references](./0004-inline-mentions-syntax.md)
 - [ADR-0005: Image storage on Supabase Storage with two variants per upload](./0005-image-storage.md)
 - [ADR-0006: Undo / redo via command pattern with a per-campaign action stack](./0006-undo-redo.md)
+- [ADR-0007: Deferred image persistence](./0007-deferred-image-persistence.md)
+- [ADR-0008: Card-type defaults in code, customizations as sparse overrides](./0008-card-type-defaults-in-code.md)
+- [ADR-0009: Behavioral analytics + session replay, scoped to invited testers via PostHog](./0009-behavioral-analytics-session-replay.md)
+- [ADR-0010: Zoom-to-node-view — progressive disclosure via card↔circle morph at altitude](./0010-zoom-progressive-disclosure.md)

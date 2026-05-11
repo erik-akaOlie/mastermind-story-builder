@@ -1,0 +1,340 @@
+# ADR-0010: Zoom-to-node-view — progressive disclosure via card↔circle morph at altitude
+Date: 2026-05-11
+Status: Accepted (V1 ships second in the current sprint, before tester invites; V2 ships during the first observation cycle)
+
+## Context
+
+The current canvas zoom-out limit caps below the threshold needed to
+see a meaningful slice of any real campaign at once. From the
+2026-05-11 planning conversation, Erik flagged this as **critical
+daily friction**, blocking three specific high-frequency behaviors:
+
+- **Demos.** Erik cannot comfortably demo MasterMind to a prospective
+  tester or collaborator. The campaign visualization breaks down at
+  the moment that should be most compelling — the "look at the whole
+  world" moment.
+- **Structural assessment.** While working on a campaign, Erik can't
+  zoom out far enough to look at the campaign as a whole and assess
+  progress. He's making decisions about a system he can't see.
+- **Spatial placement.** When dropping a new card, Erik wants to see
+  the surrounding structural context to decide where the new node
+  belongs. The current zoom limit forces blind placement.
+
+These are the same behaviors that the product's central promise rests
+on — *"the campaign stops feeling like scattered notes and starts
+feeling like a living world"* (from
+[`docs/product/vision.md`](../product/vision.md)). Without an altitude
+view, that promise has no surface.
+
+Tester invites are scheduled for the next two weeks (see
+[ADR-0009](./0009-behavioral-analytics-session-replay.md)). Shipping
+the zoom feature alongside analytics matters for three reasons:
+
+1. **Tester first impressions depend on the demo working.** A
+   wounded zoom undercuts recruitment.
+2. **Session replay budget shouldn't be spent watching testers stub
+   their toes on known friction.** That's wasted research signal.
+3. **At scale, the friction generalizes.** Tester campaigns won't
+   grow as large as Erik's in the short term, but the structural
+   problem is the same one Erik already lives in.
+
+### Scope of the claim this ADR is making
+
+This ADR commits to **one specific altitude visualization**: cards
+morph into circular nodes below a zoom threshold, with full graph
+structure (connections) preserved. It does *not* claim that node view
+is the *only* answer to campaign-scale comprehension. Other altitude
+visualizations — minimaps, semantic clustering overlays, filter-driven
+views, focus+context lenses, temporal/story-arc views — remain valid
+future directions and should be considered as the product matures.
+
+The architecture is built to support multiple altitude-aware
+visualizations stacking on top of the same threshold/state-change
+machinery. This is a deliberate hedge against the natural tendency
+for the first-shipped solution to psychologically lock the product
+into "the only solution."
+
+### What this is, mental-model-wise
+
+This is a **progressive disclosure** pattern, applied to a spatial
+canvas instead of a list or form:
+
+- At normal zoom and zoomed in, cards render in full — title, type
+  band, summary, body bullets, thumbnail. The interface is dense and
+  detail-rich because the user is working at the level of individual
+  cards.
+- Below a defined zoom threshold, cards morph into circles. Each
+  circle shows the card's thumbnail (or the type icon, as fallback)
+  inside a type-colored border. Connection lines remain visible
+  between circles. Text annotations remain at their normal size as
+  regional labels. The interface is sparse and structural because
+  the user is working at the level of the campaign.
+
+The card↔circle transition is the visual mechanism that operationalizes
+the disclosure.
+
+## Decision
+
+Build a **threshold-triggered card↔circle morph** with three
+intentional fidelity reductions in V1 and a v2 perf-optimization
+follow-up.
+
+### Morph machinery
+
+The same morph runs in response to two triggers:
+
+1. **Zoom direction crossing the global threshold.** Every visible
+   card morphs to its node-state equivalent (or back).
+2. **Per-node hover or single-selection state changing.** Below the
+   threshold, hovering or single-selecting a circle morphs *that one
+   card* back to its full card form. Leaving the hover, or
+   deselecting, morphs it back to a circle.
+
+The two trigger paths share the same animation primitive. A node's
+"shape mode" at any moment is one of: `card`, `circle`,
+`morphing-to-card`, `morphing-to-circle`. The state machine resolves
+the union of global zoom state and per-node hover/select state.
+
+**Animation timing.** Morph duration ~200ms. CSS-driven for the
+geometric parts (corner-radius, width, height). Content cross-fade
+synced to the same timer. The animation is **interruptible and
+reversible from current visual state**: if a user is mid-morph and
+reverses zoom direction (or moves the mouse away from a hover-expanded
+card), the reverse morph starts from the current frame, not from the
+fully-completed end state. CSS transitions handle this natively for
+geometry; the connection-line endpoints and content opacity inherit
+the same interruption behavior by tracking the rendered shape's
+measured position frame-by-frame.
+
+### Visual spec — circle state
+
+- Circular shape, type-colored border (same color used on the card's
+  type band).
+- Card thumbnail centered inside the circle when present.
+- **No-thumbnail fallback:** the card type's Phosphor icon, centered,
+  in the type color or contrast color (luminance-computed). No
+  initial-letter overlay in V1 (deferred — type icon was the call
+  Erik confirmed; revisit if observation shows it's not
+  discriminating enough at small sizes).
+- The colored border carries the type signal; the interior carries
+  identity (thumbnail) or type-as-fallback (icon). The two roles are
+  intentionally distinct.
+
+### Connection lines
+
+- Connection lines **stay rendered** below the threshold — they are
+  the entire point of altitude view (the graph structure).
+- **During the morph:** lines **fade out** during the first half of
+  the morph and **fade back in** the moment the new shape is locked.
+  This is the V1 fidelity reduction in place of smoothly
+  interpolating each line's anchor points along the morphing border.
+  Visually crisp; computationally cheap.
+- **In V2 or later:** if observation shows the line-fade reads as
+  abrupt, the connection-anchor interpolation can be revisited
+  without changing any other part of the morph.
+
+### Text annotations
+
+Text annotations **stay zoom-stable** — they neither shrink with the
+canvas nor collapse at the threshold. They function as regional labels
+(*"the politics of Barovia"*, *"act 2 plot points"*), and at altitude
+they become more useful as orientation anchors, not less. This
+matches established practice in map design and diagramming tools.
+
+### Hover-expand to readable card
+
+This is the design move that **eliminates the tooltip entirely** and
+also resolves the selection-visual question.
+
+When a circle is **hovered** or **single-selected** below the
+threshold, it expands back into a full card. The expanded card:
+
+- Renders at **normal, readable card size — decoupled from canvas
+  zoom.** At 20% canvas zoom, the expanded card still renders at its
+  full readable size, not at 20%. The card visually leaves the
+  canvas's spatial fabric while expanded.
+- Carries all content the card has at normal zoom — title, type band,
+  summary, body bullets, thumbnail.
+- Anchors at the circle's canvas position with `z-index` above
+  neighboring circles. Overlap is acceptable transient behavior; the
+  user is actively interacting with this one card.
+- Returns to circle form the moment hover ends or selection is
+  cleared.
+
+**This establishes a deliberate UX precedent:** hovered or selected
+elements *may break out of canvas zoom rules in order to remain
+readable.* The rule is contained to this interaction for now; it
+should be applied judiciously elsewhere.
+
+### Multi-select uses highlight, not expansion
+
+Single hover or single select → expand. **Multi-select (shift-click,
+marquee) → highlight all selected circles using the same
+opacity/scale/shadow treatment that multi-selected cards get today.**
+Expanding 50 marquee-selected circles at altitude would produce
+overlap chaos and lose the bird's-eye context the user just made.
+
+The underlying rule: *one selected thing → expand it (you want to
+read it); many selected things → highlight them as a group (you're
+operating on the set).*
+
+### Drag, right-click, click-to-edit work identically to card view
+
+Mouse interactions are unchanged. A circle accepts drag-to-reposition,
+right-click → context menu, and click → open Edit modal, exactly the
+way a card does today. The visual layer changed; the interaction
+layer did not. Hover triggers the expand morph; the expanded card is
+the active surface for any subsequent interaction.
+
+### V1 fidelity reductions — captured deliberately
+
+The V1 build takes three reductions off the "ideal" implementation,
+in service of shipping before tester invites. Each is reversible
+later without rearchitecting:
+
+| Reduction | What V1 does | What "ideal" would do | Cost saved |
+|---|---|---|---|
+| Connection lines during morph | Fade out + fade back in synced to morph timer | Anchors interpolate along the morphing border, lines visually stay attached throughout | ~1.5 days |
+| Hover affordance | Hover-expand (whole card returns) | Separately-designed tooltip with type-colored background + accessibility-tuned text | Eliminates a separate component entirely; net ~0 vs. a polished tooltip but removes a design surface |
+| Selection visuals on circles | Inherit card lifted-state styling on the circular shape | Bespoke circle-specific selection effects (custom glow, halo, scale, etc.) | ~0.5 day |
+
+Net V1 estimate after these reductions: **7–10 days** (the
+upper-honest range, not the optimistic one).
+
+### V2 — performance optimization for 500+ cards
+
+V2 follows V1 by ~1 week, after tester invites have gone out. V2
+adds:
+
+- **Viewport culling.** Only render circles whose canvas position
+  intersects the visible viewport, with a small margin so circles
+  pop in before they slide on-screen.
+- **Connection-line culling.** Hide connection lines whose on-screen
+  length is below a pixel threshold (a 2-pixel line is visual noise,
+  not signal), and hide lines whose both endpoints are off-viewport.
+- **Selector memoization.** Per-node hover/select subscriptions to
+  `useCanvasUiStore` are already narrow; verify with React DevTools
+  profiler under load that no card re-renders more than the strict
+  minimum during a hover or drag burst.
+
+**Fidelity targets for "comfortably supports 500 cards":**
+
+- Cold page load: < 3 seconds
+- Drag responsiveness: stays at 60 frames per second
+- Hover-state transition: visually instantaneous
+- Morph animation: smooth at any zoom
+
+Headroom to 1000 cards is the stretch goal but not the V2 commitment.
+
+### Architecture — built as one altitude view among many
+
+The morph state machine is implemented as a **canvas-level rendering
+mode**, not as a property of the card component. A card subscribes
+to the global "shape mode" (driven by zoom threshold) and to its own
+per-node hover/select state, then renders accordingly.
+
+Future altitude visualizations — minimap, semantic clustering
+overlay, filter-driven view, focus+context lens — should plug into
+the same threshold/state-change machinery rather than reinventing
+altitude awareness. This is the architectural hedge against treating
+node view as "the answer" rather than "a hypothesis we shipped first."
+
+## Consequences
+
+**Benefits.**
+
+- **Removes the daily friction blocker that surfaced this work.** Erik
+  can demo, assess structural progress, and place new cards with
+  surrounding context visible — all the workflows the current zoom
+  cap blocks.
+- **Aligns with the product's central promise.** "Feels like a living
+  world" only works if the user can see the world.
+- **Hover-expand cuts a component.** No tooltip subsystem, no tooltip
+  styling, no tooltip positioning logic. One less interaction surface
+  to maintain, one less component to design accessibility for.
+- **Sets a clean precedent for altitude-aware rendering.** The state
+  machine is the reusable piece; the node-view rendering is the
+  first consumer. Other altitude views drop in without rebuilding
+  the foundation.
+- **V1 / V2 split protects invite timing.** V1 is unblocking; V2 is
+  scaling. Splitting them means invites aren't held hostage to perf
+  work that doesn't pay off until tester campaigns grow.
+
+**Trade-offs accepted.**
+
+- **Expanded cards break out of canvas zoom rules.** This is a real
+  UX precedent. It's the right call for *readable preview at
+  altitude*, but it should be applied judiciously — not every hovered
+  thing should leap out of canvas space.
+- **The "fade lines during morph" reduction is visible.** A user
+  watching the animation closely will see lines blink out and back
+  in. Erik approved this consciously; it's reversible later if
+  observation shows it bothers people.
+- **Node view is being shipped before the campaign-scale
+  comprehension problem has been validated with non-Erik users.**
+  This is a conscious bet: Erik's daily friction is strong enough
+  evidence to act on, and shipping the fix actually *unblocks* the
+  validation rather than preempting it (testers can't surface
+  large-campaign friction if they can't see large campaigns).
+- **V1 will degrade as tester campaigns grow.** Mitigation: V2 ships
+  during the first observation cycle, well before any tester campaign
+  hits ~200 cards. Worst case, the very-heaviest current user (Erik)
+  experiences degradation in his own campaign during the V1→V2 gap.
+- **Estimate is the riskiest in the current sprint.** Connection lines
+  following a morphing shape — even in the simplified fade-during-morph
+  V1 — is engineering Erik and Claude haven't done before in this
+  codebase. 7–10 days is the honest range; if it stretches past day 10,
+  we re-scope at that point rather than push invites further.
+
+**When to revisit.**
+
+- After the first observation cycle (4–6 weeks of tester usage),
+  review whether node view actually delivers structural comprehension
+  for non-Erik users, or whether other altitude visualizations
+  (minimap, clustering, filter view) should be added or substituted.
+- If observation surfaces fresh friction at the threshold transition
+  itself (e.g., "I keep losing track of where I am during the
+  morph"), revisit the line-fade reduction and the threshold value.
+- If the hover-expand pattern proves valuable beyond node view,
+  consider promoting it to a general "preview without committing to
+  zoom" interaction available at all zoom levels.
+
+**Open questions left for implementation.**
+
+- **Positioning of an expanded card at deep zoom.** If the
+  underlying circle is near the viewport edge, the expanded card may
+  extend off-screen. V1 default: anchor at the circle's canvas
+  position; clamp to the viewport so the card slides into the
+  visible region rather than clipping. Revisit if it reads oddly.
+- **Threshold value.** The exact zoom level X at which the morph
+  triggers will be tuned during implementation. Erik's current
+  zoom-out limit is the starting candidate.
+- **Connection point repositioning on the circular perimeter.** The
+  existing `getSpreadBorderPoints` logic was designed for rectangular
+  card edges. The circular analog is spreading points around the
+  circumference; the math is simpler. Captured for implementation,
+  not blocking the decision.
+
+## References
+
+- BACKLOG entries: *Zoom-to-node-view v1* and *Zoom-to-node-view v2*
+  (Foundational Progress) — the implementation work this ADR governs.
+- BACKLOG entry: *Physics layout layer* (Exploration) — surfaced
+  during this design conversation; deferred to its own product call.
+- BACKLOG entry: *Onboarding + first-session scaffolding*
+  (Foundational Progress) — the post-observation work this ADR's
+  research enables.
+- [ADR-0009: Behavioral analytics + session replay](./0009-behavioral-analytics-session-replay.md) —
+  ships first in the current sprint; the friction signals captured
+  there will inform whether node view actually solves the
+  campaign-scale problem for non-Erik users.
+- 2026-05-11 planning conversation between Erik and Claude (this
+  ADR captures the decisions reached there, including the ChatGPT
+  critique of the conversation that prompted the V1 fidelity
+  reductions and the modular-architecture hedge).
+- Related: `useCanvasUiStore` (`src/store/useCanvasUiStore.js`) — the
+  existing per-node hover/select subscription store the V1
+  hover-expand will route through.
+- Related: `getSpreadBorderPoints` / `getBorderIntersection`
+  (`src/utils/edgeRouting.js`) — the V1 morph will need a circular
+  analog of the existing rectangular edge-routing math.
