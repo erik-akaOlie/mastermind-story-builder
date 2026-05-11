@@ -1,0 +1,46 @@
+-- ============================================================================
+-- 004_is_test_user_flag.sql
+-- ----------------------------------------------------------------------------
+-- Adds the is_test_user flag to public.profiles. This flag gates the
+-- PostHog analytics SDK: the client only initializes PostHog (session
+-- replay + named events) for users with is_test_user = true.
+--
+-- WHAT THIS DOES:
+--
+--   1. Adds a boolean column is_test_user to public.profiles, defaulting
+--      to false for all rows (existing and future).
+--
+--   2. No RLS changes required — public.profiles RLS (introduced in
+--      migration 003) already scopes SELECT/UPDATE to the row owner,
+--      which is the correct policy for is_test_user as well.
+--
+-- RLS POSTURE:
+--
+-- Existing public.profiles policies allow the owner to UPDATE their own
+-- row. The new is_test_user column inherits that policy — meaning a user
+-- can technically flip the flag on their own row via the client API.
+-- Acceptable for the current small-pool research stage (cf. ADR-0009):
+-- the worst case is a tester opts themselves IN, which is the consent
+-- they already gave during the invite. Revisit (column-level guard or
+-- admin-only toggle table) if the product opens beyond invited testers.
+--
+-- ADMIN TOGGLING:
+--
+-- Erik flips users in/out by running an UPDATE in the Supabase SQL
+-- Editor:
+--
+--   UPDATE public.profiles
+--     SET is_test_user = true
+--     WHERE id = '<auth.users.id of the tester>';
+--
+-- The PostHog SDK only reads this flag at app load / profile refresh, so
+-- the toggle takes effect on the user's next page load.
+--
+-- Documented in ADR-0009 (Behavioral analytics + session replay,
+-- scoped to invited testers via PostHog).
+--
+-- Idempotent. Safe to run more than once.
+-- ============================================================================
+
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS is_test_user BOOLEAN NOT NULL DEFAULT false;
