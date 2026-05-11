@@ -25,6 +25,7 @@ Source of truth for any AI session working on this codebase. When this file conf
 | State management | Zustand v5 | two stores: `useTypeStore` (node types, localStorage-persisted) and `useCanvasUiStore` (transient hover/select flags). Campaign data lives in React state hydrated from Supabase. |
 | Auth + Database | **Supabase** (Postgres + Auth + RLS) | `@supabase/supabase-js` client; schema in `supabase/schema.sql` |
 | Image storage | **Supabase Storage** (`card-media` + `profile-media` buckets) | both private; clients request signed URLs per render. card-media holds card avatars + inspiration images (two variants per upload). profile-media holds user profile avatars (single 256×256 variant). See ADR-0005 (card-media) and migration 003 (profile-media). |
+| Behavioral analytics | **PostHog Cloud** (`posthog-js`) | session replay + named events, scoped to `is_test_user=true` users only. Loaded via dynamic import (Vite splits into its own chunk; non-testers never download it). See ADR-0009. |
 
 Firebase was previously installed but never wired; it has been uninstalled. Do not reintroduce.
 
@@ -32,14 +33,25 @@ Firebase was previously installed but never wired; it has been uninstalled. Do n
 
 ## Environment Variables
 
-Two required, loaded from `.env` at the project root. See `.env.example`.
+Loaded from `.env` at the project root. See `.env.example`.
 
 ```
 VITE_SUPABASE_URL=https://<project-ref>.supabase.co
 VITE_SUPABASE_ANON_KEY=<publishable / anon public key>
+VITE_POSTHOG_KEY=phc_<project token>
+VITE_POSTHOG_HOST=https://us.i.posthog.com    # or https://eu.i.posthog.com
 ```
 
-Never use or reference the `service_role` key in client code.
+Never use or reference the Supabase `service_role` key in client code.
+
+`VITE_POSTHOG_KEY` must be set at **build time**, not just at runtime. Vite
+substitutes `import.meta.env.VITE_POSTHOG_KEY` with its literal value during
+the build. If the value is empty, the early-bail branch in
+[`src/lib/analytics.js`](./src/lib/analytics.js) becomes the only statically
+reachable code path and Rollup dead-code-eliminates the dynamic
+`import('posthog-js')` — the PostHog chunk is never emitted and analytics
+cannot work even if a tester signs in later. Any CI/production build pipeline
+must inject the env var; Erik's local `.env` already has it.
 
 ---
 
@@ -89,6 +101,14 @@ src/
     CanvasOpsContext.jsx           context exposing App-level ops (onDeleteNode) to RF custom node
                                    renderers. Workaround for RF v11's `useReactFlow().setNodes` not
                                    propagating removals to App's `useNodesState`. See file header.
+    analytics.js                   PostHog wiring (per ADR-0009). Module-scope state holds the loaded
+                                   posthog instance after init. initAnalytics(profile) bails immediately
+                                   when profile.is_test_user !== true, otherwise dynamic-imports
+                                   posthog-js (its own Vite chunk) and calls posthog.init() +
+                                   posthog.identify(profile.id). track(eventName, props) and
+                                   resetAnalytics() both no-op when init never ran. All three public
+                                   functions wrap their PostHog calls in try/catch so a misbehaving
+                                   analytics call can't crash the host feature.
 
   lib/undo/                        Undo-system command-pattern dispatcher (per ADR-0006)
     index.js                       exports ACTION_TYPES, deepEqual, and the four dispatcher functions
@@ -153,6 +173,9 @@ src/
     Lightbox.jsx                   shared <LightboxProvider>; any consumer calls useLightbox().open(value)
     MigrateImages.jsx              one-shot tool at #migrate to backfill base64 → Storage; safe to delete
                                    once no campaign has any base64 image entries
+    AnalyticsBootstrap.jsx         mounted inside <ProfileProvider> in main.jsx. Watches profile.id +
+                                   profile.is_test_user; on change, calls initAnalytics(profile) (which
+                                   itself bails for non-testers). Renders nothing.
     LockOverlay.jsx                modal that freezes edits on prolonged save failure
     SyncIndicator.jsx              ambient "Edited just now" / "Can't save" chip; positioned by FeedbackChipBar
     FeedbackChipBar.jsx            bottom-left feedback strip composing SyncIndicator + chip-toast slot;
@@ -213,7 +236,7 @@ docs/
 | Table | Purpose |
 |---|---|
 | `auth.users` | Supabase-managed; referenced by `campaigns.owner_id` and `profiles.id` |
-| `profiles` | one row per user — canonical home for app-level user metadata (`avatar_path`, `display_name`, future fields). Auto-created by an `auth.users` INSERT trigger; backfilled in migration 003 |
+| `profiles` | one row per user — canonical home for app-level user metadata (`avatar_path`, `display_name`, `is_test_user`, future fields). Auto-created by an `auth.users` INSERT trigger; backfilled in migration 003. `is_test_user` added in migration 004 (defaults false) and gates whether PostHog loads for that user (ADR-0009) |
 | `campaigns` | one row per campaign; owned by a user |
 | `node_types` | card types per campaign (built-in five + any custom); `is_system` flags the built-ins |
 | `nodes` | cards on the canvas (label, summary, avatar_url, position, type_id) |
@@ -380,12 +403,30 @@ Card avatars and inspiration images live in the **`card-media` Supabase Storage 
 
 User profile avatars live in a **separate `profile-media` Supabase Storage bucket**, distinct from `card-media`. Why separate: profile photos are user-scoped (path: `{user_id}/avatar-{timestamp_ms}.webp`), not campaign-scoped, so the access rules differ. Single 256×256 WebP variant — profile avatars never render larger than ~64px in real UI.
 
-- `public.profiles` is the canonical home for app-level user metadata. One row per `auth.users` row, linked 1:1 by `id`. Currently holds `avatar_path` and `display_name` (the latter has no UI yet — schema-ready for future surfaces). Auto-created by an `on_auth_user_created` trigger so app code can assume every signed-in user has a profile row; backfilled in migration 003 for users that pre-date the trigger.
+- `public.profiles` is the canonical home for app-level user metadata. One row per `auth.users` row, linked 1:1 by `id`. Currently holds `avatar_path`, `display_name` (the latter has no UI yet — schema-ready for future surfaces), and `is_test_user` (migration 004; defaults false; gates PostHog loading per ADR-0009). Auto-created by an `on_auth_user_created` trigger so app code can assume every signed-in user has a profile row; backfilled in migration 003 for users that pre-date the trigger.
 - `src/lib/profile.js` is the data-access layer: `getProfile`, `setAvatarPath`, `clearAvatar`, `setDisplayName`. `clearAvatar` updates the DB column first, then best-effort deletes the storage object — the user-visible state is correct even if the storage delete fails (orphan-cleanup per ADR-0005 §7).
 - `src/lib/ProfileContext.jsx` is the shared store. One `getProfile()` per signed-in user, exposed via `useProfile() → { profile, loading, error, updateProfile, refresh }`. Profile.jsx and UserAvatar.jsx both subscribe so an avatar change on the Profile page propagates to the top-left chip immediately, without a reload.
 - **The `profile-media` bucket does NOT need a SECURITY DEFINER helper** because its RLS check is same-schema: `(storage.foldername(name))[1] = auth.uid()::text`. The cross-schema gymnastics that `card-media` needs only kick in when storage policies have to JOIN against tables in `public`. Profile-bucket policies live entirely against the path prefix and `auth.uid()` — pure storage, no cross-schema lookups.
 - The same `UploadImageModal` handles both card images and profile avatars. Domain switching is via the `pipeline` prop — built by `cardImagePipeline({...})` or `profileAvatarPipeline({...})` from `imageStorage.js`. The modal does not know what kind of image it is editing. New image domains in the future drop in by adding a third factory.
 - `ImageCropper` adds a `profile-avatar` mode alongside the existing `image-section` and `thumbnail` modes. Behavior is identical to thumbnail (image-corner handles, no frame reshape, cover-fit on entry, fixed-pixel save) but with a 256×256 square frame and 256×256 saved output.
+
+### Behavioral analytics (per ADR-0009, migration 004)
+
+Session replay + named events via PostHog Cloud, restricted to invited testers. The whole subsystem revolves around the `is_test_user` boolean on `public.profiles` — false for everyone by default.
+
+- [`src/lib/analytics.js`](./src/lib/analytics.js) owns all PostHog interaction. Three safety guards keep non-tester users completely insulated:
+  - **Conditional load.** `posthog-js` is fetched via dynamic `import()`. Vite splits it into its own chunk (~64 KB gzipped) that non-testers never request. The check is `profile?.is_test_user !== true` and runs *before* the import. **Build-time invariant:** `VITE_POSTHOG_KEY` must be set during `vite build` — see the Environment Variables section for why.
+  - **Try/catch on every public function.** A misbehaving PostHog call cannot bubble up into the feature code that fired it. Errors log a one-line warning to the dev console and otherwise vanish.
+  - **Early bail.** `track()` and `resetAnalytics()` return immediately if init never ran. No event queue, no memory accumulation for non-testers.
+- [`src/components/AnalyticsBootstrap.jsx`](./src/components/AnalyticsBootstrap.jsx) is mounted inside `<ProfileProvider>` in `main.jsx`. It uses `useProfile()` to watch the profile, then `useEffect` fires `initAnalytics(profile)` on profile load. `initAnalytics` is itself idempotent — bails if already started.
+- `AuthContext.signOut` calls `resetAnalytics()` alongside the existing undo-store cleanup, so a different user signing in on the same browser cannot inherit the previous tester's PostHog session/identity.
+- **Password protection** is layered, not selector-based:
+  - The login screen renders *before* the profile loads, which is *before* `initAnalytics` can run. The form is therefore never captured.
+  - PostHog's default `maskInputOptions.password = true` auto-masks `<input type="password">` in replays.
+  - `<PasswordInput>` toggles `type=password` ↔ `type=text` when the user clicks the eye to show their password. The input carries the `.ph-mask` class, which the `maskInputFn` and `maskTextFn` config options in `analytics.js` honor regardless of input type — the value stays masked even when visible.
+  - `resetAnalytics()` on sign-out closes the session, so any subsequent sign-in screen rendered in the same browser isn't captured either.
+- Named events (~16) are wired at action sites. App.jsx owns most; `ConnectionsSection`, `TypePicker`, and `useUndoShortcuts` own the rest. Three events use windowing/timer logic rather than raw streams: `zoom_changed` + `pan_burst` share `onMoveEnd` (one call per discrete gesture, so no debounce needed), and `card_repositioned_quickly` checks a `Map<cardId, createdAtMs>` populated by `addCardNode` and self-cleaning after 10 s. Threshold constants live at the top of `App.jsx` for easy tuning after the first observation cycle.
+- **No content masking.** Per the ADR revision, everything a tester does in the canvas is captured, including the actual content they type. The research questions are about *how DMs build campaigns*, so the words they choose are themselves signal.
 
 ### Z-index lift (CampaignNode + index.css)
 
@@ -508,6 +549,7 @@ Custom user-created types are scoped per campaign in Supabase but the UI flow fo
 - [x] **Bottom-left feedback strip** — `FeedbackChipBar` composes the existing `SyncIndicator` (light, ambient "Edited Nm ago") with a chip-toast slot (dark, transient action feedback). Toasts slide in from behind the chip via CSS @keyframes (no JS state ping-pong, no entry delay), masked by an `overflow:hidden` container so no toast pixels are visible left of the chip's left edge. Undo/redo toasts lead with a Phosphor curved-arrow icon (`ArrowUUpLeft` / `ArrowUUpRight`) followed by the entry's label. 2s visible, 300ms fadeout, hover pauses both phases (including freezing the visual opacity transition mid-fadeout). Replaces Sonner for these toasts; persist-fail uses the same chip family with a sticky id.
 - [x] **Sign-out cleanup** — `AuthContext.signOut` calls `useUndoStore.clearAllForUser(userId)` before Supabase clears the session, wiping the in-memory undo stack AND every `mastermind:undo:${userId}:*` sessionStorage entry across any campaigns the user touched in this tab.
 - [x] **Profile avatars** — Profile page lets the user upload, replace, and remove a profile photo (1:1 crop, 256×256 WebP, stored in the new `profile-media` Supabase Storage bucket). `public.profiles` row holds `avatar_path` + `display_name` (latter has no UI yet). Auto-create trigger on `auth.users` INSERT so every sign-up gets a profile row. Shared `ProfileContext` so the top-left UserAvatar chip updates immediately when the photo changes — same source of truth as the Profile page header. Cropper gains a `profile-avatar` mode (square frame, 256×256 output); UploadImageModal becomes pipeline-agnostic via `cardImagePipeline()` / `profileAvatarPipeline()` factories so the same UI shell handles both image domains. See migration 003.
+- [x] **Behavioral analytics + session replay** — PostHog Cloud wired (per ADR-0009). Loads only when `profile.is_test_user === true` via dynamic import (separate Vite chunk; non-testers download zero bytes of `posthog-js`). 16 named events fire at action sites across `App.jsx`, `ConnectionsSection`, `TypePicker`, and `useUndoShortcuts`. `AuthContext.signOut` resets the session so it doesn't bleed across users on the same browser. Three safety guards (conditional load, try/catch on every public call, early bail) ensure non-testers see zero behavioral or performance impact. Password fields are protected by a `.ph-mask` class + PostHog's default `type=password` masking + the fact that the login screen renders pre-init. Migration 004 adds the `is_test_user` boolean column.
 
 ## What Is NOT Built (roadmap)
 
