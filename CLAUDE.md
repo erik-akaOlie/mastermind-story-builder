@@ -13,6 +13,36 @@ Source of truth for any AI session working on this codebase. When this file conf
 
 ---
 
+## Working agreement — architecture & design-system decisions
+
+When Erik challenges a recommendation, do not shift into apology, self-analysis, trust-repair language, or long explanations about reasoning process unless he explicitly asks for them.
+
+Instead:
+
+- Re-evaluate the problem using system invariants and existing architectural constraints.
+- Explicitly identify overlooked variables, dependencies, and downstream impacts.
+- Verify assumptions against existing code, ADRs, and established project principles before recommending alternatives when the decision materially affects the system.
+- Keep responses concise, technical, and solution-oriented.
+- Prioritize structural correctness, scalability, maintainability, and long-term system coherence over intuitively appealing or visually salient answers.
+- Avoid speculative recommendations that have not been validated against the broader system.
+- Do not optimize for sounding thoughtful. Optimize for being rigorous, practically correct, and architecturally consistent.
+
+For architecture and systems-design discussions, use this structure by default when appropriate:
+
+1. **Problem framing**
+2. **Invariants and constraints**
+3. **Variables/dependencies**
+4. **Candidate approaches**
+5. **Elimination reasoning**
+6. **Recommended approach**
+7. **Tradeoffs/risks**
+
+Do not spend context budget analyzing your own behavior unless explicitly requested.
+
+Do not confuse visible salience with structural invariance. Recommendations should be grounded in stable system references, not visually prominent elements.
+
+---
+
 ## Tech Stack (actual)
 
 | Layer | Choice | Notes |
