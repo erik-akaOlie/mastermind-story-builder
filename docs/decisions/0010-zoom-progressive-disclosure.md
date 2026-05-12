@@ -315,6 +315,121 @@ node view as "the answer" rather than "a hypothesis we shipped first."
   circumference; the math is simpler. Captured for implementation,
   not blocking the decision.
 
+## Addendum — 2026-05-12 (refined decisions)
+
+This addendum captures decisions made in the 2026-05-12 design session
+that resolve items in "Open questions left for implementation" and add
+implementation-level specifics. The original body above is unchanged;
+where the two differ in vocabulary, this addendum is authoritative.
+
+### Vocabulary
+
+- **Node** — the umbrella term. Every connectable element on the canvas
+  is a node, regardless of its current visual form.
+- **Card** — the expanded rectangular form of a node.
+- **Bead** — the collapsed circular form a node takes below the morph
+  threshold.
+- **Card View** / **Bead View** — the canvas modes corresponding to each
+  form, named by what they show rather than by zoom altitude.
+
+Where the original ADR body says "circle," read "bead." Future ADRs and
+code should prefer "bead."
+
+### Unit and threshold
+
+The morph threshold is expressed in **millimeters of on-screen distance
+between adjacent dots on the canvas's background grid**. Rationale:
+
+- The grid is a canvas-level invariant — React Flow's `<Background />`
+  default `gap = 20` canvas units. Its spacing is independent of card
+  content, card width, avatar presence, title line count, or any other
+  per-card variable. (Earlier candidates — title text size, body text
+  size, card width, avatar size — all fail invariance because they
+  depend on card content or per-card layout decisions.)
+- Millimeters are physically grounded and survive any future change to
+  React Flow's zoom mapping or grid defaults.
+- Per the web spec, 1 CSS pixel ≈ 1/96 inch, giving a reliable
+  conversion from canvas units → CSS px → mm at runtime.
+
+**Constants:**
+
+| Constant | Value | Meaning |
+|---|---|---|
+| `MORPH_BELOW_GRID_GAP_MM` | `2.65` | Bead View triggers when grid dots are below 2.65mm apart on screen. Maps to React Flow zoom ≈ 0.5 with the default 20-unit grid gap, matching the current `minZoom` so the morph activates exactly at the old zoom-out wall. |
+| `MORPH_HYSTERESIS_RATIO` | `1.15` | Card View returns at 1.15× the bead threshold (~3.05mm dot spacing, zoom ≈ 0.575). 15% spread is the documented safe value against trackpad-pinch wobble; widen if observation surfaces flicker, narrow if return-to-cards feels sluggish. |
+
+Both constants are tunables. Change them, observe, iterate.
+
+### Connection points on the bead perimeter
+
+Connection points distribute **by angle to the connected card** (the
+direction from the bead's center toward the other node), with a minimum
+arc-distance between adjacent points to prevent visual overlap.
+
+| Constant | Value | Meaning |
+|---|---|---|
+| `MIN_CIRCLE_POINT_GAP_PX` | `4` | Minimum on-screen arc-distance between adjacent connection points on a bead. Tunable. |
+
+The circular analog of `getSpreadBorderPoints` / `getBorderIntersection`
+lives next to those utilities in `src/utils/edgeRouting.js`. The
+existing rectangular logic is retained for Card View; the routing path
+branches on shape mode.
+
+### Dynamic zoom-out limit
+
+React Flow's static `minZoom = 0.5` is replaced by a **dynamic limit
+that scales with the user's content**. At any moment, the user can zoom
+out far enough that all canvas nodes (cards + text annotations + future
+content types) fit within the center 70% of the viewport, with both
+width and height constraints honored — whichever is binding determines
+the limit.
+
+| Constant | Value | Meaning |
+|---|---|---|
+| `BIRDS_EYE_VIEWPORT_FILL` | `0.7` | Fraction of viewport (each dimension) that the bounding box of all nodes fills at max zoom-out. |
+
+- **Recompute timing.** On each *settled* change — node add, node
+  delete, drag-stop, text-node resize-stop. Not during a drag or resize
+  in progress. Cheap enough that the user never feels the recompute;
+  accurate the moment they reach for the zoom-out edge.
+- **Empty / single-node fallback.** When the bounding box is degenerate
+  (zero or one nodes), fall back to React Flow's default `minZoom = 0.5`.
+  New campaigns and very-sparse campaigns retain today's zoom behavior.
+
+This design has an emergent property worth naming: few nodes → tight
+bounding box → can't zoom out far → morph rarely triggers → user stays
+in Card View. Many nodes spread out → wide bounding box → zoom-out
+reaches the morph threshold → Bead View activates when structural
+overview is actually useful. The two features cooperate without
+explicit coordination.
+
+### Accessibility
+
+The 200ms morph animation honors the OS-level
+`prefers-reduced-motion: reduce` media query. When set, the morph is an
+instant swap — geometry, content cross-fade, and connection-line fade
+all collapse to a single frame.
+
+### Cross-device assumption
+
+The mm threshold is calibrated against Erik's primary monitor.
+Cross-monitor variation within ±20% is expected in practice and is
+acceptable for V1 tuning. **Device-class multipliers** for tablet and
+phone are deferred to V3 (mobile/tablet builds per
+[`docs/product/roadmap.md`](../product/roadmap.md)). When those builds
+ship, the threshold gets a per-class multiplier applied to
+`MORPH_BELOW_GRID_GAP_MM`.
+
+### Resolved open questions
+
+- **Threshold value** — resolved above (`MORPH_BELOW_GRID_GAP_MM = 2.65`).
+- **Connection point repositioning on the circular perimeter** —
+  resolved above (by-angle distribution + 4 px minimum arc-distance).
+- **Positioning of an expanded card at deep zoom** — *still open.* V1
+  default per the original ADR: anchor at the bead's canvas position;
+  clamp to the viewport so the expanded card slides into view rather
+  than clipping at the edge. Implement and observe.
+
 ## References
 
 - BACKLOG entries: *Zoom-to-node-view v1* and *Zoom-to-node-view v2*

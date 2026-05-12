@@ -183,34 +183,78 @@ slots in opportunistically alongside any of the above.
   annoyance into a structural blocker on the product's core promise
   ("the campaign starts feeling like a living world").
 - **Success.** Below a defined zoom threshold, each card morphs into a
-  circular node — type-colored border, the card's thumbnail centered,
-  type icon as the no-thumbnail fallback. Connection lines stay
-  rendered between circles. Text annotations stay zoom-stable (regional
-  labels). Hovering or selecting a circle expands it back into a
-  fully-readable card at *normal* card size — decoupled from canvas
-  zoom — so the user can read content without zooming all the way in.
-  Multi-select uses the existing card multi-select treatment
-  (opacity/scale/shadow), not expansion. The morph is triggered by
-  crossing the threshold (zoom direction) or by hover/select
-  (per-node); animations are interruptible and reversible from current
-  visual state. Connection lines fade out during the morph and fade
-  back in at their new anchor positions the instant the new shape
-  locks. Full canvas interaction (drag, right-click, click-to-edit)
-  preserved at node zoom.
+  **bead** — a circular form with a type-colored border, the card's
+  thumbnail centered, type icon as the no-thumbnail fallback.
+  Connection lines stay rendered between beads. Text annotations stay
+  zoom-stable (regional labels). Hovering or selecting a bead expands
+  it back into a fully-readable card at *normal* card size — decoupled
+  from canvas zoom — so the user can read content without zooming all
+  the way in. Multi-select uses the existing card multi-select
+  treatment (opacity/scale/shadow), not expansion. The morph is
+  triggered by crossing the threshold (zoom direction) or by
+  hover/select (per-node); animations are interruptible and reversible
+  from current visual state. Connection lines fade out during the
+  morph and fade back in at their new anchor positions the instant the
+  new shape locks. Full canvas interaction (drag, right-click,
+  click-to-edit) preserved in Bead View.
 - **Notes.** Documented in
-  [ADR-0010](./docs/decisions/0010-zoom-progressive-disclosure.md).
-  V1 includes three deliberate fidelity reductions to ship faster:
-  connection lines fade rather than anchor-interpolate during morph;
-  hover-expand replaces tooltip entirely (one component cut); selection
-  visuals on circles inherit card states rather than getting bespoke
-  styling. Perf optimization for 500 cards is **deferred to v2** — V1
-  is unblocking Erik's daily friction and the demo experience; the
-  scaling wall isn't relevant until tester campaigns grow.
+  [ADR-0010](./docs/decisions/0010-zoom-progressive-disclosure.md), with
+  the 2026-05-12 addendum capturing the refined decisions on
+  vocabulary (node / card / bead), threshold unit (mm of on-screen
+  grid-dot spacing), hysteresis (1.15× return ratio), dynamic
+  zoom-out limit (70% viewport fill), and accessibility
+  (`prefers-reduced-motion`). V1 keeps three deliberate fidelity
+  reductions: connection lines fade rather than anchor-interpolate
+  during morph; hover-expand replaces a tooltip entirely (one
+  component cut); selection visuals on beads inherit card states
+  rather than getting bespoke styling. Perf optimization for 500
+  cards is **deferred to v2** — V1 unblocks Erik's daily friction and
+  the demo experience; the scaling wall isn't relevant until tester
+  campaigns grow.
 - **Dependencies.** Analytics ships first (insurance against zoom-v1
   slipping). No code dependency.
 - **Sequencing.** Ships **second** in the current sprint. Must be live
   before (or simultaneously with) the first tester invites.
 - **Size:** M–L (7–10 days)
+- **Implementation chunks.** Each chunk lands as one commit; sizes are
+  inside the M–L overall envelope.
+  1. **Altitude plumbing** (S, ~1 day). Add Card / Bead mode state to
+     a store (likely `useCanvasUiStore`); wire a React Flow zoom
+     listener that flips the mode when the grid-dot mm threshold is
+     crossed. No visual change yet — just plumbing plus a console log
+     proving it fires.
+  2. **Bead morph visual** (M, ~2–3 days). `CampaignNode` renders the
+     bead form when shape mode is `bead`: width / height /
+     border-radius CSS transitions ~200ms, interruptible. Content
+     cross-fade between card and bead (thumbnail or type-icon
+     fallback) synced to the same timer. Connection lines fade out at
+     morph-start, fade back in when the new shape locks.
+     Hover-expand not wired yet — every bead stays a bead.
+  3. **Connection points on bead perimeter** (M, ~1–2 days). Circular
+     analog of `getSpreadBorderPoints` / `getBorderIntersection` in
+     `src/utils/edgeRouting.js`. Distribute by angle to connected
+     card; enforce `MIN_CIRCLE_POINT_GAP_PX = 4` minimum arc-distance.
+     `useEdgeGeometry` branches on shape mode.
+  4. **Hover-expand to readable card** (M, ~2 days). In Bead View,
+     hover or single-select on a bead morphs it back to a full
+     readable card. Card renders at normal size, decoupled from canvas
+     zoom (CSS counter-scale), anchored at the bead's canvas position,
+     clamped to the viewport, z-index above neighbors. Hover de-triggers
+     on mouse-leave; selection de-triggers on click empty canvas or
+     click another node without shift.
+  5. **Multi-select highlight** (S, ~0.5 day). Two or more selected
+     beads stay as beads with the existing lifted/selected styling.
+     Prevents marquee-of-many-beads from exploding into card overlap
+     chaos.
+  6. **Dynamic zoom-out limit + accessibility + threshold tuning**
+     (S–M, ~1 day). Replace static `minZoom = 0.5` with the
+     `BIRDS_EYE_VIEWPORT_FILL = 0.7` computation (recompute on
+     add / delete / drag-stop). Honor `prefers-reduced-motion` —
+     instant swap, no animation, when set. Tune
+     `MORPH_BELOW_GRID_GAP_MM` against Erik's monitor. Regression-test
+     drag / right-click / click-to-edit on beads.
+
+  Total: 7–9 days, inside the M–L envelope.
 
 ### Zoom-to-node-view v2 — performance for 500+ cards
 - **Problem.** Zoom v1 ships without performance optimization. As
