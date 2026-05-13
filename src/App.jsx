@@ -38,6 +38,7 @@ import { ACTION_TYPES } from './lib/undo/index.js'
 import { CanvasOpsProvider } from './lib/CanvasOpsContext.jsx'
 import { setPanToTargetImpl } from './lib/cameraOps.js'
 import { track } from './lib/analytics.js'
+import { nextAltitude, gridGapMmAtZoom, altitudeLabel } from './utils/altitude.js'
 
 // Analytics thresholds (per ADR-0009). pan_burst fires when the user
 // completes >= THRESHOLD discrete pan gestures in WINDOW_MS, then resets.
@@ -725,6 +726,33 @@ export default function App() {
     })
   }, [nodes, edges, activeCampaignId, setNodes, setEdges])
 
+  // ── Altitude trigger (per ADR-0010) ──────────────────────────────────────
+  // onMove fires throughout pan/zoom gestures, giving Bead View an
+  // immediate flip the moment the user crosses the grid-gap threshold — no
+  // visible lag waiting for the gesture to end. The architecture stays
+  // event-driven: this is the ONE place that reads raw zoom continuously.
+  // nextAltitude() applies the hysteresis dead-band and returns the current
+  // altitude unchanged whenever no transition is warranted, so setAltitude
+  // is called only at actual crossings and the store fires at most one
+  // update per crossing. Downstream subscribers (Chunk B's morph, Chunk C's
+  // bead-perimeter math, future altitude views) react to altitude
+  // transitions, never to raw zoom.
+  const onMove = useCallback((_event, viewport) => {
+    const current = useCanvasUiStore.getState().altitude
+    const next = nextAltitude(current, viewport.zoom)
+    if (next !== current) {
+      useCanvasUiStore.getState().setAltitude(next)
+      // Chunk A debug log — proves the trigger fires at the expected
+      // threshold. Remove once Chunk B's morph makes the transition
+      // visually self-evident.
+      console.log(
+        `[altitude] ${altitudeLabel(current)} → ${altitudeLabel(next)}  ` +
+        `zoom=${viewport.zoom.toFixed(3)}  ` +
+        `gap=${gridGapMmAtZoom(viewport.zoom).toFixed(2)}mm`
+      )
+    }
+  }, [])
+
   // ── Viewport analytics (per ADR-0009) ────────────────────────────────────
   // onMoveEnd fires once per discrete pan/zoom gesture, which is the right
   // granularity for both events. Pure pans feed the burst window; zoom
@@ -801,6 +829,7 @@ export default function App() {
         onNodeDoubleClick={onNodeDoubleClick}
         onPaneClick={() => { closeContextMenu(); setCanvasMenu(null) }}
         onPaneContextMenu={onPaneContextMenu}
+        onMove={onMove}
         onMoveEnd={onMoveEnd}
         onInit={(rf) => { rfInstanceRef.current = rf }}
         nodeTypes={nodeTypes}

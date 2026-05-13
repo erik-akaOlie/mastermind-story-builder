@@ -14,6 +14,12 @@
 //                          React Flow's selection so edges can know whether
 //                          one of their endpoints is selected without
 //                          subscribing to the full nodes array.
+//   - altitude           — current canvas altitude (Card View vs Bead View
+//                          per ADR-0010). Discrete value; transitions are
+//                          event-driven (the trigger in App.jsx writes only
+//                          on actual mode changes, never on every zoom tick).
+//                          Future altitude visualizations plug in as
+//                          additional values.
 //
 // Why a store instead of pushing these into each node's `data`: the previous
 // approach called setNodes((nds) => nds.map(...)) on every hover event, which
@@ -38,11 +44,23 @@ export const useCanvasUiStore = create((set) => ({
   // Empty Set when nothing is selected (not null — keeps `.has(id)` calls safe).
   selectedNodeIds: EMPTY_SET,
 
+  // Canvas altitude. 'cardView' at normal zoom; 'beadView' below the grid-gap
+  // threshold (see src/utils/altitude.js). Discrete by design — never holds
+  // the raw zoom value. The trigger in App.jsx's onMove handler computes the
+  // next altitude and calls setAltitude only on actual transitions, so
+  // subscribers re-render exactly at altitude changes.
+  altitude: 'cardView',
+
   setAnySelected: (v) => set({ anySelected: v }),
   setAnyHovered:  (v) => set({ anyHovered: v }),
   setHoveredNodeId: (id) => set({ hoveredNodeId: id }),
   setHoveredEdgeNodeIds: (ids) => set({ hoveredEdgeNodeIds: ids }),
   setSelectedNodeIds: (ids) => set({ selectedNodeIds: ids ?? EMPTY_SET }),
+  // Equality guard: a no-op write returns {} which Zustand treats as no
+  // change, so subscribers don't see a spurious update if a caller hands us
+  // the same value we already hold.
+  setAltitude: (altitude) =>
+    set((state) => state.altitude === altitude ? {} : { altitude }),
 
   // Clear all hover-derived state in one shot. Called when the user enters
   // spacebar pan mode so a card that happens to be lit up underneath the
