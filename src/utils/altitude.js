@@ -25,10 +25,18 @@
 // ============================================================================
 
 // Bead View triggers when adjacent grid dots are closer than this on screen.
-// Maps to React Flow zoom ≈ 0.5 with React Flow's default 20-unit grid gap,
-// which matches the prior static minZoom — the morph activates exactly at the
-// old zoom-out wall.
-export const MORPH_BELOW_GRID_GAP_MM = 2.65
+//
+// Production value: 2.65 → zoom ≈ 0.5 (matches React Flow's default minZoom,
+// so the morph activates exactly at the old zoom-out wall, per ADR-0010
+// addendum).
+//
+// TEMP for Chunk B–E verification: bumped to 3.70 → zoom ≈ 0.700 so there's
+// usable Bead View territory between the trigger and React Flow's hard floor
+// of 0.5. Without this, the trigger fires AT the floor and the bead-rendering
+// chunks would have no observable zoom range. Revert to 2.65 as the first
+// step of Chunk F, when the dynamic zoom-out limit replaces the static 0.5
+// floor.
+export const MORPH_BELOW_GRID_GAP_MM = 3.70
 
 // Return to Card View requires the gap to rise back above
 // MORPH_BELOW_GRID_GAP_MM × this ratio. 15% spread is the documented
