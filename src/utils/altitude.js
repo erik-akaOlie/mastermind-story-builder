@@ -48,6 +48,30 @@ export const MORPH_HYSTERESIS_RATIO = 1.15
 // the Background gap prop, this needs to change with it.
 export const REACT_FLOW_GRID_GAP_UNITS = 20
 
+// ── Bead View visual constants ─────────────────────────────────────────────
+// Diameter (canvas-space px) of a bead. Used by CampaignNode for the
+// collapsed circular form below the altitude threshold. This is the size
+// in canvas units, so the bead shrinks on-screen as the user continues to
+// zoom out below the morph threshold (the thumbnail/icon shrink too).
+// The bead's border and connection-endpoint dots, by contrast, stay at a
+// constant on-screen size — see the inverse-scaling in CampaignNode.
+// Tunable.
+export const BEAD_DIAMETER_PX = 160
+
+// On-screen thickness of the bead's type-colored border (in CSS px,
+// independent of canvas zoom). CampaignNode inverse-scales this against
+// the current zoom — at zoom 0.5 the border is 16 canvas-px (= 8 px on
+// screen). Capped via the same `compensation` factor used for connection
+// dots (5×) so the border doesn't grow unboundedly at deep zoom-out.
+export const BEAD_BORDER_SCREEN_PX = 8
+
+// Duration of the card↔bead morph (geometry, content cross-fade, connection-
+// line fade). Per ADR-0010 the morph is "~200ms" but Erik calibrated 150ms
+// during Chunk B planning — feels snappier without sacrificing legibility of
+// the transition. Connection lines split the window: fade out 0–75ms, fade
+// back in 75–150ms.
+export const MORPH_DURATION_MS = 150
+
 // 1 CSS pixel = 1/96 inch (per the CSS spec). 25.4 mm per inch.
 const CSS_PX_PER_MM = 96 / 25.4
 

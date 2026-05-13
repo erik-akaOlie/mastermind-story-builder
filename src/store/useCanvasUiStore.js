@@ -20,6 +20,15 @@
 //                          on actual mode changes, never on every zoom tick).
 //                          Future altitude visualizations plug in as
 //                          additional values.
+//   - morphPhase         — null | 'out' | 'in'. Two-phase signal for the
+//                          connection-line fade across the card↔bead morph:
+//                          App.jsx flips to 'out' at altitude transition
+//                          (edges fade to 0 over half the morph window),
+//                          then to 'in' at half-time (edges fade back to
+//                          their resting opacity over the other half), then
+//                          to null. Cards don't read this — they react to
+//                          `altitude` directly via plain CSS transitions.
+//                          App.jsx is the only writer.
 //
 // Why a store instead of pushing these into each node's `data`: the previous
 // approach called setNodes((nds) => nds.map(...)) on every hover event, which
@@ -51,6 +60,11 @@ export const useCanvasUiStore = create((set) => ({
   // subscribers re-render exactly at altitude changes.
   altitude: 'cardView',
 
+  // Connection-line fade phase across the card↔bead morph: 'out' during the
+  // first half of MORPH_DURATION_MS, 'in' during the second half, null at
+  // rest. FloatingEdge reads this; cards do not.
+  morphPhase: null,
+
   setAnySelected: (v) => set({ anySelected: v }),
   setAnyHovered:  (v) => set({ anyHovered: v }),
   setHoveredNodeId: (id) => set({ hoveredNodeId: id }),
@@ -61,6 +75,8 @@ export const useCanvasUiStore = create((set) => ({
   // the same value we already hold.
   setAltitude: (altitude) =>
     set((state) => state.altitude === altitude ? {} : { altitude }),
+  setMorphPhase: (morphPhase) =>
+    set((state) => state.morphPhase === morphPhase ? {} : { morphPhase }),
 
   // Clear all hover-derived state in one shot. Called when the user enters
   // spacebar pan mode so a card that happens to be lit up underneath the

@@ -38,7 +38,7 @@ import { ACTION_TYPES } from './lib/undo/index.js'
 import { CanvasOpsProvider } from './lib/CanvasOpsContext.jsx'
 import { setPanToTargetImpl } from './lib/cameraOps.js'
 import { track } from './lib/analytics.js'
-import { nextAltitude, gridGapMmAtZoom, altitudeLabel } from './utils/altitude.js'
+import { nextAltitude, gridGapMmAtZoom, altitudeLabel, MORPH_DURATION_MS } from './utils/altitude.js'
 
 // Analytics thresholds (per ADR-0009). pan_burst fires when the user
 // completes >= THRESHOLD discrete pan gestures in WINDOW_MS, then resets.
@@ -173,6 +173,15 @@ export default function App() {
   const lastViewportRef = useRef(null)
   // Sliding window of pan-only onMoveEnd timestamps for pan_burst detection.
   const panTimestampsRef = useRef([])
+  // Active morph-window timeout id. The morph runs in two phases — 'out' for
+  // the first half of MORPH_DURATION_MS (edges fade to 0), then 'in' for the
+  // second half (edges fade back to their resting opacity), then null. The
+  // ref holds whichever timer is currently scheduled (out→in or in→null). If
+  // altitude flips again before the timer fires (rare — would require crossing
+  // the hysteresis dead-band in < 150ms), we clear the in-flight timer and
+  // restart from phase 'out' so the next morph window is exactly
+  // MORPH_DURATION_MS, not the leftover.
+  const morphTimeoutRef = useRef(null)
 
   // ── Persist node position on drag end ────────────────────────────────────
   // Per-node start positions captured at drag start drive (a) the 4px-jitter
@@ -741,7 +750,23 @@ export default function App() {
     const current = useCanvasUiStore.getState().altitude
     const next = nextAltitude(current, viewport.zoom)
     if (next !== current) {
-      useCanvasUiStore.getState().setAltitude(next)
+      const store = useCanvasUiStore.getState()
+      store.setAltitude(next)
+      // Open a two-phase morph window for FloatingEdge to fade lines through.
+      // Cards react to `altitude` directly via CSS transitions — they don't
+      // read morphPhase. If a previous morph window is still in flight (very
+      // rare), cancel it so this new window is a full MORPH_DURATION_MS
+      // starting from phase 'out'.
+      const halfMs = MORPH_DURATION_MS / 2
+      store.setMorphPhase('out')
+      if (morphTimeoutRef.current != null) clearTimeout(morphTimeoutRef.current)
+      morphTimeoutRef.current = setTimeout(() => {
+        useCanvasUiStore.getState().setMorphPhase('in')
+        morphTimeoutRef.current = setTimeout(() => {
+          useCanvasUiStore.getState().setMorphPhase(null)
+          morphTimeoutRef.current = null
+        }, halfMs)
+      }, halfMs)
       // Chunk A debug log — proves the trigger fires at the expected
       // threshold. Remove once Chunk B's morph makes the transition
       // visually self-evident.

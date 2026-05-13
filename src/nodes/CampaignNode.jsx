@@ -5,6 +5,7 @@ import { useCanvasUiStore, selectIsEdgeHighlighted } from '../store/useCanvasUiS
 import { useImageUrl } from '../lib/useImageUrl'
 import { useLightbox } from '../components/Lightbox'
 import { labelInitial } from '../utils/labelUtils'
+import { BEAD_DIAMETER_PX, BEAD_BORDER_SCREEN_PX, MORPH_DURATION_MS } from '../utils/altitude'
 
 // Shared offscreen canvas for text-width measurement. Created once, reused by
 // every card instance. Used to decide whether the title needs the icon's space.
@@ -197,6 +198,39 @@ export default function CampaignNode({ data, selected }) {
   const edgeHovered  = useCanvasUiStore((s) => s.hoveredEdgeNodeIds != null)
   const anythingActive = anyHovered || edgeHovered
 
+  // ── Bead View subscription + content-height measurement ────────────────────
+  // The same CampaignNode renders both forms; subscribing to altitude flips
+  // it between card mode and bead mode (per ADR-0010). ResizeObserver tracks
+  // the rendered card-content height so the container height can transition
+  // smoothly between that measured value and BEAD_DIAMETER_PX — CSS can't
+  // transition from `height: auto` to a fixed pixel value, so the natural
+  // height has to be a numeric value at all times. Pattern mirrors the
+  // existing avatar-sizing observer above; same shape, different concern.
+  const altitude = useCanvasUiStore((s) => s.altitude)
+  const isBead = altitude === 'beadView'
+  // Subscribed only to know whether we're inside the 150ms morph window —
+  // when null, the geometric transitions (width/height/border-width/etc.)
+  // are dropped from the inline transition string so card-mode zoom updates
+  // (which change cardWidth continuously as the title font scales) don't
+  // lag behind every zoom tick.
+  const morphPhase = useCanvasUiStore((s) => s.morphPhase)
+  const morphInFlight = morphPhase !== null
+  const cardContentRef = useRef(null)
+  const [contentHeight, setContentHeight] = useState(180) // fallback before first measurement
+
+  useEffect(() => {
+    const el = cardContentRef.current
+    if (!el) return
+    const ro = new ResizeObserver(([entry]) => {
+      const h = entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height
+      // Skip the 0-height samples React Flow can briefly produce mid-mount;
+      // they would zero out the container during the first paint.
+      if (h > 0) setContentHeight(h)
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
   // Selected cards are always part of the user's active focus — never dimmed, always lifted.
   // Hover and edge-highlight also lift. Selection persists regardless of what else is hovered.
   const isActive = hovered || isEdgeHighlighted || selected
@@ -230,17 +264,44 @@ export default function CampaignNode({ data, selected }) {
   const avatarUrl = useImageUrl(data.avatar, 'thumb')
   const lightbox = useLightbox()
 
+  // Bead's no-thumbnail fallback icon — per ADR-0010 the bead shows the
+  // card type's icon (NOT the labelInitial fallback used by the card header).
+  const BeadFallbackIcon = typeConfig.icon
+  const beadIconSize = Math.round(BEAD_DIAMETER_PX * 0.5) // 36px in a 72px bead
+
   return (
     <div
-      className={`relative rounded-lg ${lifted ? 'is-lifted' : ''}`}
+      className={`relative ${lifted ? 'is-lifted' : ''}`}
       style={{
         // cardWidth defaults to 256px (the old w-64) and grows only when the
         // title's longest word can't fit at the current zoom-out font size.
-        width: cardWidth,
+        // In bead mode the container collapses to BEAD_DIAMETER_PX × DIAMETER
+        // with a circular border-radius; CSS transitions interpolate every
+        // numeric property over MORPH_DURATION_MS.
+        width:  isBead ? BEAD_DIAMETER_PX : cardWidth,
+        height: isBead ? BEAD_DIAMETER_PX : contentHeight,
         opacity,
         boxShadow: shadow,
         transform:  `scale(${scale})`,
-        backgroundColor: `color-mix(in srgb, ${typeConfig.color} 8%, white)`,
+        // Card-mode bg: light tint of type color (existing). Bead-mode bg:
+        // darkened type color so the no-thumbnail icon fallback has
+        // contrast. Avatar (when present) covers either background.
+        backgroundColor: isBead
+          ? darkenColor(typeConfig.color, 0.35)
+          : `color-mix(in srgb, ${typeConfig.color} 8%, white)`,
+        // Always-present type-colored border. In bead mode the border-width
+        // is inverse-scaled with `compensation` so it renders at a constant
+        // BEAD_BORDER_SCREEN_PX on-screen regardless of zoom (matching the
+        // connection-dot screen-space-constant behavior). In card mode the
+        // border width is 0 — no visible border. Transitions 0 ↔ (8 × comp)
+        // during the morph window.
+        border: `${isBead ? BEAD_BORDER_SCREEN_PX * compensation : 0}px solid ${typeConfig.color}`,
+        borderRadius: isBead ? '50%' : '0.5rem',
+        // Overflow visible so connection-endpoint dots — still rendered at
+        // rectangular border coordinates from useEdgeGeometry — stay
+        // visible around the bead. Chunk C repositions them onto the
+        // circular perimeter.
+        overflow: 'visible',
         // Three opacity timing branches keyed off the card's destination state:
         //   - active   → 180ms ease-out          (no delay — snappy hover-in;
         //                                        physical motion + brightening
@@ -255,9 +316,16 @@ export default function CampaignNode({ data, selected }) {
         //                                        and the whole grid relaxes
         //                                        back to its default state in
         //                                        unison)
-        // Scale + shadow + bg + border at 128ms (15% faster than the 150ms
-        // baseline) so the physical motion stays the lead "responsiveness"
-        // signal on intentional hover.
+        // Scale + shadow at 128ms (15% faster than the 150ms baseline) so
+        // the physical motion stays the lead "responsiveness" signal on
+        // intentional hover. Bg/border/geometry use MORPH_DURATION_MS so
+        // the card↔bead transition reads as one unified motion — BUT only
+        // while morphPhase is non-null. Outside the morph window those
+        // properties update instantly, matching pre-Chunk-B behavior:
+        // crucial because cardWidth and contentHeight both vary on every
+        // zoom tick in card mode (the title font scales with zoom and
+        // re-flows the layout), and animating each tick over 150ms would
+        // make ordinary zoom feel laggy.
         transition: [
           isActive
             ? 'opacity 180ms ease-out'
@@ -266,8 +334,14 @@ export default function CampaignNode({ data, selected }) {
               : 'opacity 260ms ease-in-out 90ms',
           'transform 128ms ease',
           'box-shadow 128ms ease',
-          'background-color 128ms ease',
-          'border-color 128ms ease',
+          `border-color 128ms ease`,
+          ...(morphInFlight ? [
+            `background-color ${MORPH_DURATION_MS}ms ease`,
+            `border-width ${MORPH_DURATION_MS}ms ease`,
+            `border-radius ${MORPH_DURATION_MS}ms ease`,
+            `width ${MORPH_DURATION_MS}ms ease`,
+            `height ${MORPH_DURATION_MS}ms ease`,
+          ] : []),
         ].join(', '),
       }}
       onMouseEnter={() => setHovered(true)}
@@ -275,7 +349,10 @@ export default function CampaignNode({ data, selected }) {
     >
       {/* Connection endpoint dots — rendered in HTML so they sit above the card.
           Inverse-scaled so they never render smaller than 8px on screen,
-          using the same `compensation` factor as the title (capped at 5×). */}
+          using the same `compensation` factor as the title (capped at 5×).
+          Intentionally outside the clip-wrapper so they remain visible in
+          bead mode (their rectangular-border coordinates fall outside the
+          72px bead's circle — Chunk C fixes the positions). */}
       {data.connectionDots?.map((dot, i) => {
         const dotSize = 8 * compensation
         return (
@@ -297,6 +374,40 @@ export default function CampaignNode({ data, selected }) {
       <Handle type="source" position={Position.Top} className="opacity-0" style={{ top: '50%', left: '50%' }} />
       <Handle type="target" position={Position.Top} className="opacity-0" style={{ top: '50%', left: '50%' }} />
 
+      {/* Clip wrapper — overflow:hidden + border-radius:inherit clips the two
+          content layers to the container's current shape (rounded rectangle
+          in card mode, circle in bead mode). Sits inside the type-colored
+          border. Connection dots above are outside this wrapper on purpose. */}
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          overflow: 'hidden',
+          borderRadius: 'inherit',
+        }}
+      >
+      {/* Card content layer — absolutely positioned so its natural height
+          doesn't constrain the container's transitioning height. Width is
+          pinned to cardWidth so it doesn't re-wrap when the bead container
+          is narrow. Opacity cross-fades with the bead layer over the morph. */}
+      <div
+        ref={cardContentRef}
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: cardWidth,
+          opacity: isBead ? 0 : 1,
+          // Only set 'none' when this layer is the inactive one. We
+          // deliberately do NOT set 'auto' on the active layer — that would
+          // override the inherited `none` value that .is-panning installs
+          // on .react-flow__node to make every node inert during a
+          // spacebar-pan. Letting the active layer fall through to the
+          // inherited value preserves both behaviors.
+          pointerEvents: isBead ? 'none' : undefined,
+          transition: `opacity ${MORPH_DURATION_MS}ms ease`,
+        }}
+      >
       {/* Header */}
       <div
         className="flex items-center rounded-t-lg gap-2"
@@ -406,6 +517,43 @@ export default function CampaignNode({ data, selected }) {
         ) : (
           <p className="text-gray-300 text-xs italic leading-snug">No content yet</p>
         )}
+      </div>
+      </div>
+      {/* Bead content layer — absolutely positioned, fills the clip wrapper.
+          Cross-fades opposite to the card-content layer. Avatar (if any)
+          fills the circle via object-cover; otherwise the card's type icon
+          is centered as the fallback (NOT labelInitial — per ADR-0010). */}
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          opacity: isBead ? 1 : 0,
+          // See sibling card-content layer comment: only set 'none' when
+          // this layer is inactive; leave the active layer's value unset
+          // so it inherits from .react-flow__node (which .is-panning sets
+          // to 'none' during spacebar-pan).
+          pointerEvents: isBead ? undefined : 'none',
+          transition: `opacity ${MORPH_DURATION_MS}ms ease`,
+        }}
+      >
+        {avatarUrl ? (
+          <img
+            src={avatarUrl}
+            alt={data.label || ''}
+            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            draggable={false}
+          />
+        ) : BeadFallbackIcon ? (
+          <BeadFallbackIcon
+            size={beadIconSize}
+            color={hdrText}
+            weight="fill"
+          />
+        ) : null}
+      </div>
       </div>
     </div>
   )
