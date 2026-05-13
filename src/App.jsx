@@ -747,6 +747,11 @@ export default function App() {
   // bead-perimeter math, future altitude views) react to altitude
   // transitions, never to raw zoom.
   const onMove = useCallback((_event, viewport) => {
+    // Keep the store's zoom mirror in sync — useEdgeGeometry reads it from
+    // here (the hook runs at the App level, outside the <ReactFlow> context,
+    // so it can't call useViewport itself).
+    useCanvasUiStore.getState().setCurrentZoom(viewport.zoom)
+
     const current = useCanvasUiStore.getState().altitude
     const next = nextAltitude(current, viewport.zoom)
     if (next !== current) {

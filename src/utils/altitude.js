@@ -65,6 +65,26 @@ export const BEAD_DIAMETER_PX = 160
 // dots (5×) so the border doesn't grow unboundedly at deep zoom-out.
 export const BEAD_BORDER_SCREEN_PX = 8
 
+// Minimum on-screen arc-distance between adjacent connection-endpoint dots
+// on a bead's perimeter (in CSS px, independent of zoom). Per ADR-0010
+// addendum. Used by useEdgeGeometry's circular branch to redistribute dots
+// when natural angles cluster too tightly. Converted to canvas-px at use
+// time by dividing by current zoom.
+// On-screen diameter of a connection-endpoint dot, in CSS px. CampaignNode
+// inverse-scales it by the zoom `compensation` factor so the dot renders at
+// a constant ~8px on screen at every zoom level (matching the bead border).
+// useEdgeGeometry's bead-mode branch adds this to MIN_CIRCLE_POINT_GAP_PX
+// when computing minimum arc-spacing so the GAP value below describes the
+// visible edge-to-edge padding between adjacent dots, not center-to-center.
+export const CONNECTION_DOT_SCREEN_PX = 8
+
+// Minimum visible edge-to-edge padding between two adjacent connection dots
+// on a bead's perimeter, in CSS px. The spread logic enforces this by
+// requiring arc-distance between dot CENTERS to be at least
+// (CONNECTION_DOT_SCREEN_PX + MIN_CIRCLE_POINT_GAP_PX), so two dots never
+// visually touch. Tunable; bump up for more breathing room.
+export const MIN_CIRCLE_POINT_GAP_PX = 4
+
 // Duration of the card↔bead morph (geometry, content cross-fade, connection-
 // line fade). Per ADR-0010 the morph is "~200ms" but Erik calibrated 150ms
 // during Chunk B planning — feels snappier without sacrificing legibility of

@@ -65,6 +65,15 @@ export const useCanvasUiStore = create((set) => ({
   // rest. FloatingEdge reads this; cards do not.
   morphPhase: null,
 
+  // Current React Flow viewport zoom — written by App.jsx's onMove handler
+  // (the same one that drives the altitude trigger). The only consumer is
+  // useEdgeGeometry's bead-mode branch, which needs zoom to convert the
+  // screen-px arc-gap constant into canvas-px. Stored here (rather than
+  // read via useViewport in the hook itself) because useEdgeGeometry runs
+  // at the App component level, OUTSIDE the <ReactFlow> context — calling
+  // useViewport there fails and crashes the render.
+  currentZoom: 1,
+
   setAnySelected: (v) => set({ anySelected: v }),
   setAnyHovered:  (v) => set({ anyHovered: v }),
   setHoveredNodeId: (id) => set({ hoveredNodeId: id }),
@@ -77,6 +86,8 @@ export const useCanvasUiStore = create((set) => ({
     set((state) => state.altitude === altitude ? {} : { altitude }),
   setMorphPhase: (morphPhase) =>
     set((state) => state.morphPhase === morphPhase ? {} : { morphPhase }),
+  setCurrentZoom: (currentZoom) =>
+    set((state) => state.currentZoom === currentZoom ? {} : { currentZoom }),
 
   // Clear all hover-derived state in one shot. Called when the user enters
   // spacebar pan mode so a card that happens to be lit up underneath the

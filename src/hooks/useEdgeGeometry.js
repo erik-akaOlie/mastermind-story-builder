@@ -16,14 +16,43 @@
 // ============================================================================
 
 import { useEffect, useRef } from 'react'
-import { getNodeCenter, getSpreadBorderPoints } from '../utils/edgeRouting'
+import {
+  getNodeCenter,
+  getSpreadBorderPoints,
+  getSpreadCircularPoints,
+} from '../utils/edgeRouting'
 import { useTypeStore } from '../store/useTypeStore'
+import { useCanvasUiStore } from '../store/useCanvasUiStore'
+import { BEAD_DIAMETER_PX, MIN_CIRCLE_POINT_GAP_PX, CONNECTION_DOT_SCREEN_PX } from '../utils/altitude'
 
 export function useEdgeGeometry({ nodes, edges, setNodes, setEdges }) {
   const prevEdgeGeoRef = useRef('')
   const prevDotsRef    = useRef('')
 
+  // Altitude branches the geometry: 'beadView' uses circular perimeter math
+  // against BEAD_DIAMETER_PX, otherwise the existing rectangular math runs.
+  // Zoom feeds the min-arc-gap conversion (screen-px → canvas-px), so the
+  // on-screen separation stays constant at all zoom levels — same posture
+  // as the connection-dot size and bead-border thickness. Both values come
+  // from useCanvasUiStore (App.jsx's onMove handler mirrors zoom there)
+  // because this hook runs at the App level, outside the <ReactFlow>
+  // context, so it can't call React Flow's own viewport hooks.
+  const altitude = useCanvasUiStore((s) => s.altitude)
+  const zoom     = useCanvasUiStore((s) => s.currentZoom)
+  const isBead = altitude === 'beadView'
+
   useEffect(() => {
+    // In bead mode the node's "center" is anchored to BEAD_DIAMETER_PX, not
+    // node.width/node.height — those may still be the card's dimensions
+    // while React Flow hasn't re-measured the morphed container, and even
+    // if they have, the natural angle should be measured against the bead's
+    // geometry (the only one visible at this altitude). Same anchoring goes
+    // for the connected node, which is also a bead in this altitude.
+    const beadHalf = BEAD_DIAMETER_PX / 2
+    const centerOf = (node) => isBead
+      ? { x: node.position.x + beadHalf, y: node.position.y + beadHalf }
+      : getNodeCenter(node)
+
     const nodeConnections = {}
     nodes.forEach((n) => { nodeConnections[n.id] = [] })
 
@@ -32,8 +61,8 @@ export function useEdgeGeometry({ nodes, edges, setNodes, setEdges }) {
       const targetNode = nodes.find((n) => n.id === edge.target)
       if (!sourceNode || !targetNode) return
 
-      const sourceCenter = getNodeCenter(sourceNode)
-      const targetCenter = getNodeCenter(targetNode)
+      const sourceCenter = centerOf(sourceNode)
+      const targetCenter = centerOf(targetNode)
 
       nodeConnections[edge.source].push({ id: edge.id, targetCenter })
       nodeConnections[edge.target].push({ id: edge.id, targetCenter: sourceCenter })
@@ -41,7 +70,18 @@ export function useEdgeGeometry({ nodes, edges, setNodes, setEdges }) {
 
     const allBorderPoints = {}
     nodes.forEach((node) => {
-      allBorderPoints[node.id] = getSpreadBorderPoints(node, nodeConnections[node.id] || [])
+      const conns = nodeConnections[node.id] || []
+      if (isBead) {
+        const center = centerOf(node)
+        // Min arc-distance enforced between dot CENTERS = dot diameter + the
+        // tunable edge-to-edge padding. Converted from screen-px to canvas-px
+        // via 1/zoom so the visible spacing stays constant at every zoom.
+        const minScreenCenterToCenter = CONNECTION_DOT_SCREEN_PX + MIN_CIRCLE_POINT_GAP_PX
+        const minArcCanvasPx = zoom > 0 ? minScreenCenterToCenter / zoom : minScreenCenterToCenter
+        allBorderPoints[node.id] = getSpreadCircularPoints(center, beadHalf, conns, minArcCanvasPx)
+      } else {
+        allBorderPoints[node.id] = getSpreadBorderPoints(node, conns)
+      }
     })
 
     const newEdgeGeo = {}
@@ -91,5 +131,5 @@ export function useEdgeGeometry({ nodes, edges, setNodes, setEdges }) {
         }))
       )
     }
-  }, [nodes, edges, setEdges, setNodes])
+  }, [nodes, edges, isBead, zoom, setEdges, setNodes])
 }

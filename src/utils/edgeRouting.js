@@ -153,3 +153,129 @@ export function getSpreadBorderPoints(node, connections) {
 
   return result
 }
+
+// ── Circular-perimeter routing (bead mode, per ADR-0010 / Chunk C) ────────
+// Mirrors the rectangular functions above for nodes rendered as beads. The
+// dot's CENTER lands at exactly `radius` from the bead's center — i.e. on
+// the outer edge of the container — so the dot extends half-inside the
+// type-colored border and half-outside, keeping the dot visible against
+// any border color (per Erik's Chunk C spec).
+
+// Returns the point where a straight line from `center` toward `targetPoint`
+// exits the circle of given `radius`. Mirrors getBorderIntersection.
+export function getCircularIntersection(center, radius, targetPoint) {
+  const dx = targetPoint.x - center.x
+  const dy = targetPoint.y - center.y
+  const dist = Math.hypot(dx, dy)
+  if (dist < 0.001) return { x: center.x + radius, y: center.y }
+  return {
+    x: center.x + (dx / dist) * radius,
+    y: center.y + (dy / dist) * radius,
+  }
+}
+
+// Distributes connection points around a circular perimeter, separating
+// adjacent points so their on-screen arc-distance is at least
+// minArcCanvasPx. Mirrors getSpreadBorderPoints' shape (same input/output
+// signature) so useEdgeGeometry can branch on shape mode cleanly.
+//
+// center:           canvas-absolute center of the bead
+// radius:           canvas-px radius (= BEAD_DIAMETER_PX / 2)
+// connections:      [{ id: edgeId, targetCenter: {x, y} }]
+// minArcCanvasPx:   MIN_CIRCLE_POINT_GAP_PX / zoom — minimum arc-distance
+//                   in canvas units (so the on-screen gap stays constant)
+//
+// Returns: { [edgeId]: {x, y} } — canvas-absolute coordinates of each
+// connection point on the bead's perimeter.
+export function getSpreadCircularPoints(center, radius, connections, minArcCanvasPx) {
+  if (connections.length === 0) return {}
+
+  // 1. Natural angle from bead center to each target. A dot's natural angle
+  //    is the closest point on the bead's perimeter to its target — what
+  //    the user expects when nothing is crowded.
+  const points = connections.map(({ id, targetCenter }) => ({
+    id,
+    angle: Math.atan2(targetCenter.y - center.y, targetCenter.x - center.x),
+  }))
+
+  // Single-point fast path: no spreading possible.
+  if (points.length === 1 || radius <= 0 || minArcCanvasPx <= 0) {
+    return resolveAnglesToPoints(points, center, radius)
+  }
+
+  const minAngleGap = minArcCanvasPx / radius
+  const n = points.length
+
+  // Worst-case fallback: even minimum-gap spacing doesn't fit in 2π
+  // (happens at small radius + many connections, e.g. a bead at very
+  // deep zoom-out). Distribute evenly around the full circle.
+  if (minAngleGap * n >= 2 * Math.PI) {
+    for (let i = 0; i < n; i++) {
+      points[i].angle = -Math.PI + (i / n) * 2 * Math.PI
+    }
+    return resolveAnglesToPoints(points, center, radius)
+  }
+
+  // 2. Sort by natural angle.
+  points.sort((a, b) => a.angle - b.angle)
+
+  // 3. Linearize: rotate the array so the LARGEST gap (incl. wrap-around)
+  //    sits at the array's end. This means no cluster can span the ±π
+  //    boundary, so we can treat angles as a linear sequence with
+  //    arithmetic means — no circular-mean math needed.
+  let maxGap = 2 * Math.PI - (points[n - 1].angle - points[0].angle)
+  let maxGapIdx = 0
+  for (let i = 1; i < n; i++) {
+    const gap = points[i].angle - points[i - 1].angle
+    if (gap > maxGap) { maxGap = gap; maxGapIdx = i }
+  }
+  if (maxGapIdx > 0) {
+    const rotated = points.slice(maxGapIdx).concat(
+      points.slice(0, maxGapIdx).map((p) => ({ ...p, angle: p.angle + 2 * Math.PI }))
+    )
+    for (let i = 0; i < n; i++) points[i] = rotated[i]
+  }
+
+  // 4. Group consecutive close points into clusters (transitive: if A-B
+  //    and B-C are each below the gap threshold, then A, B, C are one
+  //    cluster — even if A-C would have been far enough on their own).
+  //    Singletons (clusters of size 1) get left at their natural angle —
+  //    that's the whole point: a non-crowded connection stays aimed at
+  //    its target's exact direction.
+  const clusters = [[points[0]]]
+  for (let i = 1; i < n; i++) {
+    const cur = clusters[clusters.length - 1]
+    if (points[i].angle - cur[cur.length - 1].angle < minAngleGap) {
+      cur.push(points[i])
+    } else {
+      clusters.push([points[i]])
+    }
+  }
+
+  // 5. For each cluster with > 1 point, redistribute its members evenly
+  //    around the cluster's natural mean — minAngleGap apart. Other
+  //    clusters and singletons are untouched.
+  for (const cluster of clusters) {
+    if (cluster.length === 1) continue
+    const k = cluster.length
+    const meanAngle = cluster.reduce((s, p) => s + p.angle, 0) / k
+    const totalSpan = minAngleGap * (k - 1)
+    const start = meanAngle - totalSpan / 2
+    for (let i = 0; i < k; i++) {
+      cluster[i].angle = start + i * minAngleGap
+    }
+  }
+
+  return resolveAnglesToPoints(points, center, radius)
+}
+
+function resolveAnglesToPoints(points, center, radius) {
+  const result = {}
+  for (const p of points) {
+    result[p.id] = {
+      x: center.x + Math.cos(p.angle) * radius,
+      y: center.y + Math.sin(p.angle) * radius,
+    }
+  }
+  return result
+}

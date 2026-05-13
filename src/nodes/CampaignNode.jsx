@@ -5,7 +5,7 @@ import { useCanvasUiStore, selectIsEdgeHighlighted } from '../store/useCanvasUiS
 import { useImageUrl } from '../lib/useImageUrl'
 import { useLightbox } from '../components/Lightbox'
 import { labelInitial } from '../utils/labelUtils'
-import { BEAD_DIAMETER_PX, BEAD_BORDER_SCREEN_PX, MORPH_DURATION_MS } from '../utils/altitude'
+import { BEAD_DIAMETER_PX, BEAD_BORDER_SCREEN_PX, MORPH_DURATION_MS, CONNECTION_DOT_SCREEN_PX } from '../utils/altitude'
 
 // Shared offscreen canvas for text-width measurement. Created once, reused by
 // every card instance. Used to decide whether the title needs the icon's space.
@@ -269,6 +269,14 @@ export default function CampaignNode({ data, selected }) {
   const BeadFallbackIcon = typeConfig.icon
   const beadIconSize = Math.round(BEAD_DIAMETER_PX * 0.5) // 36px in a 72px bead
 
+  // Border width in CANVAS px — inverse-scaled by `compensation` in bead mode
+  // so it renders at a constant ~BEAD_BORDER_SCREEN_PX on screen, zero in
+  // card mode. Exported as a variable because two places consume it: the
+  // container's border style, and the connection-dot positioning (which
+  // must subtract it to compensate for CSS positioning being measured from
+  // the padding-edge, not the border-edge, of the container).
+  const borderCanvasPx = isBead ? BEAD_BORDER_SCREEN_PX * compensation : 0
+
   return (
     <div
       className={`relative ${lifted ? 'is-lifted' : ''}`}
@@ -294,8 +302,10 @@ export default function CampaignNode({ data, selected }) {
         // BEAD_BORDER_SCREEN_PX on-screen regardless of zoom (matching the
         // connection-dot screen-space-constant behavior). In card mode the
         // border width is 0 — no visible border. Transitions 0 ↔ (8 × comp)
-        // during the morph window.
-        border: `${isBead ? BEAD_BORDER_SCREEN_PX * compensation : 0}px solid ${typeConfig.color}`,
+        // during the morph window. Width is also subtracted from each
+        // connection-dot's left/top below (absolutely-positioned children
+        // measure from the parent's PADDING-edge, not the border-edge).
+        border: `${borderCanvasPx}px solid ${typeConfig.color}`,
         borderRadius: isBead ? '50%' : '0.5rem',
         // Overflow visible so connection-endpoint dots — still rendered at
         // rectangular border coordinates from useEdgeGeometry — stay
@@ -354,7 +364,7 @@ export default function CampaignNode({ data, selected }) {
           bead mode (their rectangular-border coordinates fall outside the
           72px bead's circle — Chunk C fixes the positions). */}
       {data.connectionDots?.map((dot, i) => {
-        const dotSize = 8 * compensation
+        const dotSize = CONNECTION_DOT_SCREEN_PX * compensation
         return (
           <div
             key={i}
@@ -362,8 +372,13 @@ export default function CampaignNode({ data, selected }) {
             style={{
               width:  dotSize,
               height: dotSize,
-              left:   dot.x - dotSize / 2,
-              top:    dot.y - dotSize / 2,
+              // Subtract borderCanvasPx so the dot's center lands on the
+              // OUTER edge of the container (the visible bead perimeter),
+              // not the inner padding-edge that absolute positioning
+              // defaults to. In card mode borderCanvasPx is 0 so this is
+              // identical to the pre-Chunk-B math.
+              left:   dot.x - dotSize / 2 - borderCanvasPx,
+              top:    dot.y - dotSize / 2 - borderCanvasPx,
               backgroundColor: dot.color ?? '#94a3b8',
               zIndex: 10,
             }}
