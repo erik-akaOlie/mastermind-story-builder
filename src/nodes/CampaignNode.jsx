@@ -6,6 +6,7 @@ import { useImageUrl } from '../lib/useImageUrl'
 import { useLightbox } from '../components/Lightbox'
 import { labelInitial } from '../utils/labelUtils'
 import { BEAD_DIAMETER_PX, BEAD_BORDER_SCREEN_PX, MORPH_DURATION_MS, CONNECTION_DOT_SCREEN_PX, currentThresholdZoom } from '../utils/altitude'
+import { useReducedMotion } from '../hooks/useReducedMotion'
 
 // Shared offscreen canvas for text-width measurement. Created once, reused by
 // every card instance. Used to decide whether the title needs the icon's space.
@@ -46,6 +47,15 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
   const NODE_TYPES = useNodeTypes()
   const typeConfig = NODE_TYPES[data.type] || { label: data.type, color: data.color || '#6B7280' }
 
+  // ── Reduced-motion accessibility (Chunk F, per ADR-0010) ──────────────────
+  // When the OS-level `prefers-reduced-motion: reduce` is set, the morph
+  // collapses to a zero-duration swap: geometry, content cross-fade,
+  // dot fade, edge fade, and drag-end drift all run at 0 ms. `morphMs` is
+  // the single source of truth for the morph's animation budget — used in
+  // every transition string and the drift rAF guard below.
+  const reducedMotion = useReducedMotion()
+  const morphMs = reducedMotion ? 0 : MORPH_DURATION_MS
+
   // ── Bead View hover-expand (per ADR-0010 / Chunk D) ───────────────────────
   // A bead pops back into a readable card on hover or single-select, but
   // pinned at "threshold-size" (= the screen size cards had at the Card→
@@ -74,7 +84,12 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
     isThisHovered ||
     (hoveredNodeId === null && isThisSingleSel)
   )
-  const thresholdZoom     = currentThresholdZoom()
+  // Read the threshold from the store so a future altitude-rail UI that
+  // mutates it propagates here without code changes. Default value (2.65)
+  // lives in the store; altitude.js exposes the legacy constant only as a
+  // fallback for callers that don't have store access.
+  const thresholdMm       = useCanvasUiStore((s) => s.thresholdGridGapMm)
+  const thresholdZoom     = currentThresholdZoom(thresholdMm)
   const effectiveZoom     = isExpanded ? Math.max(zoom, thresholdZoom) : zoom
   const counterScale      = isExpanded ? Math.max(1, thresholdZoom / zoom) : 1
 
@@ -273,7 +288,7 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
     if (prevIsExpandedRef.current === isExpanded) return
     prevIsExpandedRef.current = isExpanded
     setIsExpansionMorphing(true)
-    const t = setTimeout(() => setIsExpansionMorphing(false), MORPH_DURATION_MS)
+    const t = setTimeout(() => setIsExpansionMorphing(false), morphMs)
     return () => clearTimeout(t)
   }, [isExpanded])
   const morphInFlight = morphPhase !== null || isExpansionMorphing || justFlippedExpansion
@@ -460,7 +475,7 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
     let rafId
     const tick = () => {
       const elapsed = performance.now() - driftAnchorRef.current.startTime
-      if (elapsed >= MORPH_DURATION_MS) {
+      if (elapsed >= morphMs) {
         setDriftActive(false)
         return
       }
@@ -484,7 +499,7 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
     effectiveClampDyScreen = frozenClampRef.current.dy
   } else if (driftActive) {
     const elapsed = performance.now() - driftAnchorRef.current.startTime
-    const t = Math.min(1, Math.max(0, elapsed / MORPH_DURATION_MS))
+    const t = morphMs > 0 ? Math.min(1, Math.max(0, elapsed / morphMs)) : 1
     // easeOutCubic for a settle-in feel; matches the morph animation timing.
     const eased = 1 - Math.pow(1 - t, 3)
     effectiveClampDxScreen = driftAnchorRef.current.startDx +
@@ -625,11 +640,11 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
           'box-shadow 128ms ease',
           `border-color 128ms ease`,
           ...(morphInFlight ? [
-            `background-color ${MORPH_DURATION_MS}ms ease`,
-            `border-width ${MORPH_DURATION_MS}ms ease`,
-            `border-radius ${MORPH_DURATION_MS}ms ease`,
-            `width ${MORPH_DURATION_MS}ms ease`,
-            `height ${MORPH_DURATION_MS}ms ease`,
+            `background-color ${morphMs}ms ease`,
+            `border-width ${morphMs}ms ease`,
+            `border-radius ${morphMs}ms ease`,
+            `width ${morphMs}ms ease`,
+            `height ${morphMs}ms ease`,
           ] : []),
         ].join(', '),
       }}
@@ -675,7 +690,7 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
               opacity: dotsHidden ? 0 : 1,
               // 0ms when going TO 0 (snap out at morph-start), 75ms ease
               // when going to 1 (fade back in at morph-end).
-              transition: dotsHidden ? 'opacity 0ms' : `opacity ${MORPH_DURATION_MS / 2}ms ease`,
+              transition: dotsHidden ? 'opacity 0ms' : `opacity ${morphMs / 2}ms ease`,
             }}
           />
         )
@@ -715,7 +730,7 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
           // spacebar-pan. Letting the active layer fall through to the
           // inherited value preserves both behaviors.
           pointerEvents: isBead ? 'none' : undefined,
-          transition: `opacity ${MORPH_DURATION_MS}ms ease`,
+          transition: `opacity ${morphMs}ms ease`,
         }}
       >
       {/* Header */}
@@ -846,7 +861,7 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
           // so it inherits from .react-flow__node (which .is-panning sets
           // to 'none' during spacebar-pan).
           pointerEvents: isBead ? undefined : 'none',
-          transition: `opacity ${MORPH_DURATION_MS}ms ease`,
+          transition: `opacity ${morphMs}ms ease`,
         }}
       >
         {avatarUrl ? (

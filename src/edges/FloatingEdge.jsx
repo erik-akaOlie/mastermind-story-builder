@@ -5,6 +5,7 @@ import {
   selectAnythingActive,
 } from '../store/useCanvasUiStore'
 import { MORPH_DURATION_MS } from '../utils/altitude'
+import { useReducedMotion } from '../hooks/useReducedMotion'
 
 // Opacity tiers — match the card-side values in CampaignNode.jsx so cards
 // and their connection lines fade together.
@@ -17,13 +18,6 @@ const TRANSITION_ACTIVE   = 'opacity 180ms ease-out'                  // snap-in
 const TRANSITION_DIMMING  = 'opacity 260ms ease-in-out 90ms'          // gentle pull-back
 const TRANSITION_RESTING  = 'opacity 500ms ease-in-out 90ms'          // slow return to rest
 
-// Morph window — App.jsx flips morphPhase to 'out' for half of
-// MORPH_DURATION_MS (edges fade to 0), then 'in' for the other half (edges
-// fade back to resting opacity), then null. Each phase's transition is
-// half-duration so the total edge animation exactly matches the card morph
-// timer. Per ADR-0010 / Chunk B.
-const TRANSITION_MORPHING = `opacity ${MORPH_DURATION_MS / 2}ms ease`
-
 export default function FloatingEdge({ source, target, data, style, selected }) {
   // Subscribe with narrow selectors so this edge only re-renders when its own
   // active status (or the global "anything active" flag) flips — not on
@@ -31,6 +25,13 @@ export default function FloatingEdge({ source, target, data, style, selected }) 
   const isEdgeActive   = useCanvasUiStore(selectIsEdgeActive(source, target))
   const anythingActive = useCanvasUiStore(selectAnythingActive)
   const morphPhase     = useCanvasUiStore((s) => s.morphPhase)
+  // Reduced-motion accessibility (Chunk F): when set, the morph-fade
+  // collapses to a zero-duration swap so the user doesn't see any line
+  // animation during card↔bead transitions. Built as a per-render value
+  // (rather than a module-level constant) because the OS-level setting
+  // can change live and the hook re-renders on change.
+  const reducedMotion  = useReducedMotion()
+  const TRANSITION_MORPHING = `opacity ${(reducedMotion ? 0 : MORPH_DURATION_MS) / 2}ms ease`
   // Per-node hover-expand morph signal (Chunk D step 6). Narrow selector:
   // only re-renders THIS edge when one of ITS endpoints' phases changes —
   // unrelated nodes' phases never trigger an update here.

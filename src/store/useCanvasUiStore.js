@@ -83,6 +83,16 @@ export const useCanvasUiStore = create((set) => ({
   // only translate.
   draggingNodeId: null,
 
+  // Grid-dot spacing (in mm of on-screen distance) at which the Card↔Bead
+  // morph triggers. Per ADR-0010 (2026-05-12 addendum) the production
+  // default is 2.65mm ≈ zoom 0.5. Lives in state — not as a const —
+  // because the eventual altitude rail (BACKLOG) lets the user drag the
+  // semantic boundary along the navigable zoom spectrum. App.jsx's onMove
+  // and CampaignNode read this value; both currentThresholdZoom() and
+  // nextAltitude() accept it as a parameter so a future test or rail
+  // gesture can drive them without touching the constant in altitude.js.
+  thresholdGridGapMm: 2.65,
+
   // Expanded-node visual state (per ADR-0010 / Chunk D). Only one node can be
   // expanded at a time (hover or single-select in Bead View), so a single
   // record suffices instead of a Map. Published by the expanded CampaignNode
@@ -189,6 +199,8 @@ export const useCanvasUiStore = create((set) => ({
     }),
   setDraggingNodeId: (id) =>
     set((state) => state.draggingNodeId === id ? {} : { draggingNodeId: id }),
+  setThresholdGridGapMm: (mm) =>
+    set((state) => state.thresholdGridGapMm === mm ? {} : { thresholdGridGapMm: mm }),
 
   // Clear all hover-derived state in one shot. Called when the user enters
   // spacebar pan mode so a card that happens to be lit up underneath the

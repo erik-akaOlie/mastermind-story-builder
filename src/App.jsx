@@ -31,6 +31,7 @@ import { useEdgeGeometry } from './hooks/useEdgeGeometry'
 import { useNodeHoverSelection } from './hooks/useNodeHoverSelection'
 import { useUndoShortcuts } from './hooks/useUndoShortcuts'
 import { useCustomMarquee } from './hooks/useCustomMarquee'
+import { useReducedMotion } from './hooks/useReducedMotion'
 import MarqueeRect from './components/MarqueeRect'
 import { useUndoStore } from './store/useUndoStore'
 import { useCanvasUiStore } from './store/useCanvasUiStore'
@@ -38,7 +39,7 @@ import { ACTION_TYPES } from './lib/undo/index.js'
 import { CanvasOpsProvider } from './lib/CanvasOpsContext.jsx'
 import { setPanToTargetImpl } from './lib/cameraOps.js'
 import { track } from './lib/analytics.js'
-import { nextAltitude, gridGapMmAtZoom, altitudeLabel, MORPH_DURATION_MS } from './utils/altitude.js'
+import { nextAltitude, gridGapMmAtZoom, altitudeLabel, MORPH_DURATION_MS, computeMinZoom, DEFAULT_MIN_ZOOM } from './utils/altitude.js'
 
 // Analytics thresholds (per ADR-0009). pan_burst fires when the user
 // completes >= THRESHOLD discrete pan gestures in WINDOW_MS, then resets.
@@ -75,6 +76,7 @@ export default function App() {
   })
 
   const isPanning = useSpacebarPan()
+  const reducedMotion = useReducedMotion()
 
   // When the user enters spacebar pan mode, every element on the canvas
   // becomes inert (CSS pointer-events: none on .react-flow__node and
@@ -183,6 +185,34 @@ export default function App() {
   // MORPH_DURATION_MS, not the leftover.
   const morphTimeoutRef = useRef(null)
 
+  // ── Dynamic minZoom (Chunk F, per ADR-0010 addendum) ─────────────────────
+  // React Flow's static minZoom = 0.5 is replaced with a per-campaign
+  // value that lets the user zoom out until the bounding box of all nodes
+  // fills ~70% of the viewport on the more binding axis. Recomputed on
+  // settled events: node add, delete, drag-stop, window resize. Skipped
+  // during a drag (using the existing draggingNodeId signal) so the limit
+  // doesn't shift while a node is mid-flight.
+  const draggingNodeIdForMinZoom = useCanvasUiStore((s) => s.draggingNodeId)
+  const [viewportSize, setViewportSize] = useState(() => ({
+    w: typeof window !== 'undefined' ? window.innerWidth  : 0,
+    h: typeof window !== 'undefined' ? window.innerHeight : 0,
+  }))
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const onResize = () => setViewportSize({ w: window.innerWidth, h: window.innerHeight })
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+  const [dynamicMinZoom, setDynamicMinZoom] = useState(DEFAULT_MIN_ZOOM)
+  useEffect(() => {
+    if (draggingNodeIdForMinZoom != null) return
+    setDynamicMinZoom(computeMinZoom({
+      nodes,
+      viewportWidth:  viewportSize.w,
+      viewportHeight: viewportSize.h,
+    }))
+  }, [nodes, viewportSize, draggingNodeIdForMinZoom])
+
   // ── Per-node hover-expand morph signal (Chunk D step 6) ──────────────────
   // When a bead expands or an expanded card collapses, the connection lines
   // attached to that single node need to fade through the visual change.
@@ -209,6 +239,11 @@ export default function App() {
   const expandMorphTimersRef = useRef(new Map())
   const fireExpandMorph = useCallback((id) => {
     if (!id) return
+    // Reduced-motion (Chunk F): the morph runs at 0 ms inside CampaignNode
+    // and FloatingEdge, so the two-phase fade signal has nothing to fade.
+    // Skip publishing the phase entirely — avoids ratting through 'out' →
+    // 'in' → null on the same animation frame for no visible effect.
+    if (reducedMotion) return
     const halfMs = MORPH_DURATION_MS / 2
     const prevTimers = expandMorphTimersRef.current.get(id)
     if (prevTimers) {
@@ -227,7 +262,7 @@ export default function App() {
       expandMorphTimersRef.current.set(id, { ...cur, inTimer })
     }, halfMs)
     expandMorphTimersRef.current.set(id, { outTimer, inTimer: null })
-  }, [])
+  }, [reducedMotion])
   useEffect(() => {
     const prev = prevExpandedIdRef.current
     const cur  = currentlyExpandedId
@@ -820,7 +855,8 @@ export default function App() {
     store.setCurrentPan(viewport.x, viewport.y)
 
     const current = useCanvasUiStore.getState().altitude
-    const next = nextAltitude(current, viewport.zoom)
+    const thresholdMm = useCanvasUiStore.getState().thresholdGridGapMm
+    const next = nextAltitude(current, viewport.zoom, thresholdMm)
     if (next !== current) {
       const store = useCanvasUiStore.getState()
       store.setAltitude(next)
@@ -829,16 +865,23 @@ export default function App() {
       // read morphPhase. If a previous morph window is still in flight (very
       // rare), cancel it so this new window is a full MORPH_DURATION_MS
       // starting from phase 'out'.
-      const halfMs = MORPH_DURATION_MS / 2
-      store.setMorphPhase('out')
-      if (morphTimeoutRef.current != null) clearTimeout(morphTimeoutRef.current)
-      morphTimeoutRef.current = setTimeout(() => {
-        useCanvasUiStore.getState().setMorphPhase('in')
+      //
+      // Reduced-motion (Chunk F): skip the two-phase fade entirely. Edges
+      // stay at their resting opacity through the altitude swap; cards'
+      // CSS transitions are already collapsed to 0 ms in CampaignNode via
+      // useReducedMotion, so the global morph window has no work to do.
+      if (!reducedMotion) {
+        const halfMs = MORPH_DURATION_MS / 2
+        store.setMorphPhase('out')
+        if (morphTimeoutRef.current != null) clearTimeout(morphTimeoutRef.current)
         morphTimeoutRef.current = setTimeout(() => {
-          useCanvasUiStore.getState().setMorphPhase(null)
-          morphTimeoutRef.current = null
+          useCanvasUiStore.getState().setMorphPhase('in')
+          morphTimeoutRef.current = setTimeout(() => {
+            useCanvasUiStore.getState().setMorphPhase(null)
+            morphTimeoutRef.current = null
+          }, halfMs)
         }, halfMs)
-      }, halfMs)
+      }
       // Chunk A debug log — proves the trigger fires at the expected
       // threshold. Remove once Chunk B's morph makes the transition
       // visually self-evident.
@@ -848,7 +891,7 @@ export default function App() {
         `gap=${gridGapMmAtZoom(viewport.zoom).toFixed(2)}mm`
       )
     }
-  }, [])
+  }, [reducedMotion])
 
   // ── Viewport analytics (per ADR-0009) ────────────────────────────────────
   // onMoveEnd fires once per discrete pan/zoom gesture, which is the right
@@ -932,6 +975,7 @@ export default function App() {
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         panOnDrag={isPanning}
+        minZoom={dynamicMinZoom}
         panOnScroll={true}
         panOnScrollMode="vertical"
         zoomOnScroll={false}

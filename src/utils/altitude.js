@@ -25,18 +25,12 @@
 // ============================================================================
 
 // Bead View triggers when adjacent grid dots are closer than this on screen.
-//
-// Production value: 2.65 → zoom ≈ 0.5 (matches React Flow's default minZoom,
-// so the morph activates exactly at the old zoom-out wall, per ADR-0010
-// addendum).
-//
-// TEMP for Chunk B–E verification: bumped to 3.70 → zoom ≈ 0.700 so there's
-// usable Bead View territory between the trigger and React Flow's hard floor
-// of 0.5. Without this, the trigger fires AT the floor and the bead-rendering
-// chunks would have no observable zoom range. Revert to 2.65 as the first
-// step of Chunk F, when the dynamic zoom-out limit replaces the static 0.5
-// floor.
-export const MORPH_BELOW_GRID_GAP_MM = 3.70
+// 2.65 → zoom ≈ 0.5 with React Flow's default 20-unit grid gap. With Chunk
+// F's dynamic minZoom in place, this no longer matches an external static
+// floor — the threshold is purely an "altitude" decision now. ADR-0010
+// addendum flags this constant as tunable; revisit after the first
+// observation cycle.
+export const MORPH_BELOW_GRID_GAP_MM = 2.65
 
 // Return to Card View requires the gap to rise back above
 // MORPH_BELOW_GRID_GAP_MM × this ratio. 15% spread is the documented
@@ -111,12 +105,75 @@ export function zoomAtGridGapMm(mm) {
   return (mm * CSS_PX_PER_MM) / REACT_FLOW_GRID_GAP_UNITS
 }
 
-// Convenience: the zoom value at which the Card→Bead morph triggers, given
-// the current MORPH_BELOW_GRID_GAP_MM setting. This is the "minimum readable"
-// zoom for cards — at lower zooms, cards become beads, and hover-expanded
-// cards counter-scale up to this size on screen but no larger.
-export function currentThresholdZoom() {
-  return zoomAtGridGapMm(MORPH_BELOW_GRID_GAP_MM)
+// The zoom value at which the Card→Bead morph triggers, given a threshold
+// mm value (default = MORPH_BELOW_GRID_GAP_MM). This is the "minimum
+// readable" zoom for cards at the supplied threshold — at lower zooms,
+// cards become beads, and hover-expanded cards counter-scale up to this
+// size on screen but no larger. Threshold parameterized so the future
+// altitude-rail UI can drive it from store state.
+export function currentThresholdZoom(thresholdMm = MORPH_BELOW_GRID_GAP_MM) {
+  return zoomAtGridGapMm(thresholdMm)
+}
+
+// ── Dynamic minZoom (Chunk F, per ADR-0010 addendum) ──────────────────────
+// React Flow's static `minZoom = 0.5` is replaced by a per-campaign limit
+// that lets the user zoom out far enough that the bounding box of all
+// canvas content fills approximately BIRDS_EYE_VIEWPORT_FILL of the visible
+// viewport on the more binding axis. As campaigns grow, the floor lowers
+// automatically and the Bead View threshold (2.65 mm grid spacing) now
+// always sits ABOVE that floor — so beads have visible zoom territory
+// without a temp threshold bump.
+export const BIRDS_EYE_VIEWPORT_FILL = 0.7
+
+// Default minZoom used as both the upper cap on the dynamic value (we
+// never let it rise above this — the user always has at least the legacy
+// zoom-out range) and as the fallback for empty / single-node / degenerate
+// campaigns.
+export const DEFAULT_MIN_ZOOM = 0.5
+
+// Pure function: given the current nodes array and the viewport dimensions
+// in CSS pixels, return the appropriate minZoom value. Caller is responsible
+// for gating the call (don't compute during a drag — let the underlying
+// data settle first per ADR-0010 addendum).
+export function computeMinZoom({ nodes, viewportWidth, viewportHeight }) {
+  if (!nodes || nodes.length <= 1) return DEFAULT_MIN_ZOOM
+  if (!viewportWidth || !viewportHeight) return DEFAULT_MIN_ZOOM
+
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  for (const n of nodes) {
+    const px = n?.position?.x
+    const py = n?.position?.y
+    if (typeof px !== 'number' || typeof py !== 'number') continue
+    // Width/height: React Flow populates these post-measurement. Before the
+    // first measure they're undefined; fall back to type-appropriate
+    // defaults so the bounding box isn't degenerate while the canvas is
+    // still mounting.
+    const isTextNode = n.type === 'textNode'
+    const w = n.width
+      ?? n.data?.width
+      ?? (isTextNode ? 200 : 256)
+    const h = n.height
+      ?? n.data?.height
+      ?? (isTextNode ? 50  : 180)
+    if (px       < minX) minX = px
+    if (py       < minY) minY = py
+    if (px + w   > maxX) maxX = px + w
+    if (py + h   > maxY) maxY = py + h
+  }
+
+  const bbW = maxX - minX
+  const bbH = maxY - minY
+  if (!isFinite(bbW) || !isFinite(bbH) || bbW <= 0 || bbH <= 0) {
+    return DEFAULT_MIN_ZOOM
+  }
+
+  const zForWidth  = (BIRDS_EYE_VIEWPORT_FILL * viewportWidth)  / bbW
+  const zForHeight = (BIRDS_EYE_VIEWPORT_FILL * viewportHeight) / bbH
+  // Smaller of the two = the binding axis (the one whose 70% fill is hit
+  // first as the user zooms out). Capped at DEFAULT_MIN_ZOOM so we never
+  // tighten the floor beyond the legacy 0.5 — small campaigns retain the
+  // historical zoom-out range.
+  return Math.min(DEFAULT_MIN_ZOOM, Math.min(zForWidth, zForHeight))
 }
 
 // Given the current altitude and a viewport zoom, return the altitude the
@@ -125,12 +182,16 @@ export function currentThresholdZoom() {
 // only when the gap rises above threshold × ratio. Inside the dead-band
 // (and at every tick where the current altitude is already correct), the
 // input altitude is returned unchanged so callers can no-op cheaply.
-export function nextAltitude(currentAltitude, zoom) {
+//
+// The threshold is parameterized (default = MORPH_BELOW_GRID_GAP_MM) so the
+// future altitude-rail UI can let the user drag the Card↔Bead boundary
+// without changing this function's contract.
+export function nextAltitude(currentAltitude, zoom, thresholdMm = MORPH_BELOW_GRID_GAP_MM) {
   const mm = gridGapMmAtZoom(zoom)
-  if (currentAltitude === 'cardView' && mm < MORPH_BELOW_GRID_GAP_MM) {
+  if (currentAltitude === 'cardView' && mm < thresholdMm) {
     return 'beadView'
   }
-  if (currentAltitude === 'beadView' && mm > MORPH_BELOW_GRID_GAP_MM * MORPH_HYSTERESIS_RATIO) {
+  if (currentAltitude === 'beadView' && mm > thresholdMm * MORPH_HYSTERESIS_RATIO) {
     return 'cardView'
   }
   return currentAltitude
