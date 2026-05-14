@@ -65,24 +65,6 @@ export function useEdgeGeometry({ nodes, edges, setNodes, setEdges }) {
       if (isBead) return { kind: 'bead' }
       return { kind: 'card' }
     }
-    // TEMP diagnostic for Chunk D step-6 bug investigation. Erik reported
-    // that when a node is selected (without hover) in Bead View, the dots
-    // appear in a bead-form circular pattern even though the card renders
-    // correctly. Logging here lets us see whether expandedNode is null at
-    // recompute time (publish race) or whether expandedNode is populated
-    // but formOf returns 'bead' for some other reason. Remove once
-    // resolved.
-    if (expandedNode) {
-      const formSummary = nodes
-        .filter((n) => n.id === expandedNode.id)
-        .map((n) => ({ id: n.id, form: formOf(n).kind, idMatch: expandedNode.id === n.id }))
-      // eslint-disable-next-line no-console
-      console.log('[edgeGeo] expandedNode published id=', expandedNode.id,
-        ' formForThatNode=', formSummary)
-    } else {
-      // eslint-disable-next-line no-console
-      console.log('[edgeGeo] expandedNode is null at recompute')
-    }
     const centerOf = (node) => {
       const f = formOf(node)
       if (f.kind === 'expanded') return { x: f.rect.centerX, y: f.rect.centerY }

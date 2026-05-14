@@ -63,7 +63,17 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
   const isInBeadView      = altitudeMode === 'beadView'
   const isThisHovered     = hoveredNodeId === data.id
   const isThisSingleSel   = selectedNodeIds.size === 1 && selectedNodeIds.has(data.id)
-  const isExpanded        = isInBeadView && (isThisHovered || isThisSingleSel)
+  // Only ONE node can be "the expanded one" at a time. Hover wins over
+  // selection — when the user moves their cursor to a different node, THAT
+  // node becomes expanded and any previously-selected one silently collapses
+  // back to a bead. When the cursor leaves all nodes, the single-selected
+  // one (if any) re-claims the expansion. Matches App.jsx's derivation of
+  // currentlyExpandedId so CampaignNode's local state and the store's
+  // published expandedNode record always agree on which node is expanded.
+  const isExpanded        = isInBeadView && (
+    isThisHovered ||
+    (hoveredNodeId === null && isThisSingleSel)
+  )
   const thresholdZoom     = currentThresholdZoom()
   const effectiveZoom     = isExpanded ? Math.max(zoom, thresholdZoom) : zoom
   const counterScale      = isExpanded ? Math.max(1, thresholdZoom / zoom) : 1
@@ -244,14 +254,21 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
   // (which change cardWidth continuously as the title font scales) don't
   // lag behind every zoom tick.
   const morphPhase = useCanvasUiStore((s) => s.morphPhase)
-  // Local per-node morph flag for hover-expand transitions. Fires for
-  // MORPH_DURATION_MS each time isExpanded flips (in either direction) so
-  // the conditional CSS transitions below activate during the bead↔card
-  // hover-expand. Independent from the global morphPhase, which only fires
-  // on altitude crossings. Step 6 adds a store-level signal that drives
-  // the connection-line fade; this local flag is the visual half.
-  const [isExpansionMorphing, setIsExpansionMorphing] = useState(false)
+  // Local per-node morph flag for hover-expand transitions, with TWO parts:
+  //   1. justFlippedExpansion (render-time):  true on the SAME render that
+  //      isExpanded changes. Lets the dots snap to opacity 0 on the same
+  //      frame the container starts morphing — without this the dots would
+  //      stay visible for one paint cycle because useEffect runs only after
+  //      the first paint.
+  //   2. isExpansionMorphing (useEffect):     true for MORPH_DURATION_MS
+  //      after isExpanded flips. Keeps the morph window open through the
+  //      whole 150ms transition (the render-time flag is only true for
+  //      one render).
+  // Together they cover the full morph: dots invisible from the very first
+  // paint of the morph through 150ms after.
   const prevIsExpandedRef = useRef(isExpanded)
+  const justFlippedExpansion = prevIsExpandedRef.current !== isExpanded
+  const [isExpansionMorphing, setIsExpansionMorphing] = useState(false)
   useEffect(() => {
     if (prevIsExpandedRef.current === isExpanded) return
     prevIsExpandedRef.current = isExpanded
@@ -259,7 +276,7 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
     const t = setTimeout(() => setIsExpansionMorphing(false), MORPH_DURATION_MS)
     return () => clearTimeout(t)
   }, [isExpanded])
-  const morphInFlight = morphPhase !== null || isExpansionMorphing
+  const morphInFlight = morphPhase !== null || isExpansionMorphing || justFlippedExpansion
   const cardContentRef = useRef(null)
   const [contentHeight, setContentHeight] = useState(180) // fallback before first measurement
 
@@ -518,7 +535,12 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
           (morphPhase). */}
       {data.connectionDots?.map((dot, i) => {
         const dotSize = CONNECTION_DOT_SCREEN_PX * compensation
-        const dotsHidden = isExpansionMorphing || morphPhase !== null
+        // Snap invisible on the very first frame the morph starts
+        // (justFlippedExpansion is true the same render isExpanded changes,
+        // before the useEffect-driven isExpansionMorphing catches up). Stay
+        // invisible through the full 150ms morph window. Reappear with a
+        // quick 75ms fade at the end.
+        const dotsHidden = justFlippedExpansion || isExpansionMorphing || morphPhase !== null
         return (
           <div
             key={i}
