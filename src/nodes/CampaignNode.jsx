@@ -510,8 +510,15 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
           Intentionally outside the clip-wrapper so they remain visible in
           bead mode (their rectangular-border coordinates fall outside the
           72px bead's circle — Chunk C fixes the positions). */}
+      {/* Dots fade out instantly at morph-start (so the user doesn't see
+          them lingering at old positions during the geometry transition)
+          and fade back in over 75ms when the morph settles. Driven by the
+          same signals as the lines: this node's per-node hover-expand
+          morph (isExpansionMorphing) OR the global altitude morph
+          (morphPhase). */}
       {data.connectionDots?.map((dot, i) => {
         const dotSize = CONNECTION_DOT_SCREEN_PX * compensation
+        const dotsHidden = isExpansionMorphing || morphPhase !== null
         return (
           <div
             key={i}
@@ -528,6 +535,10 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
               top:    dot.y - dotSize / 2 - borderCanvasPx,
               backgroundColor: dot.color ?? '#94a3b8',
               zIndex: 10,
+              opacity: dotsHidden ? 0 : 1,
+              // 0ms when going TO 0 (snap out at morph-start), 75ms ease
+              // when going to 1 (fade back in at morph-end).
+              transition: dotsHidden ? 'opacity 0ms' : `opacity ${MORPH_DURATION_MS / 2}ms ease`,
             }}
           />
         )
