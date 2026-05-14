@@ -102,6 +102,23 @@ export function gridGapMmAtZoom(zoom) {
   return gapPx / CSS_PX_PER_MM
 }
 
+// Inverse of gridGapMmAtZoom: given a target grid-dot mm spacing, what
+// viewport zoom produces it? Derives the threshold zoom from
+// MORPH_BELOW_GRID_GAP_MM so Chunk D's hover-expand counter-scale can
+// pin the expanded card's screen size to "what cards looked like at the
+// threshold." Future-proof for when the threshold becomes user-configurable.
+export function zoomAtGridGapMm(mm) {
+  return (mm * CSS_PX_PER_MM) / REACT_FLOW_GRID_GAP_UNITS
+}
+
+// Convenience: the zoom value at which the Card→Bead morph triggers, given
+// the current MORPH_BELOW_GRID_GAP_MM setting. This is the "minimum readable"
+// zoom for cards — at lower zooms, cards become beads, and hover-expanded
+// cards counter-scale up to this size on screen but no larger.
+export function currentThresholdZoom() {
+  return zoomAtGridGapMm(MORPH_BELOW_GRID_GAP_MM)
+}
+
 // Given the current altitude and a viewport zoom, return the altitude the
 // canvas should be in. Hysteresis: 'cardView' flips to 'beadView' only when
 // the gap drops below the threshold; 'beadView' flips back to 'cardView'
