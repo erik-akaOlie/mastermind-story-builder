@@ -19,6 +19,7 @@ import { useEffect, useRef } from 'react'
 import {
   getNodeCenter,
   getNodeSpreadBorderPoints,
+  getSpreadBorderPoints,
   getSpreadCircularPoints,
 } from '../utils/edgeRouting'
 import { useTypeStore } from '../store/useTypeStore'
@@ -37,21 +38,39 @@ export function useEdgeGeometry({ nodes, edges, setNodes, setEdges }) {
   // from useCanvasUiStore (App.jsx's onMove handler mirrors zoom there)
   // because this hook runs at the App level, outside the <ReactFlow>
   // context, so it can't call React Flow's own viewport hooks.
-  const altitude = useCanvasUiStore((s) => s.altitude)
-  const zoom     = useCanvasUiStore((s) => s.currentZoom)
+  const altitude     = useCanvasUiStore((s) => s.altitude)
+  const zoom         = useCanvasUiStore((s) => s.currentZoom)
+  const expandedNode = useCanvasUiStore((s) => s.expandedNode)
   const isBead = altitude === 'beadView'
 
   useEffect(() => {
-    // In bead mode the node's "center" is anchored to BEAD_DIAMETER_PX, not
-    // node.width/node.height — those may still be the card's dimensions
-    // while React Flow hasn't re-measured the morphed container, and even
-    // if they have, the natural angle should be measured against the bead's
-    // geometry (the only one visible at this altitude). Same anchoring goes
-    // for the connected node, which is also a bead in this altitude.
+    // Per-node "current visible form":
+    //   - In Card View, every node renders as a card → rectangular routing.
+    //   - In Bead View without expansion, every node renders as a bead →
+    //     circular routing.
+    //   - In Bead View WITH a hover/select expansion (Chunk D), the expanded
+    //     node renders as a card at threshold-size with a viewport-clamp
+    //     visual offset — its EDGES should attach to the clamped rectangle's
+    //     perimeter, not the underlying bead's circular perimeter. Every
+    //     OTHER node stays a bead.
+    //
+    // We branch per-node, not globally. The form a node renders as drives
+    // BOTH where its own outgoing dots sit AND where another node's edges
+    // aim (because the OTHER node aims at THIS node's visible center).
     const beadHalf = BEAD_DIAMETER_PX / 2
-    const centerOf = (node) => isBead
-      ? { x: node.position.x + beadHalf, y: node.position.y + beadHalf }
-      : getNodeCenter(node)
+    const formOf = (node) => {
+      if (expandedNode?.id === node.id) {
+        return { kind: 'expanded', rect: expandedNode }
+      }
+      if (isBead) return { kind: 'bead' }
+      return { kind: 'card' }
+    }
+    const centerOf = (node) => {
+      const f = formOf(node)
+      if (f.kind === 'expanded') return { x: f.rect.centerX, y: f.rect.centerY }
+      if (f.kind === 'bead')     return { x: node.position.x + beadHalf, y: node.position.y + beadHalf }
+      return getNodeCenter(node)
+    }
 
     const nodeConnections = {}
     nodes.forEach((n) => { nodeConnections[n.id] = [] })
@@ -71,7 +90,8 @@ export function useEdgeGeometry({ nodes, edges, setNodes, setEdges }) {
     const allBorderPoints = {}
     nodes.forEach((node) => {
       const conns = nodeConnections[node.id] || []
-      if (isBead) {
+      const form = formOf(node)
+      if (form.kind === 'bead') {
         const center = centerOf(node)
         // Min arc-distance enforced between dot CENTERS = dot diameter + the
         // tunable edge-to-edge padding. Converted from screen-px to canvas-px
@@ -79,6 +99,16 @@ export function useEdgeGeometry({ nodes, edges, setNodes, setEdges }) {
         const minScreenCenterToCenter = CONNECTION_DOT_SCREEN_PX + MIN_CIRCLE_POINT_GAP_PX
         const minArcCanvasPx = zoom > 0 ? minScreenCenterToCenter / zoom : minScreenCenterToCenter
         allBorderPoints[node.id] = getSpreadCircularPoints(center, beadHalf, conns, minArcCanvasPx)
+      } else if (form.kind === 'expanded') {
+        // Rectangular routing against the published clamped center +
+        // threshold-zoom effective size from CampaignNode. The raw five-arg
+        // form of getSpreadBorderPoints accepts these synthetic values
+        // directly — no node-shape adapter needed.
+        allBorderPoints[node.id] = getSpreadBorderPoints(
+          form.rect.centerX, form.rect.centerY,
+          form.rect.width, form.rect.height,
+          conns
+        )
       } else {
         allBorderPoints[node.id] = getNodeSpreadBorderPoints(node, conns)
       }
@@ -95,11 +125,35 @@ export function useEdgeGeometry({ nodes, edges, setNodes, setEdges }) {
     const newDotsMap = {}
     nodes.forEach((node) => {
       const borderPoints = allBorderPoints[node.id] || {}
+      const form = formOf(node)
+      // For non-expanded forms, the React Flow node container's layout box
+      // top-left is at (node.position.x, node.position.y) with no transform
+      // beyond the existing hover-lift scale(1.03). CSS local = canvas - nodePos.
+      //
+      // For the expanded form, the container has:
+      //   - layout box size (boxWidth, boxHeight) in CSS px
+      //   - transform: translate(tx, ty) scale(s), with transform-origin at
+      //     the box center (boxWidth/2, boxHeight/2)
+      //   - tx, ty chosen so the visible center equals (nodePos + halfBead
+      //     + clamp), the published rect.center
+      // Given a canvas position p, the CSS local position lx, ly is the
+      // inverse of the transform composition:
+      //   lx = boxWidth/2 + (p.x - rect.centerX) / s
+      //   ly = boxHeight/2 + (p.y - rect.centerY) / s
+      // We recover s from the published rect: s = rect.width / rect.boxWidth.
+      // Hover-lift's 1.03 multiplier is intentionally not modeled here — the
+      // resulting ~1.5% radial offset is the V1 fidelity reduction.
       newDotsMap[node.id] = Object.entries(borderPoints).map(([edgeId, p]) => {
         const edge = edges.find((e) => e.id === edgeId)
         const otherNodeId = edge?.source === node.id ? edge?.target : edge?.source
         const otherNode = nodes.find((n) => n.id === otherNodeId)
         const color = useTypeStore.getState().types[otherNode?.data?.type]?.color ?? '#94a3b8'
+        if (form.kind === 'expanded' && form.rect.boxWidth > 0) {
+          const s = form.rect.width / form.rect.boxWidth
+          const lx = form.rect.boxWidth  / 2 + (p.x - form.rect.centerX) / s
+          const ly = form.rect.boxHeight / 2 + (p.y - form.rect.centerY) / s
+          return { x: lx, y: ly, color }
+        }
         return {
           x: p.x - node.position.x,
           y: p.y - node.position.y,
@@ -131,5 +185,5 @@ export function useEdgeGeometry({ nodes, edges, setNodes, setEdges }) {
         }))
       )
     }
-  }, [nodes, edges, isBead, zoom, setEdges, setNodes])
+  }, [nodes, edges, isBead, zoom, expandedNode, setEdges, setNodes])
 }

@@ -65,6 +65,32 @@ export const useCanvasUiStore = create((set) => ({
   // rest. FloatingEdge reads this; cards do not.
   morphPhase: null,
 
+  // Expanded-node visual state (per ADR-0010 / Chunk D). Only one node can be
+  // expanded at a time (hover or single-select in Bead View), so a single
+  // record suffices instead of a Map. Published by the expanded CampaignNode
+  // each render; consumed by useEdgeGeometry to route the expanded node's
+  // edges to the card's rectangular perimeter at its CLAMPED visible center
+  // instead of the bead's circular perimeter at the true canvas center.
+  //
+  // Fields:
+  //   id                 — the node's id, or null when nothing is expanded
+  //   centerX/Y          — canvas-units. The bead's true center plus the
+  //                        canvas-unit equivalent of the screen-px clamp
+  //                        offset (clampDx/zoom, clampDy/zoom). Pure visual
+  //                        position; never reflects node.position.
+  //   width/height       — canvas-units. The expanded card's effective
+  //                        on-canvas visible size, = (cardWidth ×
+  //                        thresholdZoom / zoom, contentHeight ×
+  //                        thresholdZoom / zoom). useEdgeGeometry routes
+  //                        edges against this rectangle.
+  //   boxWidth/boxHeight — canvas-units. The container's CSS layout-box
+  //                        size BEFORE the counter-scale transform. Equal
+  //                        to (cardWidth, contentHeight). useEdgeGeometry
+  //                        needs both the visible size AND the box size to
+  //                        invert the container's transform when computing
+  //                        dot CSS local positions.
+  expandedNode: null,
+
   // Current React Flow viewport state — written by App.jsx's onMove handler
   // (the same one that drives the altitude trigger). Stored here because
   // useEdgeGeometry and hover-expanded CampaignNodes both need to read
@@ -107,6 +133,22 @@ export const useCanvasUiStore = create((set) => ({
         ? {}
         : { currentPanX: x, currentPanY: y }
     ),
+  // Equality guard compares each field — a no-op write (same id + same
+  // visual position) returns {} so subscribers don't see spurious updates
+  // when CampaignNode publishes the expanded record on every render.
+  setExpandedNode: (rec) =>
+    set((state) => {
+      const cur = state.expandedNode
+      if (rec === null && cur === null) return {}
+      if (rec && cur &&
+          cur.id === rec.id &&
+          cur.centerX === rec.centerX && cur.centerY === rec.centerY &&
+          cur.width === rec.width && cur.height === rec.height &&
+          cur.boxWidth === rec.boxWidth && cur.boxHeight === rec.boxHeight) {
+        return {}
+      }
+      return { expandedNode: rec }
+    }),
 
   // Clear all hover-derived state in one shot. Called when the user enters
   // spacebar pan mode so a card that happens to be lit up underneath the

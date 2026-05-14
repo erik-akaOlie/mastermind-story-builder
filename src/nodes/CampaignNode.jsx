@@ -322,51 +322,107 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
   // the padding-edge, not the border-edge, of the container).
   const borderCanvasPx = isBead ? BEAD_BORDER_SCREEN_PX * compensation : 0
 
-  // ── Hover-expand clamp (Chunk D) ──────────────────────────────────────────
-  // When the card is expanded in Bead View, compute how many SCREEN pixels
-  // we need to shift the visual to keep the whole card inside the viewport.
-  // Applied as a `translate(... / zoom)` inside the container's transform —
-  // the /zoom factor converts screen-px to canvas-px because the translate
-  // is in the React-Flow-node local coord space and the outer canvas
-  // transform will multiply by zoom.
+  // ── Hover-expand clamp + centering offset (Chunk D) ───────────────────────
+  // When the card is expanded in Bead View, we want the visible card center
+  // to land on the BEAD's center (not the layout box's center — those
+  // differ when isBead is false because the box is now cardWidth ×
+  // contentHeight, not BEAD_DIAMETER_PX × BEAD_DIAMETER_PX).
   //
-  // Pure visual offset: never written into node.position. On collapse the
+  // Two contributions to the transform's translate:
+  //   1. Centering offset: -(cardWidth - BEAD_DIAMETER_PX)/2, similarly Y.
+  //      Shifts the visible card so its center sits on the bead's center
+  //      instead of the larger layout box's center.
+  //   2. Clamp offset:     shift in screen-px to keep the visible card
+  //                        inside the viewport with 24px padding.
+  //
+  // Both expressed in canvas units (the transform's translate is in CSS
+  // local units, which equal canvas units inside the RF node coord space).
+  // The clamp portion is computed in screen-px first, then /zoom converts.
+  //
+  // Pure visual offsets: never written into node.position. On collapse the
   // expansion disappears and the bead sits at its true canvas position
   // unchanged.
   const CLAMP_PADDING_PX = 24
-  let clampDx = 0
-  let clampDy = 0
+  let clampDxScreen = 0
+  let clampDyScreen = 0
   if (isExpanded && typeof xPos === 'number' && typeof yPos === 'number') {
-    // Bead's screen-space center
+    // Bead's screen-space center — the canvas point we want the visible
+    // expanded card to be centered on (modulo the clamp).
     const beadScreenCx = (xPos + BEAD_DIAMETER_PX / 2) * zoom + panX
     const beadScreenCy = (yPos + BEAD_DIAMETER_PX / 2) * zoom + panY
-    // Expanded card's screen-space size: cardWidth × thresholdZoom (the
-    // counter-scale and outer canvas zoom compose to yield exactly this).
+    // Expanded card's screen-space size: cardWidth × thresholdZoom.
+    // (counterScale × canvas-zoom compose to give thresholdZoom; the card's
+    // box is cardWidth wide, so visible-on-screen = cardWidth × thresholdZoom.)
     const cardScreenW = cardWidth   * thresholdZoom
     const cardScreenH = contentHeight * thresholdZoom
-    // Visible bounding box edges on screen, centered on the bead's screen center
     const left   = beadScreenCx - cardScreenW / 2
     const right  = beadScreenCx + cardScreenW / 2
     const top    = beadScreenCy - cardScreenH / 2
     const bottom = beadScreenCy + cardScreenH / 2
     const vw = window.innerWidth
     const vh = window.innerHeight
-    // Shift right if the left edge clips, left if the right edge clips.
-    // If both happen (card wider than viewport - 2×padding), favor showing
-    // the left edge — user gets a deterministic crop on the right.
-    if (left   < CLAMP_PADDING_PX)         clampDx = CLAMP_PADDING_PX - left
-    else if (right  > vw - CLAMP_PADDING_PX) clampDx = (vw - CLAMP_PADDING_PX) - right
-    if (top    < CLAMP_PADDING_PX)         clampDy = CLAMP_PADDING_PX - top
-    else if (bottom > vh - CLAMP_PADDING_PX) clampDy = (vh - CLAMP_PADDING_PX) - bottom
+    if (left   < CLAMP_PADDING_PX)            clampDxScreen = CLAMP_PADDING_PX - left
+    else if (right  > vw - CLAMP_PADDING_PX)  clampDxScreen = (vw - CLAMP_PADDING_PX) - right
+    if (top    < CLAMP_PADDING_PX)            clampDyScreen = CLAMP_PADDING_PX - top
+    else if (bottom > vh - CLAMP_PADDING_PX)  clampDyScreen = (vh - CLAMP_PADDING_PX) - bottom
   }
 
-  // Build the composed transform once. Translate goes OUTSIDE the scale so
-  // its values are unscaled-by-counter-scale (just need the /zoom conversion
-  // to canvas-px because the outer React Flow transform multiplies by zoom).
+  // The two translate contributions in canvas units (= CSS local px inside
+  // the RF node coord space):
+  const centerOffsetX = isExpanded ? (BEAD_DIAMETER_PX / 2 - cardWidth     / 2) : 0
+  const centerOffsetY = isExpanded ? (BEAD_DIAMETER_PX / 2 - contentHeight / 2) : 0
+  const clampDxCanvas = zoom > 0 ? clampDxScreen / zoom : 0
+  const clampDyCanvas = zoom > 0 ? clampDyScreen / zoom : 0
+  const totalTx = centerOffsetX + clampDxCanvas
+  const totalTy = centerOffsetY + clampDyCanvas
+
   const finalScale = scale * counterScale
-  const composedTransform = (clampDx || clampDy)
-    ? `translate(${clampDx / zoom}px, ${clampDy / zoom}px) scale(${finalScale})`
+  const composedTransform = (totalTx || totalTy)
+    ? `translate(${totalTx}px, ${totalTy}px) scale(${finalScale})`
     : `scale(${finalScale})`
+
+  // ── Publish expansion record for useEdgeGeometry (Chunk D Step 5) ─────────
+  // When expanded, edges connected to this node should route to the
+  // expanded card's rectangular perimeter at the clamped visible center,
+  // not the bead's circular perimeter at the true canvas center.
+  // useEdgeGeometry runs at the App level and can't read CampaignNode
+  // locals directly, so we publish the visible-form geometry to the store.
+  //
+  // Canvas-unit translation:
+  //   center = (true bead center) + (clampDx/zoom, clampDy/zoom)
+  //   size   = (cardWidth, contentHeight) × thresholdZoom / zoom
+  // The size formula matches what the expanded card occupies on the canvas
+  // *visually* — its layout box is still bead-sized, but counter-scale +
+  // outer canvas zoom paint it at (cardWidth, contentHeight) × thresholdZoom
+  // on screen, which is (cardWidth × thresholdZoom / zoom, ... / zoom) in
+  // canvas units.
+  useEffect(() => {
+    const store = useCanvasUiStore.getState()
+    if (!isExpanded || typeof xPos !== 'number' || typeof yPos !== 'number') {
+      // Only clear if WE are the published expanded node — never stomp on
+      // someone else's record from this hook.
+      if (store.expandedNode?.id === data.id) store.setExpandedNode(null)
+      return
+    }
+    // Visible center: bead center + clamp (in canvas units).
+    const centerX = (xPos + BEAD_DIAMETER_PX / 2) + clampDxCanvas
+    const centerY = (yPos + BEAD_DIAMETER_PX / 2) + clampDyCanvas
+    // Visible card extent in canvas units = container's CSS box × counterScale.
+    // counterScale = thresholdZoom / zoom (when expanded), so:
+    //   visible = box × thresholdZoom / zoom
+    const width      = cardWidth     * thresholdZoom / zoom
+    const height     = contentHeight * thresholdZoom / zoom
+    // Box size in canvas units: just the CSS layout dimensions.
+    const boxWidth   = cardWidth
+    const boxHeight  = contentHeight
+    store.setExpandedNode({ id: data.id, centerX, centerY, width, height, boxWidth, boxHeight })
+  }, [isExpanded, xPos, yPos, clampDxCanvas, clampDyCanvas, zoom, thresholdZoom, cardWidth, contentHeight, data.id])
+
+  // Clear our published record when this node unmounts mid-expansion.
+  useEffect(() => () => {
+    const store = useCanvasUiStore.getState()
+    if (store.expandedNode?.id === data.id) store.setExpandedNode(null)
+  }, [data.id])
 
   return (
     <div
