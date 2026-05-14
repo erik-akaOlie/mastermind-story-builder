@@ -373,10 +373,20 @@ export default function App() {
     // documents the third arg, but a single-node drag may pass it as the
     // 1-element array or omit it depending on the path).
     captureDragStart(nodes?.length ? nodes : [node])
+    // Chunk D step 7: announce the dragged node so the expanded-card
+    // CampaignNode can freeze its clamp offset for the duration of the
+    // drag. Multi-drags via shift+click never have an expanded card to
+    // freeze (hover-expand is single-target by design), so we still
+    // announce the primary id — the freeze logic in CampaignNode no-ops
+    // for non-expanded nodes.
+    useCanvasUiStore.getState().setDraggingNodeId(node?.id ?? null)
   }, [captureDragStart])
 
   const onNodeDragStop = useCallback((_event, node, nodes) => {
     finalizeDragStop(nodes?.length ? nodes : [node])
+    // Drop signal — CampaignNode kicks off its drift from frozen clamp →
+    // natural clamp over MORPH_DURATION_MS.
+    useCanvasUiStore.getState().setDraggingNodeId(null)
   }, [finalizeDragStop])
 
   const onSelectionDragStart = useCallback((_event, nodes) => {

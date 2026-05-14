@@ -360,8 +360,8 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
   // expansion disappears and the bead sits at its true canvas position
   // unchanged.
   const CLAMP_PADDING_PX = 24
-  let clampDxScreen = 0
-  let clampDyScreen = 0
+  let naturalClampDxScreen = 0
+  let naturalClampDyScreen = 0
   if (isExpanded && typeof xPos === 'number' && typeof yPos === 'number') {
     // Bead's screen-space center — the canvas point we want the visible
     // expanded card to be centered on (modulo the clamp).
@@ -378,18 +378,108 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
     const bottom = beadScreenCy + cardScreenH / 2
     const vw = window.innerWidth
     const vh = window.innerHeight
-    if (left   < CLAMP_PADDING_PX)            clampDxScreen = CLAMP_PADDING_PX - left
-    else if (right  > vw - CLAMP_PADDING_PX)  clampDxScreen = (vw - CLAMP_PADDING_PX) - right
-    if (top    < CLAMP_PADDING_PX)            clampDyScreen = CLAMP_PADDING_PX - top
-    else if (bottom > vh - CLAMP_PADDING_PX)  clampDyScreen = (vh - CLAMP_PADDING_PX) - bottom
+    if (left   < CLAMP_PADDING_PX)            naturalClampDxScreen = CLAMP_PADDING_PX - left
+    else if (right  > vw - CLAMP_PADDING_PX)  naturalClampDxScreen = (vw - CLAMP_PADDING_PX) - right
+    if (top    < CLAMP_PADDING_PX)            naturalClampDyScreen = CLAMP_PADDING_PX - top
+    else if (bottom > vh - CLAMP_PADDING_PX)  naturalClampDyScreen = (vh - CLAMP_PADDING_PX) - bottom
   }
+
+  // ── Drag freeze + post-drop drift (Chunk D step 7) ────────────────────────
+  // While THIS node is being dragged AND it's the expanded one, the clamp
+  // offset is FROZEN at whatever value was rendered the moment the drag
+  // started. React Flow moves the bead 1:1 with the cursor in screen
+  // space; with a constant clamp offset the visible expanded card moves
+  // 1:1 with the cursor too — cursor attachment is preserved.
+  //
+  // At drag end, the clamp animates from the frozen value back to the
+  // natural value (recomputed for the new bead position) over
+  // MORPH_DURATION_MS. The animation is driven by requestAnimationFrame,
+  // not CSS, so useEdgeGeometry's per-frame route recomputation tracks
+  // the drifting visible card without lines visually detaching.
+  //
+  // Pure visual offsets: never written into node.position.
+  const draggingNodeId = useCanvasUiStore((s) => s.draggingNodeId)
+  const isDraggingThisNode = draggingNodeId === data.id
+  const frozenClampRef = useRef({ dx: 0, dy: 0, valid: false })
+  const driftAnchorRef = useRef({ startDx: 0, startDy: 0, startTime: 0 })
+  const [driftActive, setDriftActive] = useState(false)
+  const [, setDriftTick] = useState(0) // dummy state to force per-frame re-renders during drift
+
+  // Track the last EFFECTIVE clamp so a drag-start during a drift captures
+  // the current interpolated value (not the natural target).
+  const effectiveClampRef = useRef({ dx: 0, dy: 0 })
+
+  // Drag start / stop bookkeeping.
+  useEffect(() => {
+    if (isDraggingThisNode) {
+      // Freeze whatever the visible clamp currently is.
+      frozenClampRef.current = {
+        dx: effectiveClampRef.current.dx,
+        dy: effectiveClampRef.current.dy,
+        valid: true,
+      }
+      // Cancel any in-flight drift; the new drag supersedes it.
+      setDriftActive(false)
+    } else if (frozenClampRef.current.valid) {
+      // Drag just ended — start the drift from the frozen value toward
+      // whatever the natural clamp is for the new bead position.
+      driftAnchorRef.current = {
+        startDx: frozenClampRef.current.dx,
+        startDy: frozenClampRef.current.dy,
+        startTime: performance.now(),
+      }
+      frozenClampRef.current = { dx: 0, dy: 0, valid: false }
+      setDriftActive(true)
+    }
+  }, [isDraggingThisNode])
+
+  // Drift rAF loop — runs only while driftActive is true.
+  useEffect(() => {
+    if (!driftActive) return
+    let rafId
+    const tick = () => {
+      const elapsed = performance.now() - driftAnchorRef.current.startTime
+      if (elapsed >= MORPH_DURATION_MS) {
+        setDriftActive(false)
+        return
+      }
+      // Force re-render so the interpolated value below is recomputed
+      // and the published expandedNode record updates.
+      setDriftTick((t) => t + 1)
+      rafId = requestAnimationFrame(tick)
+    }
+    rafId = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(rafId)
+  }, [driftActive])
+
+  // Compute the EFFECTIVE clamp for this render:
+  //   - dragging this node  → frozen value
+  //   - drift in flight     → interpolated value (frozen → natural)
+  //   - otherwise           → natural clamp
+  let effectiveClampDxScreen = naturalClampDxScreen
+  let effectiveClampDyScreen = naturalClampDyScreen
+  if (isDraggingThisNode && frozenClampRef.current.valid) {
+    effectiveClampDxScreen = frozenClampRef.current.dx
+    effectiveClampDyScreen = frozenClampRef.current.dy
+  } else if (driftActive) {
+    const elapsed = performance.now() - driftAnchorRef.current.startTime
+    const t = Math.min(1, Math.max(0, elapsed / MORPH_DURATION_MS))
+    // easeOutCubic for a settle-in feel; matches the morph animation timing.
+    const eased = 1 - Math.pow(1 - t, 3)
+    effectiveClampDxScreen = driftAnchorRef.current.startDx +
+      (naturalClampDxScreen - driftAnchorRef.current.startDx) * eased
+    effectiveClampDyScreen = driftAnchorRef.current.startDy +
+      (naturalClampDyScreen - driftAnchorRef.current.startDy) * eased
+  }
+  // Remember the latest effective for the next drag-start snapshot.
+  effectiveClampRef.current = { dx: effectiveClampDxScreen, dy: effectiveClampDyScreen }
 
   // The two translate contributions in canvas units (= CSS local px inside
   // the RF node coord space):
   const centerOffsetX = isExpanded ? (BEAD_DIAMETER_PX / 2 - cardWidth     / 2) : 0
   const centerOffsetY = isExpanded ? (BEAD_DIAMETER_PX / 2 - contentHeight / 2) : 0
-  const clampDxCanvas = zoom > 0 ? clampDxScreen / zoom : 0
-  const clampDyCanvas = zoom > 0 ? clampDyScreen / zoom : 0
+  const clampDxCanvas = zoom > 0 ? effectiveClampDxScreen / zoom : 0
+  const clampDyCanvas = zoom > 0 ? effectiveClampDyScreen / zoom : 0
   const totalTx = centerOffsetX + clampDxCanvas
   const totalTy = centerOffsetY + clampDyCanvas
 

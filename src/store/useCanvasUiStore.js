@@ -74,6 +74,15 @@ export const useCanvasUiStore = create((set) => ({
   // any update — Zustand uses reference equality to detect change.
   nodeMorphPhases: new Map(),
 
+  // Id of the node currently being dragged, or null. Set by App.jsx in
+  // onNodeDragStart, cleared in onNodeDragStop. CampaignNode subscribes so
+  // it can freeze its hover-expand clamp offset for the duration of the
+  // drag — preserves cursor attachment to the visible expanded card while
+  // RF moves the bead's true canvas position underneath. The clamp offset
+  // is never written into node.position; it remains a presentation-layer-
+  // only translate.
+  draggingNodeId: null,
+
   // Expanded-node visual state (per ADR-0010 / Chunk D). Only one node can be
   // expanded at a time (hover or single-select in Bead View), so a single
   // record suffices instead of a Map. Published by the expanded CampaignNode
@@ -178,6 +187,8 @@ export const useCanvasUiStore = create((set) => ({
       next.set(id, phase)
       return { nodeMorphPhases: next }
     }),
+  setDraggingNodeId: (id) =>
+    set((state) => state.draggingNodeId === id ? {} : { draggingNodeId: id }),
 
   // Clear all hover-derived state in one shot. Called when the user enters
   // spacebar pan mode so a card that happens to be lit up underneath the
