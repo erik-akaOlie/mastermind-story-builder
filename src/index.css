@@ -97,6 +97,14 @@ input[type="password"]::-ms-clear {
   z-index: 10 !important;
 }
 
+/* Bead View hover-expand: an expanded card needs to sit above every other
+   node, including other beads that may overlap its grown footprint. Higher
+   z-index than .is-lifted so the active expansion always wins when both
+   classes apply (an expanded card is always also lifted). */
+.react-flow__node:has(.is-expanded) {
+  z-index: 100 !important;
+}
+
 /* Marquee drag rectangle — visible while dragging to select */
 .react-flow__selection {
   background: rgba(99, 102, 241, 0.06);

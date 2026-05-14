@@ -5,7 +5,7 @@ import { useCanvasUiStore, selectIsEdgeHighlighted } from '../store/useCanvasUiS
 import { useImageUrl } from '../lib/useImageUrl'
 import { useLightbox } from '../components/Lightbox'
 import { labelInitial } from '../utils/labelUtils'
-import { BEAD_DIAMETER_PX, BEAD_BORDER_SCREEN_PX, MORPH_DURATION_MS, CONNECTION_DOT_SCREEN_PX } from '../utils/altitude'
+import { BEAD_DIAMETER_PX, BEAD_BORDER_SCREEN_PX, MORPH_DURATION_MS, CONNECTION_DOT_SCREEN_PX, currentThresholdZoom } from '../utils/altitude'
 
 // Shared offscreen canvas for text-width measurement. Created once, reused by
 // every card instance. Used to decide whether the title needs the icon's space.
@@ -40,17 +40,43 @@ const darkenColor = (hex, amount = 0.25) => {
   return `rgb(${r},${g},${b})`
 }
 
-export default function CampaignNode({ data, selected }) {
+export default function CampaignNode({ data, selected, xPos, yPos }) {
   const [hovered, setHovered] = useState(false)
-  const { zoom } = useViewport()
+  const { zoom, x: panX, y: panY } = useViewport()
   const NODE_TYPES = useNodeTypes()
   const typeConfig = NODE_TYPES[data.type] || { label: data.type, color: data.color || '#6B7280' }
+
+  // ── Bead View hover-expand (per ADR-0010 / Chunk D) ───────────────────────
+  // A bead pops back into a readable card on hover or single-select, but
+  // pinned at "threshold-size" (= the screen size cards had at the Card→
+  // Bead morph trigger). That screen size is the floor; the card never gets
+  // smaller than it, no matter how far below the threshold the user zooms.
+  //
+  // Implementation: treat the rendering math as if the canvas zoom were
+  // clamped at the threshold (`effectiveZoom`), and compose a counter-scale
+  // on the container that brings the rendered visual back up to threshold
+  // size. At canvas zoom = threshold the counter-scale is 1; below threshold
+  // it grows to (threshold / canvasZoom).
+  const altitudeMode      = useCanvasUiStore((s) => s.altitude)
+  const hoveredNodeId     = useCanvasUiStore((s) => s.hoveredNodeId)
+  const selectedNodeIds   = useCanvasUiStore((s) => s.selectedNodeIds)
+  const isInBeadView      = altitudeMode === 'beadView'
+  const isThisHovered     = hoveredNodeId === data.id
+  const isThisSingleSel   = selectedNodeIds.size === 1 && selectedNodeIds.has(data.id)
+  const isExpanded        = isInBeadView && (isThisHovered || isThisSingleSel)
+  const thresholdZoom     = currentThresholdZoom()
+  const effectiveZoom     = isExpanded ? Math.max(zoom, thresholdZoom) : zoom
+  const counterScale      = isExpanded ? Math.max(1, thresholdZoom / zoom) : 1
 
   // Scale header text up as the user zooms out so titles remain readable.
   // zoom >= 1 → use base sizes (already sharp at 100%+).
   // zoom <  1 → divide by zoom to compensate; cap at 5× so extreme zoom-out
   //             doesn't produce absurdly large CSS values.
-  const compensation = zoom < 1 ? Math.min(1 / zoom, 5) : 1
+  // In expanded mode, `effectiveZoom` is clamped at thresholdZoom so the
+  // compensation matches what the card would look like at the threshold —
+  // composing with the counter-scale below to produce threshold-size on
+  // screen regardless of how deep the canvas is zoomed.
+  const compensation = effectiveZoom < 1 ? Math.min(1 / effectiveZoom, 5) : 1
   const titleFontSize = BASE_TITLE_SIZE * compensation
   // Icon size in px — 1.25× the title font so it has visual weight without overpowering the text
   const iconSize = Math.round(titleFontSize * 16 * 1.25)
@@ -198,23 +224,42 @@ export default function CampaignNode({ data, selected }) {
   const edgeHovered  = useCanvasUiStore((s) => s.hoveredEdgeNodeIds != null)
   const anythingActive = anyHovered || edgeHovered
 
-  // ── Bead View subscription + content-height measurement ────────────────────
-  // The same CampaignNode renders both forms; subscribing to altitude flips
-  // it between card mode and bead mode (per ADR-0010). ResizeObserver tracks
-  // the rendered card-content height so the container height can transition
-  // smoothly between that measured value and BEAD_DIAMETER_PX — CSS can't
-  // transition from `height: auto` to a fixed pixel value, so the natural
-  // height has to be a numeric value at all times. Pattern mirrors the
-  // existing avatar-sizing observer above; same shape, different concern.
-  const altitude = useCanvasUiStore((s) => s.altitude)
-  const isBead = altitude === 'beadView'
+  // ── Bead-form rendering + content-height measurement ──────────────────────
+  // isBead = "render the bead form" (collapsed circular shape, opacity flip).
+  // The Chunk D hover-expand carves out a third state: when in Bead View
+  // AND the node is hovered/single-selected, the bead form is suppressed and
+  // the card form re-appears at threshold-size. isExpanded was derived at
+  // the top of the component.
+  //
+  // ResizeObserver tracks the rendered card-content height so the container
+  // height can transition smoothly between that measured value and
+  // BEAD_DIAMETER_PX — CSS can't transition from `height: auto` to a fixed
+  // pixel value, so the natural height has to be a numeric value at all
+  // times. Pattern mirrors the existing avatar-sizing observer above; same
+  // shape, different concern.
+  const isBead = isInBeadView && !isExpanded
   // Subscribed only to know whether we're inside the 150ms morph window —
   // when null, the geometric transitions (width/height/border-width/etc.)
   // are dropped from the inline transition string so card-mode zoom updates
   // (which change cardWidth continuously as the title font scales) don't
   // lag behind every zoom tick.
   const morphPhase = useCanvasUiStore((s) => s.morphPhase)
-  const morphInFlight = morphPhase !== null
+  // Local per-node morph flag for hover-expand transitions. Fires for
+  // MORPH_DURATION_MS each time isExpanded flips (in either direction) so
+  // the conditional CSS transitions below activate during the bead↔card
+  // hover-expand. Independent from the global morphPhase, which only fires
+  // on altitude crossings. Step 6 adds a store-level signal that drives
+  // the connection-line fade; this local flag is the visual half.
+  const [isExpansionMorphing, setIsExpansionMorphing] = useState(false)
+  const prevIsExpandedRef = useRef(isExpanded)
+  useEffect(() => {
+    if (prevIsExpandedRef.current === isExpanded) return
+    prevIsExpandedRef.current = isExpanded
+    setIsExpansionMorphing(true)
+    const t = setTimeout(() => setIsExpansionMorphing(false), MORPH_DURATION_MS)
+    return () => clearTimeout(t)
+  }, [isExpanded])
+  const morphInFlight = morphPhase !== null || isExpansionMorphing
   const cardContentRef = useRef(null)
   const [contentHeight, setContentHeight] = useState(180) // fallback before first measurement
 
@@ -277,9 +322,55 @@ export default function CampaignNode({ data, selected }) {
   // the padding-edge, not the border-edge, of the container).
   const borderCanvasPx = isBead ? BEAD_BORDER_SCREEN_PX * compensation : 0
 
+  // ── Hover-expand clamp (Chunk D) ──────────────────────────────────────────
+  // When the card is expanded in Bead View, compute how many SCREEN pixels
+  // we need to shift the visual to keep the whole card inside the viewport.
+  // Applied as a `translate(... / zoom)` inside the container's transform —
+  // the /zoom factor converts screen-px to canvas-px because the translate
+  // is in the React-Flow-node local coord space and the outer canvas
+  // transform will multiply by zoom.
+  //
+  // Pure visual offset: never written into node.position. On collapse the
+  // expansion disappears and the bead sits at its true canvas position
+  // unchanged.
+  const CLAMP_PADDING_PX = 24
+  let clampDx = 0
+  let clampDy = 0
+  if (isExpanded && typeof xPos === 'number' && typeof yPos === 'number') {
+    // Bead's screen-space center
+    const beadScreenCx = (xPos + BEAD_DIAMETER_PX / 2) * zoom + panX
+    const beadScreenCy = (yPos + BEAD_DIAMETER_PX / 2) * zoom + panY
+    // Expanded card's screen-space size: cardWidth × thresholdZoom (the
+    // counter-scale and outer canvas zoom compose to yield exactly this).
+    const cardScreenW = cardWidth   * thresholdZoom
+    const cardScreenH = contentHeight * thresholdZoom
+    // Visible bounding box edges on screen, centered on the bead's screen center
+    const left   = beadScreenCx - cardScreenW / 2
+    const right  = beadScreenCx + cardScreenW / 2
+    const top    = beadScreenCy - cardScreenH / 2
+    const bottom = beadScreenCy + cardScreenH / 2
+    const vw = window.innerWidth
+    const vh = window.innerHeight
+    // Shift right if the left edge clips, left if the right edge clips.
+    // If both happen (card wider than viewport - 2×padding), favor showing
+    // the left edge — user gets a deterministic crop on the right.
+    if (left   < CLAMP_PADDING_PX)         clampDx = CLAMP_PADDING_PX - left
+    else if (right  > vw - CLAMP_PADDING_PX) clampDx = (vw - CLAMP_PADDING_PX) - right
+    if (top    < CLAMP_PADDING_PX)         clampDy = CLAMP_PADDING_PX - top
+    else if (bottom > vh - CLAMP_PADDING_PX) clampDy = (vh - CLAMP_PADDING_PX) - bottom
+  }
+
+  // Build the composed transform once. Translate goes OUTSIDE the scale so
+  // its values are unscaled-by-counter-scale (just need the /zoom conversion
+  // to canvas-px because the outer React Flow transform multiplies by zoom).
+  const finalScale = scale * counterScale
+  const composedTransform = (clampDx || clampDy)
+    ? `translate(${clampDx / zoom}px, ${clampDy / zoom}px) scale(${finalScale})`
+    : `scale(${finalScale})`
+
   return (
     <div
-      className={`relative ${lifted ? 'is-lifted' : ''}`}
+      className={`relative ${lifted ? 'is-lifted' : ''} ${isExpanded ? 'is-expanded' : ''}`}
       style={{
         // cardWidth defaults to 256px (the old w-64) and grows only when the
         // title's longest word can't fit at the current zoom-out font size.
@@ -290,7 +381,7 @@ export default function CampaignNode({ data, selected }) {
         height: isBead ? BEAD_DIAMETER_PX : contentHeight,
         opacity,
         boxShadow: shadow,
-        transform:  `scale(${scale})`,
+        transform: composedTransform,
         // Card-mode bg: light tint of type color (existing). Bead-mode bg:
         // darkened type color so the no-thumbnail icon fallback has
         // contrast. Avatar (when present) covers either background.
