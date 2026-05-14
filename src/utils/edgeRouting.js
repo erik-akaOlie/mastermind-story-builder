@@ -13,14 +13,12 @@ export function getNodeCenter(node) {
   }
 }
 
-// Returns the point where a straight line from nodeCenter toward targetPoint
-// intersects the node's rectangular border
-export function getBorderIntersection(node, targetPoint) {
-  const w = node.width || NODE_WIDTH
-  const h = node.height || NODE_HEIGHT
-  const cx = node.position.x + w / 2
-  const cy = node.position.y + h / 2
-
+// Returns the point where a straight line from (cx, cy) toward targetPoint
+// intersects a rectangle of size (w, h) centered on (cx, cy). Decoupled from
+// any "node" shape so the same math can run against a React Flow node
+// (passing its canvas dimensions) OR against a Chunk D hover-expanded card
+// (passing its effective size at threshold-zoom and its clamped center).
+export function getBorderIntersection(cx, cy, w, h, targetPoint) {
   const dx = targetPoint.x - cx
   const dy = targetPoint.y - cy
 
@@ -40,22 +38,37 @@ export function getBorderIntersection(node, targetPoint) {
   }
 }
 
-// Computes spread-out border connection points for all edges on a single node,
-// ensuring no two dots on the same border side are closer than MIN_GAP.
+// Convenience wrapper that derives the rectangle from a React Flow node and
+// delegates to getBorderIntersection. Kept so existing card-mode callers
+// stay terse while Chunk D's expanded-card path uses the raw five-arg form
+// with synthetic values.
+export function getNodeBorderIntersection(node, targetPoint) {
+  const w = node.width || NODE_WIDTH
+  const h = node.height || NODE_HEIGHT
+  return getBorderIntersection(
+    node.position.x + w / 2,
+    node.position.y + h / 2,
+    w, h,
+    targetPoint
+  )
+}
+
+// Computes spread-out border connection points around a rectangle of size
+// (w, h) centered on (cx, cy), ensuring no two dots on the same side are
+// closer than MIN_GAP. Decoupled from any "node" shape — Chunk D's expanded
+// hover-card passes synthetic dimensions (effective threshold-zoom size)
+// and a clamped center; card-mode callers pass node-derived values via
+// getNodeSpreadBorderPoints below.
 //
 // connections: [{ id: edgeId, targetCenter: {x, y} }]
 // Returns:     { [edgeId]: {x, y} }  — canvas-absolute coordinates
-export function getSpreadBorderPoints(node, connections) {
+export function getSpreadBorderPoints(cx, cy, w, h, connections) {
   if (connections.length === 0) return {}
 
-  const w = node.width || NODE_WIDTH
-  const h = node.height || NODE_HEIGHT
-  const left   = node.position.x
-  const top    = node.position.y
-  const right  = left + w
-  const bottom = top + h
-  const cx = left + w / 2
-  const cy = top + h / 2
+  const left   = cx - w / 2
+  const top    = cy - h / 2
+  const right  = cx + w / 2
+  const bottom = cy + h / 2
 
   // 1. Compute raw intersection and classify which side each connection exits
   const pointData = connections.map(({ id, targetCenter }) => {
@@ -71,7 +84,7 @@ export function getSpreadBorderPoints(node, connections) {
       side = dy >= 0 ? 'bottom' : 'top'
     }
 
-    const raw = getBorderIntersection(node, targetCenter)
+    const raw = getBorderIntersection(cx, cy, w, h, targetCenter)
     return { id, raw, side }
   })
 
@@ -152,6 +165,21 @@ export function getSpreadBorderPoints(node, connections) {
   }
 
   return result
+}
+
+// Convenience wrapper that derives the rectangle from a React Flow node and
+// delegates to getSpreadBorderPoints. Keeps the existing card-mode callsite
+// terse while Chunk D's expanded-card branch uses the raw five-arg form
+// with synthetic dimensions and the clamped center.
+export function getNodeSpreadBorderPoints(node, connections) {
+  const w = node.width || NODE_WIDTH
+  const h = node.height || NODE_HEIGHT
+  return getSpreadBorderPoints(
+    node.position.x + w / 2,
+    node.position.y + h / 2,
+    w, h,
+    connections
+  )
 }
 
 // ── Circular-perimeter routing (bead mode, per ADR-0010 / Chunk C) ────────

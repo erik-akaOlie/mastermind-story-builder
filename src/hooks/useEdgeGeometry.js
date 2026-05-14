@@ -18,7 +18,7 @@
 import { useEffect, useRef } from 'react'
 import {
   getNodeCenter,
-  getSpreadBorderPoints,
+  getNodeSpreadBorderPoints,
   getSpreadCircularPoints,
 } from '../utils/edgeRouting'
 import { useTypeStore } from '../store/useTypeStore'
@@ -80,7 +80,7 @@ export function useEdgeGeometry({ nodes, edges, setNodes, setEdges }) {
         const minArcCanvasPx = zoom > 0 ? minScreenCenterToCenter / zoom : minScreenCenterToCenter
         allBorderPoints[node.id] = getSpreadCircularPoints(center, beadHalf, conns, minArcCanvasPx)
       } else {
-        allBorderPoints[node.id] = getSpreadBorderPoints(node, conns)
+        allBorderPoints[node.id] = getNodeSpreadBorderPoints(node, conns)
       }
     })
 
