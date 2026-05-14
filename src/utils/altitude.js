@@ -131,6 +131,12 @@ export const BIRDS_EYE_VIEWPORT_FILL = 0.7
 // campaigns.
 export const DEFAULT_MIN_ZOOM = 0.5
 
+// Default maxZoom matches React Flow v11's own default. Centralised here
+// so the altitude rail (and any future viewport-bounds consumer) reads
+// the same value the canvas enforces. If we ever set a non-default
+// maxZoom prop on <ReactFlow>, change this too.
+export const DEFAULT_MAX_ZOOM = 2.0
+
 // Pure function: given the current nodes array and the viewport dimensions
 // in CSS pixels, return the appropriate minZoom value. Caller is responsible
 // for gating the call (don't compute during a drag — let the underlying

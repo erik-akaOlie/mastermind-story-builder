@@ -93,6 +93,15 @@ export const useCanvasUiStore = create((set) => ({
   // gesture can drive them without touching the constant in altitude.js.
   thresholdGridGapMm: 2.65,
 
+  // Dynamic React Flow minZoom value, derived from the bounding box of
+  // all canvas content (see computeMinZoom). Lives in the store because
+  // it's general navigation state — multiple consumers read it:
+  //   - App.jsx passes it to <ReactFlow> as the minZoom prop.
+  //   - AltitudeRail uses it for the rail's lower bound when normalizing
+  //     positions for the current-zoom + threshold markers.
+  // Default = DEFAULT_MIN_ZOOM (0.5) until the first computeMinZoom run.
+  dynamicMinZoom: 0.5,
+
   // Expanded-node visual state (per ADR-0010 / Chunk D). Only one node can be
   // expanded at a time (hover or single-select in Bead View), so a single
   // record suffices instead of a Map. Published by the expanded CampaignNode
@@ -201,6 +210,8 @@ export const useCanvasUiStore = create((set) => ({
     set((state) => state.draggingNodeId === id ? {} : { draggingNodeId: id }),
   setThresholdGridGapMm: (mm) =>
     set((state) => state.thresholdGridGapMm === mm ? {} : { thresholdGridGapMm: mm }),
+  setDynamicMinZoom: (z) =>
+    set((state) => state.dynamicMinZoom === z ? {} : { dynamicMinZoom: z }),
 
   // Clear all hover-derived state in one shot. Called when the user enters
   // spacebar pan mode so a card that happens to be lit up underneath the

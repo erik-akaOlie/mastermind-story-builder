@@ -33,13 +33,14 @@ import { useUndoShortcuts } from './hooks/useUndoShortcuts'
 import { useCustomMarquee } from './hooks/useCustomMarquee'
 import { useReducedMotion } from './hooks/useReducedMotion'
 import MarqueeRect from './components/MarqueeRect'
+import AltitudeRail from './components/AltitudeRail'
 import { useUndoStore } from './store/useUndoStore'
 import { useCanvasUiStore } from './store/useCanvasUiStore'
 import { ACTION_TYPES } from './lib/undo/index.js'
 import { CanvasOpsProvider } from './lib/CanvasOpsContext.jsx'
 import { setPanToTargetImpl } from './lib/cameraOps.js'
 import { track } from './lib/analytics.js'
-import { nextAltitude, gridGapMmAtZoom, altitudeLabel, MORPH_DURATION_MS, computeMinZoom, DEFAULT_MIN_ZOOM } from './utils/altitude.js'
+import { nextAltitude, gridGapMmAtZoom, altitudeLabel, MORPH_DURATION_MS, computeMinZoom } from './utils/altitude.js'
 
 // Analytics thresholds (per ADR-0009). pan_burst fires when the user
 // completes >= THRESHOLD discrete pan gestures in WINDOW_MS, then resets.
@@ -203,15 +204,29 @@ export default function App() {
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
-  const [dynamicMinZoom, setDynamicMinZoom] = useState(DEFAULT_MIN_ZOOM)
+  // The dynamic minZoom lives in useCanvasUiStore (general navigation
+  // state) so the altitude rail can read it without an additional prop.
+  // App.jsx is the only writer.
+  const dynamicMinZoom = useCanvasUiStore((s) => s.dynamicMinZoom)
   useEffect(() => {
     if (draggingNodeIdForMinZoom != null) return
-    setDynamicMinZoom(computeMinZoom({
+    useCanvasUiStore.getState().setDynamicMinZoom(computeMinZoom({
       nodes,
       viewportWidth:  viewportSize.w,
       viewportHeight: viewportSize.h,
     }))
   }, [nodes, viewportSize, draggingNodeIdForMinZoom])
+
+  // ── AltitudeRail click-to-zoom callback (Chunk: altitude rail Phase 1) ──
+  // The rail UI calls this with a target zoom value (already clamped to
+  // [minZoom, maxZoom] by its own normalization). We route through React
+  // Flow's zoomTo, which preserves the current pan and animates over
+  // 200ms — collapsed to 0ms under reduced-motion.
+  const onZoomToFromRail = useCallback((targetZoom) => {
+    const rf = rfInstanceRef.current
+    if (!rf) return
+    rf.zoomTo(targetZoom, { duration: reducedMotion ? 0 : 200 })
+  }, [reducedMotion])
 
   // ── Per-node hover-expand morph signal (Chunk D step 6) ──────────────────
   // When a bead expands or an expanded card collapses, the connection lines
@@ -998,6 +1013,7 @@ export default function App() {
       </ReactFlow>
 
       <MarqueeRect marquee={marqueeOverlay} rfInstanceRef={rfInstanceRef} />
+      <AltitudeRail onZoomTo={onZoomToFromRail} />
 
       {contextMenu && (() => {
         const node = nodes.find((n) => n.id === contextMenu.nodeId)
