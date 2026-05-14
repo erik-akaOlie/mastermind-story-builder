@@ -31,6 +31,13 @@ export default function FloatingEdge({ source, target, data, style, selected }) 
   const isEdgeActive   = useCanvasUiStore(selectIsEdgeActive(source, target))
   const anythingActive = useCanvasUiStore(selectAnythingActive)
   const morphPhase     = useCanvasUiStore((s) => s.morphPhase)
+  // Per-node hover-expand morph signal (Chunk D step 6). Narrow selector:
+  // only re-renders THIS edge when one of ITS endpoints' phases changes —
+  // unrelated nodes' phases never trigger an update here.
+  const localMorphPhase = useCanvasUiStore((s) => {
+    const m = s.nodeMorphPhases
+    return m.get(source) ?? m.get(target) ?? null
+  })
   // True when the user is hovering THIS edge specifically (both endpoints are
   // in the hovered-edge set). Used to bump strokeWidth a hair, replacing the
   // legacy setEdges-based hover bump that lived in useNodeHoverSelection.
@@ -63,20 +70,29 @@ export default function FloatingEdge({ source, target, data, style, selected }) 
     restingTransition = TRANSITION_RESTING
   }
 
-  // Morph phase overrides the resting state:
-  //   - 'out' (first half of MORPH_DURATION_MS): opacity → 0 over 75ms
-  //   - 'in'  (second half): opacity → resting target over 75ms
-  //   -  null (no morph in flight): resting state with its tuned hover/dim
-  //     timings (TRANSITION_ACTIVE / DIMMING / RESTING) untouched.
-  // Two-phase split ensures the total edge animation matches the card morph
-  // timer exactly, and the resting-state timings (carefully tuned for
-  // seizure safety and snap-in feedback) survive intact outside the morph.
+  // Morph phase overrides the resting state. Two independent signals:
+  //   - morphPhase (global)     — fires on canvas altitude crossings;
+  //                                every edge fades.
+  //   - localMorphPhase (per-node) — fires when one of THIS edge's two
+  //                                  endpoints is mid-hover-expand;
+  //                                only THIS edge fades.
+  // Either signal in 'out' → opacity 0; either in 'in' → opacity returns
+  // to resting; both null → resting timings untouched (carefully tuned for
+  // seizure safety and snap-in feedback, preserved outside the morph).
+  // 'out' takes priority over 'in' so a fresh morph-out wins if both
+  // happen to be present at the exact moment of an effect fire.
+  const activePhase = (morphPhase === 'out' || localMorphPhase === 'out')
+    ? 'out'
+    : (morphPhase === 'in' || localMorphPhase === 'in')
+      ? 'in'
+      : null
+
   let computedOpacity
   let transition
-  if (morphPhase === 'out') {
+  if (activePhase === 'out') {
     computedOpacity = 0
     transition = TRANSITION_MORPHING
-  } else if (morphPhase === 'in') {
+  } else if (activePhase === 'in') {
     computedOpacity = restingOpacity
     transition = TRANSITION_MORPHING
   } else {

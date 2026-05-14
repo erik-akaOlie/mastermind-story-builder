@@ -183,6 +183,60 @@ export default function App() {
   // MORPH_DURATION_MS, not the leftover.
   const morphTimeoutRef = useRef(null)
 
+  // ── Per-node hover-expand morph signal (Chunk D step 6) ──────────────────
+  // When a bead expands or an expanded card collapses, the connection lines
+  // attached to that single node need to fade through the visual change.
+  // We track it as a Map<nodeId, 'out' | 'in'> in the store (see
+  // setNodeMorphPhase). This effect watches the currently-expanded node id
+  // (derived from altitude + hover + single-select) and fires the two-phase
+  // signal on every transition: the previously-expanded id morphs OUT-IN
+  // (collapsing back to bead) AND the newly-expanded id morphs OUT-IN
+  // (expanding to card). They run independently so multiple ids can be
+  // in-flight at once (rare; happens when hover moves directly from one
+  // bead to another).
+  const altitudeForExpand    = useCanvasUiStore((s) => s.altitude)
+  const hoveredNodeIdForExp  = useCanvasUiStore((s) => s.hoveredNodeId)
+  const selectedNodeIdsForExp = useCanvasUiStore((s) => s.selectedNodeIds)
+  let currentlyExpandedId = null
+  if (altitudeForExpand === 'beadView') {
+    if (hoveredNodeIdForExp) currentlyExpandedId = hoveredNodeIdForExp
+    else if (selectedNodeIdsForExp.size === 1) {
+      // Single-select case: grab the lone id without mutating
+      for (const id of selectedNodeIdsForExp) { currentlyExpandedId = id; break }
+    }
+  }
+  const prevExpandedIdRef    = useRef(null)
+  const expandMorphTimersRef = useRef(new Map())
+  const fireExpandMorph = useCallback((id) => {
+    if (!id) return
+    const halfMs = MORPH_DURATION_MS / 2
+    const prevTimers = expandMorphTimersRef.current.get(id)
+    if (prevTimers) {
+      if (prevTimers.outTimer != null) clearTimeout(prevTimers.outTimer)
+      if (prevTimers.inTimer  != null) clearTimeout(prevTimers.inTimer)
+    }
+    const store = useCanvasUiStore.getState()
+    store.setNodeMorphPhase(id, 'out')
+    const outTimer = setTimeout(() => {
+      useCanvasUiStore.getState().setNodeMorphPhase(id, 'in')
+      const inTimer = setTimeout(() => {
+        useCanvasUiStore.getState().setNodeMorphPhase(id, null)
+        expandMorphTimersRef.current.delete(id)
+      }, halfMs)
+      const cur = expandMorphTimersRef.current.get(id) || {}
+      expandMorphTimersRef.current.set(id, { ...cur, inTimer })
+    }, halfMs)
+    expandMorphTimersRef.current.set(id, { outTimer, inTimer: null })
+  }, [])
+  useEffect(() => {
+    const prev = prevExpandedIdRef.current
+    const cur  = currentlyExpandedId
+    if (prev === cur) return
+    prevExpandedIdRef.current = cur
+    if (prev) fireExpandMorph(prev)
+    if (cur)  fireExpandMorph(cur)
+  }, [currentlyExpandedId, fireExpandMorph])
+
   // ── Persist node position on drag end ────────────────────────────────────
   // Per-node start positions captured at drag start drive (a) the 4px-jitter
   // filter on the undo entry and (b) the entry's `before` snapshot. Stored

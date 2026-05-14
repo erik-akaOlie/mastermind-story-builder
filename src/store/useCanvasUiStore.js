@@ -65,6 +65,15 @@ export const useCanvasUiStore = create((set) => ({
   // rest. FloatingEdge reads this; cards do not.
   morphPhase: null,
 
+  // Per-node morph phase map for Chunk D's hover-expand transitions. Keyed
+  // by node id, value is 'out' | 'in'. App.jsx writes here when expansion
+  // changes (a new node expands or an old one collapses); FloatingEdge
+  // reads to fade only the edges whose endpoints are mid-morph. Distinct
+  // from the global morphPhase so a local hover-expand doesn't ripple
+  // unrelated lines across the whole canvas. Always a NEW Map instance on
+  // any update — Zustand uses reference equality to detect change.
+  nodeMorphPhases: new Map(),
+
   // Expanded-node visual state (per ADR-0010 / Chunk D). Only one node can be
   // expanded at a time (hover or single-select in Bead View), so a single
   // record suffices instead of a Map. Published by the expanded CampaignNode
@@ -148,6 +157,26 @@ export const useCanvasUiStore = create((set) => ({
         return {}
       }
       return { expandedNode: rec }
+    }),
+  // Per-node morph signal API.
+  //   setNodeMorphPhase(id, phase) — phase is 'out' | 'in' | null
+  // Always creates a new Map so Zustand subscribers see the change.
+  // Equality guard skips the write when the requested value is already
+  // present (covers the common no-op case during repeated effect runs).
+  setNodeMorphPhase: (id, phase) =>
+    set((state) => {
+      const cur = state.nodeMorphPhases
+      const has = cur.has(id)
+      if (phase == null) {
+        if (!has) return {}
+        const next = new Map(cur)
+        next.delete(id)
+        return { nodeMorphPhases: next }
+      }
+      if (cur.get(id) === phase) return {}
+      const next = new Map(cur)
+      next.set(id, phase)
+      return { nodeMorphPhases: next }
     }),
 
   // Clear all hover-derived state in one shot. Called when the user enters
