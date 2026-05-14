@@ -339,6 +339,27 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
   // the padding-edge, not the border-edge, of the container).
   const borderCanvasPx = isBead ? BEAD_BORDER_SCREEN_PX * compensation : 0
 
+  // ── Hit-box floor: prevent expand/collapse flicker on short cards ─────────
+  // When a card with no summary/body and a short title is expanded, its
+  // natural content height can be less than the bead's diameter. The
+  // expanded card's layout box would then be SMALLER than the bead's
+  // hit-box in the vertical direction. A user who triggered the expansion
+  // by hovering the bottom of the bead would find the cursor outside the
+  // card's hit-box at the end of the morph → mouse-leave → collapse →
+  // mouse re-enters bead → re-expand → flicker loop.
+  //
+  // Fix: while expanded, the layout box's effective height is at least
+  // BEAD_DIAMETER_PX. The extra room below the card content is just the
+  // container's background tint extending down — the visible card simply
+  // looks a touch taller than its content. The hit box now always
+  // encompasses the bead's original extent, so mouse-leave only fires
+  // when the user truly moves the cursor away.
+  //
+  // Horizontal is unaffected: cardWidth has a minimum of 256, which is
+  // already > BEAD_DIAMETER_PX (160), so the flicker can only happen
+  // vertically.
+  const layoutHeight = isExpanded ? Math.max(BEAD_DIAMETER_PX, contentHeight) : contentHeight
+
   // ── Hover-expand clamp + centering offset (Chunk D) ───────────────────────
   // When the card is expanded in Bead View, we want the visible card center
   // to land on the BEAD's center (not the layout box's center — those
@@ -371,7 +392,7 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
     // (counterScale × canvas-zoom compose to give thresholdZoom; the card's
     // box is cardWidth wide, so visible-on-screen = cardWidth × thresholdZoom.)
     const cardScreenW = cardWidth   * thresholdZoom
-    const cardScreenH = contentHeight * thresholdZoom
+    const cardScreenH = layoutHeight * thresholdZoom
     const left   = beadScreenCx - cardScreenW / 2
     const right  = beadScreenCx + cardScreenW / 2
     const top    = beadScreenCy - cardScreenH / 2
@@ -476,8 +497,8 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
 
   // The two translate contributions in canvas units (= CSS local px inside
   // the RF node coord space):
-  const centerOffsetX = isExpanded ? (BEAD_DIAMETER_PX / 2 - cardWidth     / 2) : 0
-  const centerOffsetY = isExpanded ? (BEAD_DIAMETER_PX / 2 - contentHeight / 2) : 0
+  const centerOffsetX = isExpanded ? (BEAD_DIAMETER_PX / 2 - cardWidth    / 2) : 0
+  const centerOffsetY = isExpanded ? (BEAD_DIAMETER_PX / 2 - layoutHeight / 2) : 0
   const clampDxCanvas = zoom > 0 ? effectiveClampDxScreen / zoom : 0
   const clampDyCanvas = zoom > 0 ? effectiveClampDyScreen / zoom : 0
   const totalTx = centerOffsetX + clampDxCanvas
@@ -517,13 +538,17 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
     // Visible card extent in canvas units = container's CSS box × counterScale.
     // counterScale = thresholdZoom / zoom (when expanded), so:
     //   visible = box × thresholdZoom / zoom
+    // We use layoutHeight (max of bead diameter and natural content height)
+    // so the published rect matches the container's actual hit-box AND the
+    // visible bg-tint extent. Edges route to the visible card border,
+    // including the small footer of bg-tint that short cards display.
     const width      = cardWidth     * thresholdZoom / zoom
-    const height     = contentHeight * thresholdZoom / zoom
+    const height     = layoutHeight  * thresholdZoom / zoom
     // Box size in canvas units: just the CSS layout dimensions.
     const boxWidth   = cardWidth
-    const boxHeight  = contentHeight
+    const boxHeight  = layoutHeight
     store.setExpandedNode({ id: data.id, centerX, centerY, width, height, boxWidth, boxHeight })
-  }, [isExpanded, xPos, yPos, clampDxCanvas, clampDyCanvas, zoom, thresholdZoom, cardWidth, contentHeight, data.id])
+  }, [isExpanded, xPos, yPos, clampDxCanvas, clampDyCanvas, zoom, thresholdZoom, cardWidth, layoutHeight, data.id])
 
   // Clear our published record when this node unmounts mid-expansion.
   useEffect(() => () => {
@@ -541,7 +566,7 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
         // with a circular border-radius; CSS transitions interpolate every
         // numeric property over MORPH_DURATION_MS.
         width:  isBead ? BEAD_DIAMETER_PX : cardWidth,
-        height: isBead ? BEAD_DIAMETER_PX : contentHeight,
+        height: isBead ? BEAD_DIAMETER_PX : layoutHeight,
         opacity,
         boxShadow: shadow,
         transform: composedTransform,
