@@ -430,6 +430,106 @@ ship, the threshold gets a per-class multiplier applied to
   clamp to the viewport so the expanded card slides into view rather
   than clipping at the edge. Implement and observe.
 
+### Altitude rail UI (2026-05-15)
+
+The altitude axis gets a dedicated user-facing instrument on the left
+edge of the canvas — the **altitude rail**
+([`src/components/AltitudeRail.jsx`](../../src/components/AltitudeRail.jsx)).
+It's the first concrete altitude visualization shipped under the
+"altitude view among many" architecture outlined above (line 229 of
+this ADR). The rail has two roles:
+
+1. **Read.** Show the user where they are on the zoom spectrum and
+   which side of the threshold they're on, without making them poke at
+   the canvas to find out.
+2. **Write.** Let the user retune the threshold by dragging the
+   slider's thumb, so a DM who wants beads earlier (or cards longer)
+   can set their own boundary.
+
+#### State machine
+
+The rail has two visual states, driven by mouse position over the
+rail's container and by drag-in-progress:
+
+- **Rest** — narrow track tucked toward the canvas edge, icons / thumb
+  / label hidden, current-zoom marker simplified to a single chevron
+  at half stroke. Ambient, not demanding attention.
+- **Active** — track widens, magnifying-glass icons fade in above and
+  below, threshold thumb appears, "card view" label fades in, current-
+  zoom marker becomes the full chevron-bar-chevron at full stroke.
+
+Transition between states is a 220 ms CSS animation on every property
+(width, position, opacity, stroke width, gradient width). A subtle
+dark scrim sits behind the rail in both states, scaling wider in active
+state so the expanded UI keeps strong contrast against canvas content;
+the scrim is tinted to the canvas hue rather than pure black so it
+darkens the underlying canvas without drifting toward neutral gray.
+
+#### Threshold drag mechanics
+
+The thumb is a pointer-captured drag handle. Its TOP edge tracks the
+down-trigger zoom (Card→Bead boundary); its BOTTOM edge tracks the
+up-trigger zoom (= down-trigger × `MORPH_HYSTERESIS_RATIO`). Dragging
+the thumb writes a new `thresholdGridGapMm` value to the store via
+`setThresholdGridGapMm`. App.jsx subscribes to that value and re-runs
+the same `evaluateAltitude` logic the zoom-driven trigger uses — so a
+drag that crosses the user's current zoom morphs the canvas in real
+time, not on the next pan or zoom.
+
+#### Hysteresis representation
+
+The thumb's vertical extent IS the dead-band. Top = down-trigger,
+bottom = up-trigger. When the current-zoom indicator sits inside the
+thumb, the previous altitude is preserved; only when it exits ABOVE
+does Card→Bead fire, and only when it exits BELOW does Bead→Card fire.
+Thumb height stretches to fill the actual dead-band region on the rail
+(varies with the rail's responsive height and `dynamicMinZoom`), min-
+clamped at 28 px so the grips stay legible when the dead-band
+fraction is tiny.
+
+#### Highlight semantics
+
+The Card-View highlight band has different behavior in each state, by
+design:
+
+- **Active.** Highlight top sits at the down-trigger position (= thumb
+  top) and extends UP behind the thumb in both altitudes. Square top
+  corners; the thumb visually tucks over them. The highlight here
+  reads as "Card View region defined by the current threshold." The
+  current-zoom indicator's position vs the thumb tells the user which
+  side of the dead-band they're actually on.
+- **Rest.** No thumb, no dead-band visual. The highlight has to
+  reflect the actual altitude on its own, so its top edge tracks
+  `altitude`: down-trigger position in Card View (highlight covers
+  the dead-band region, indicator sits inside it), up-trigger position
+  in Bead View (highlight is below the indicator). Fully rounded
+  corners since there's no thumb to tuck under.
+
+This dual behavior is deliberate: in active state the rail shows the
+*threshold structure*; at rest it shows the *current state*. Crossing
+from rest to active while in Bead View animates the highlight top by
+one dead-band's worth — the visible price of representing two different
+things cleanly with one element.
+
+#### Container & hover detection
+
+The 64 px rail container is `pointer-events: auto` so it captures
+mouse-enter / mouse-leave reliably without making the user aim for a
+4 px line. Trade-off: marquee-select can't be initiated in the
+leftmost 64 px of the canvas. Acceptable for an edge-mounted nav
+tool; the rail slides out of the way on mouse-leave so the
+expectation of marquee-select is reasonably managed.
+
+#### Bbox stability
+
+`computeMinZoom` uses canonical card dimensions (256 × 180) for every
+card-type node regardless of measured size, so a morph from card to
+bead doesn't shrink the bounding box (which would otherwise move
+`dynamicMinZoom`, which would otherwise scoot the threshold thumb up
+and down the rail every time the user crossed the morph boundary).
+Text nodes keep their measured dimensions since they're user-resizable
+and don't morph.
+
 ## References
 
 - BACKLOG entries: *Zoom-to-node-view v1* and *Zoom-to-node-view v2*

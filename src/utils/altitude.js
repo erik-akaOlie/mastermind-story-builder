@@ -150,17 +150,20 @@ export function computeMinZoom({ nodes, viewportWidth, viewportHeight }) {
     const px = n?.position?.x
     const py = n?.position?.y
     if (typeof px !== 'number' || typeof py !== 'number') continue
-    // Width/height: React Flow populates these post-measurement. Before the
-    // first measure they're undefined; fall back to type-appropriate
-    // defaults so the bounding box isn't degenerate while the canvas is
-    // still mounting.
+    // Card-type nodes morph between forms — React Flow re-measures them as
+    // they shrink to beads and grow back, which would shift this bbox and
+    // therefore the altitude rail's threshold position on every mode flip.
+    // Pin card footprint to the canonical (256, 180) regardless of rendered
+    // form so adding / removing nodes is the only thing that changes the
+    // graph's logical extent. Text nodes are user-resizable and don't morph,
+    // so their measured dimensions stay authoritative.
     const isTextNode = n.type === 'textNode'
-    const w = n.width
-      ?? n.data?.width
-      ?? (isTextNode ? 200 : 256)
-    const h = n.height
-      ?? n.data?.height
-      ?? (isTextNode ? 50  : 180)
+    const w = isTextNode
+      ? (n.width  ?? n.data?.width  ?? 200)
+      : 256
+    const h = isTextNode
+      ? (n.height ?? n.data?.height ?? 50)
+      : 180
     if (px       < minX) minX = px
     if (py       < minY) minY = py
     if (px + w   > maxX) maxX = px + w

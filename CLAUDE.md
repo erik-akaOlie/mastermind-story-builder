@@ -462,6 +462,26 @@ Session replay + named events via PostHog Cloud, restricted to invited testers. 
 
 When a card is hovered, selected, or part of a hovered edge, it adds `.is-lifted` to its inner div. `index.css` uses `:has(.is-lifted)` to bump the React Flow wrapper's `z-index`, so neighboring cards don't visually cut through the lifted one. `:has()` requires modern Chromium / Safari / Firefox.
 
+### Altitude rail (per ADR-0010 addendum, 2026-05-15)
+
+The left-edge altitude rail ([`src/components/AltitudeRail.jsx`](./src/components/AltitudeRail.jsx)) is the first concrete altitude visualization shipped under the "altitude view among many" architecture. It reads navigation state from `useCanvasUiStore` + altitude.js, and writes back exactly one value — `thresholdGridGapMm` — when the user drags the thumb. It never reaches into the morph machinery.
+
+**Two visual states, driven by mouse position over the rail's container plus drag-in-progress.** Rest: narrow track tucked toward the canvas edge, icons / thumb / label hidden, current-zoom marker simplified to bar + right chevron at half stroke. Active: track widens, icons fade in, thumb appears, label fades in, current-zoom marker becomes the full chevron-bar-chevron at full stroke. The transition is a 220 ms CSS animation on every property (width, position, opacity, stroke width, gradient width).
+
+**Threshold drag.** The thumb is pointer-captured. Its TOP edge tracks the down-trigger zoom (Card→Bead boundary); its BOTTOM edge tracks the up-trigger zoom (= down-trigger × `MORPH_HYSTERESIS_RATIO`). Dragging writes a new `thresholdGridGapMm` to the store. [App.jsx subscribes to that value via `useCanvasUiStore.subscribe(...)`](./src/App.jsx) and re-runs the shared `evaluateAltitude` helper the zoom-driven trigger uses — so a drag that crosses the user's current zoom morphs the canvas in real time, not on the next pan or zoom.
+
+**Highlight semantics differ between states by design.**
+- *Active:* highlight top sits at the down-trigger position (= thumb top) and extends UP behind the thumb in BOTH altitudes. Square top corners; the thumb tucks over them. The highlight here reads as "Card View region defined by the current threshold" — the indicator's position vs the thumb tells the user which side they're on.
+- *Rest:* no thumb, so the highlight has to reflect the actual altitude on its own. Top edge tracks `altitude`: down-trigger position in Card View (highlight covers the dead-band), up-trigger position in Bead View (highlight is below the indicator). Fully rounded corners.
+
+When the user hovers in/out while in Bead View, the highlight top animates by one dead-band's worth — the visible price of one element representing two different things cleanly.
+
+**Bbox stability for the threshold marker.** `computeMinZoom` uses canonical card dimensions (256 × 180) for every card-type node regardless of what RF currently measures, so a morph between card and bead form doesn't shrink the bounding box (which would otherwise move `dynamicMinZoom`, which would otherwise scoot the threshold thumb up and down the rail every time the user crossed the boundary). Text nodes keep their measured dimensions since they're user-resizable and don't morph.
+
+**Pointer-events trade-off.** The 64 px rail container is `pointer-events: auto` so it captures mouse-enter / mouse-leave reliably without making the user aim for a 4 px line. Cost: marquee-select can't be initiated from the leftmost 64 px of the canvas. Acceptable for an edge-mounted nav tool; the rail slides out of the way on mouse-leave so the expectation of marquee-select is reasonably managed.
+
+**Scrim color.** The dark backdrop behind the rail uses RGB (3, 9, 8) at scaled alpha, not pure black. The canvas BG is `#031a15` (with vignette darkening edges to ~`#061210`) — pure black composites toward neutral gray over that green-tinted dark, which reads as a foreign panel. The hue-matched tint darkens-in-hue and blends as a deepening of the canvas color.
+
 ### How connections work
 
 `App.jsx` orchestrates edge state via the hooks above. It does NOT use React Flow handles. Instead:
@@ -580,6 +600,7 @@ Custom user-created types are scoped per campaign in Supabase but the UI flow fo
 - [x] **Sign-out cleanup** — `AuthContext.signOut` calls `useUndoStore.clearAllForUser(userId)` before Supabase clears the session, wiping the in-memory undo stack AND every `mastermind:undo:${userId}:*` sessionStorage entry across any campaigns the user touched in this tab.
 - [x] **Profile avatars** — Profile page lets the user upload, replace, and remove a profile photo (1:1 crop, 256×256 WebP, stored in the new `profile-media` Supabase Storage bucket). `public.profiles` row holds `avatar_path` + `display_name` (latter has no UI yet). Auto-create trigger on `auth.users` INSERT so every sign-up gets a profile row. Shared `ProfileContext` so the top-left UserAvatar chip updates immediately when the photo changes — same source of truth as the Profile page header. Cropper gains a `profile-avatar` mode (square frame, 256×256 output); UploadImageModal becomes pipeline-agnostic via `cardImagePipeline()` / `profileAvatarPipeline()` factories so the same UI shell handles both image domains. See migration 003.
 - [x] **Behavioral analytics + session replay** — PostHog Cloud wired (per ADR-0009). Loads only when `profile.is_test_user === true` via dynamic import (separate Vite chunk; non-testers download zero bytes of `posthog-js`). 16 named events fire at action sites across `App.jsx`, `ConnectionsSection`, `TypePicker`, and `useUndoShortcuts`. `AuthContext.signOut` resets the session so it doesn't bleed across users on the same browser. Three safety guards (conditional load, try/catch on every public call, early bail) ensure non-testers see zero behavioral or performance impact. Password fields are protected by a `.ph-mask` class + PostHog's default `type=password` masking + the fact that the login screen renders pre-init. Migration 004 adds the `is_test_user` boolean column.
+- [x] **Altitude rail** — Left-edge instrument that reads navigation state (current zoom, threshold, dynamic minZoom, altitude) and writes back exactly one value (`thresholdGridGapMm`). Two visual states: ambient line at rest, expanded controls (icons + draggable thumb + label + bar-chevron marker) on hover. The thumb's vertical extent IS the hysteresis dead-band; dragging it retunes the Card↔Bead threshold and morphs the canvas in real time (App.jsx subscribes to `thresholdGridGapMm` and re-runs the shared `evaluateAltitude` helper). Highlight semantics differ by state — active reads as "threshold structure," rest reads as "current altitude" — so the rail never lies about which side of the dead-band the user is on. Hue-matched dark scrim behind the UI scales wider when active. See [ADR-0010 addendum (2026-05-15)](./docs/decisions/0010-zoom-progressive-disclosure.md).
 
 ## What Is NOT Built (roadmap)
 

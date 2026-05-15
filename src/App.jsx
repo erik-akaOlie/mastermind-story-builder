@@ -40,7 +40,7 @@ import { ACTION_TYPES } from './lib/undo/index.js'
 import { CanvasOpsProvider } from './lib/CanvasOpsContext.jsx'
 import { setPanToTargetImpl } from './lib/cameraOps.js'
 import { track } from './lib/analytics.js'
-import { nextAltitude, gridGapMmAtZoom, altitudeLabel, MORPH_DURATION_MS, computeMinZoom } from './utils/altitude.js'
+import { nextAltitude, MORPH_DURATION_MS, computeMinZoom } from './utils/altitude.js'
 
 // Analytics thresholds (per ADR-0009). pan_burst fires when the user
 // completes >= THRESHOLD discrete pan gestures in WINDOW_MS, then resets.
@@ -860,6 +860,37 @@ export default function App() {
   // update per crossing. Downstream subscribers (Chunk B's morph, Chunk C's
   // bead-perimeter math, future altitude views) react to altitude
   // transitions, never to raw zoom.
+  // Single source of truth for altitude crossings. Reads current altitude
+  // from the store, evaluates nextAltitude with the supplied (zoom,
+  // thresholdMm), and on transition: writes the new altitude, opens the
+  // two-phase morph window (FloatingEdge cross-fade; cards transition
+  // via plain CSS off `altitude`), and emits the debug log. Called from
+  // BOTH onMove (zoom-driven crossings) and the threshold subscription
+  // below (drag-driven crossings via the altitude rail).
+  const evaluateAltitude = useCallback((zoom, thresholdMm, source) => {
+    const store = useCanvasUiStore.getState()
+    const current = store.altitude
+    const next = nextAltitude(current, zoom, thresholdMm)
+    if (next === current) return
+    store.setAltitude(next)
+    // Reduced-motion (Chunk F): skip the two-phase fade entirely. Edges
+    // stay at their resting opacity through the altitude swap; cards'
+    // CSS transitions are already collapsed to 0 ms in CampaignNode via
+    // useReducedMotion, so the global morph window has no work to do.
+    if (!reducedMotion) {
+      const halfMs = MORPH_DURATION_MS / 2
+      store.setMorphPhase('out')
+      if (morphTimeoutRef.current != null) clearTimeout(morphTimeoutRef.current)
+      morphTimeoutRef.current = setTimeout(() => {
+        useCanvasUiStore.getState().setMorphPhase('in')
+        morphTimeoutRef.current = setTimeout(() => {
+          useCanvasUiStore.getState().setMorphPhase(null)
+          morphTimeoutRef.current = null
+        }, halfMs)
+      }, halfMs)
+    }
+  }, [reducedMotion])
+
   const onMove = useCallback((_event, viewport) => {
     // Keep the store's viewport mirror in sync — useEdgeGeometry (zoom for
     // bead arc-gap math) and Chunk D's hover-expand clamp (pan + zoom)
@@ -869,44 +900,24 @@ export default function App() {
     store.setCurrentZoom(viewport.zoom)
     store.setCurrentPan(viewport.x, viewport.y)
 
-    const current = useCanvasUiStore.getState().altitude
-    const thresholdMm = useCanvasUiStore.getState().thresholdGridGapMm
-    const next = nextAltitude(current, viewport.zoom, thresholdMm)
-    if (next !== current) {
-      const store = useCanvasUiStore.getState()
-      store.setAltitude(next)
-      // Open a two-phase morph window for FloatingEdge to fade lines through.
-      // Cards react to `altitude` directly via CSS transitions — they don't
-      // read morphPhase. If a previous morph window is still in flight (very
-      // rare), cancel it so this new window is a full MORPH_DURATION_MS
-      // starting from phase 'out'.
-      //
-      // Reduced-motion (Chunk F): skip the two-phase fade entirely. Edges
-      // stay at their resting opacity through the altitude swap; cards'
-      // CSS transitions are already collapsed to 0 ms in CampaignNode via
-      // useReducedMotion, so the global morph window has no work to do.
-      if (!reducedMotion) {
-        const halfMs = MORPH_DURATION_MS / 2
-        store.setMorphPhase('out')
-        if (morphTimeoutRef.current != null) clearTimeout(morphTimeoutRef.current)
-        morphTimeoutRef.current = setTimeout(() => {
-          useCanvasUiStore.getState().setMorphPhase('in')
-          morphTimeoutRef.current = setTimeout(() => {
-            useCanvasUiStore.getState().setMorphPhase(null)
-            morphTimeoutRef.current = null
-          }, halfMs)
-        }, halfMs)
-      }
-      // Chunk A debug log — proves the trigger fires at the expected
-      // threshold. Remove once Chunk B's morph makes the transition
-      // visually self-evident.
-      console.log(
-        `[altitude] ${altitudeLabel(current)} → ${altitudeLabel(next)}  ` +
-        `zoom=${viewport.zoom.toFixed(3)}  ` +
-        `gap=${gridGapMmAtZoom(viewport.zoom).toFixed(2)}mm`
-      )
-    }
-  }, [reducedMotion])
+    evaluateAltitude(viewport.zoom, store.thresholdGridGapMm, 'zoom')
+  }, [evaluateAltitude])
+
+  // ── Threshold-driven altitude crossings ──────────────────────────────────
+  // The altitude rail (src/components/AltitudeRail.jsx) lets the user drag
+  // the morph threshold up and down the zoom scale. When it changes, the
+  // user's current zoom may now sit on the opposite side of the trigger,
+  // which should fire a morph IMMEDIATELY — not wait for the next pan or
+  // zoom event. Subscribe to thresholdGridGapMm directly so this re-eval
+  // doesn't re-render App.jsx on every drag tick (rail UI already re-renders
+  // because it subscribes to the same value via a selector).
+  useEffect(() => {
+    const unsub = useCanvasUiStore.subscribe((state, prevState) => {
+      if (state.thresholdGridGapMm === prevState.thresholdGridGapMm) return
+      evaluateAltitude(state.currentZoom, state.thresholdGridGapMm, 'threshold')
+    })
+    return unsub
+  }, [evaluateAltitude])
 
   // ── Viewport analytics (per ADR-0009) ────────────────────────────────────
   // onMoveEnd fires once per discrete pan/zoom gesture, which is the right

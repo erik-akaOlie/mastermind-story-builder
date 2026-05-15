@@ -140,4 +140,40 @@ describe('computeMinZoom', () => {
     expect(Number.isFinite(result)).toBe(true)
     expect(result).toBeGreaterThan(0)
   })
+
+  it('returns the same value when card nodes are measured as beads or as cards', () => {
+    // Bbox-stability invariant: a card-type node's contribution to the
+    // bounding box must NOT depend on whether RF currently measures it
+    // at card dims (256 × 180) or bead dims (160 × 160 etc). Otherwise
+    // the altitude rail's threshold marker would scoot up and down as
+    // the user zooms across the morph boundary.
+    const positions = [
+      { id: 'a', position: { x: 0,    y: 0    } },
+      { id: 'b', position: { x: 5000, y: 3000 } },
+    ]
+    const asCards = positions.map((n) => ({ ...n, width: 256, height: 180 }))
+    const asBeads = positions.map((n) => ({ ...n, width: 160, height: 160 }))
+    const cardResult = computeMinZoom({ nodes: asCards, viewportWidth: VW, viewportHeight: VH })
+    const beadResult = computeMinZoom({ nodes: asBeads, viewportWidth: VW, viewportHeight: VH })
+    expect(beadResult).toBe(cardResult)
+  })
+
+  it('respects measured dimensions for text nodes (which are user-resizable)', () => {
+    // Text nodes don't morph, so their actual measured size SHOULD count.
+    // Geometry is chosen so the y-axis is the binding one — only then does a
+    // change in text-node height affect minZoom. (If x were binding the
+    // text-node's height wouldn't matter and the test wouldn't exercise the
+    // measurement-respecting branch at all.)
+    const small = [
+      { id: 't', type: 'textNode', position: { x: 0, y: 0 }, width: 200, height:   50 },
+      { id: 'b', position: { x: 200, y: 0 }, width: 256, height: 180 },
+    ]
+    const tall = [
+      { id: 't', type: 'textNode', position: { x: 0, y: 0 }, width: 200, height: 5000 },
+      { id: 'b', position: { x: 200, y: 0 }, width: 256, height: 180 },
+    ]
+    const smallResult = computeMinZoom({ nodes: small, viewportWidth: VW, viewportHeight: VH })
+    const tallResult  = computeMinZoom({ nodes: tall,  viewportWidth: VW, viewportHeight: VH })
+    expect(tallResult).toBeLessThan(smallResult)
+  })
 })
