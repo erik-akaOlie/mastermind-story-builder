@@ -231,32 +231,19 @@ export function getSpreadCircularPoints(center, radius, connections, minArcCanva
     return resolveAnglesToPoints(points, center, radius)
   }
 
-  // 2. Sort by natural angle. Hoisted above the worst-case branch so the
-  //    "evenly distribute around the full circle" fallback respects each
-  //    dot's natural angular position — otherwise a crowded bead would
-  //    place dots in input-array order (essentially edge-creation order),
-  //    which has no relationship to the targets' actual directions.
+  // 2. Sort by natural angle. Both the worst-case fallback below and the
+  //    cluster-redistribute path further down assume a sorted array.
   points.sort((a, b) => a.angle - b.angle)
 
   const minAngleGap = minArcCanvasPx / radius
   const n = points.length
 
-  // Worst-case fallback: even minimum-gap spacing doesn't fit in 2π
-  // (happens at small radius + many connections, e.g. a bead at very
-  // deep zoom-out). Distribute evenly around the full circle. Because
-  // points are now angle-sorted, each dot's assigned angle is the one
-  // closest to its natural direction that the geometry allows.
-  if (minAngleGap * n >= 2 * Math.PI) {
-    for (let i = 0; i < n; i++) {
-      points[i].angle = -Math.PI + (i / n) * 2 * Math.PI
-    }
-    return resolveAnglesToPoints(points, center, radius)
-  }
-
   // 3. Linearize: rotate the array so the LARGEST gap (incl. wrap-around)
-  //    sits at the array's end. This means no cluster can span the ±π
-  //    boundary, so we can treat angles as a linear sequence with
-  //    arithmetic means — no circular-mean math needed.
+  //    sits at the array's end. After this step the array's angles are
+  //    monotonically increasing across a contiguous arc — no cluster spans
+  //    the ±π boundary — so we can treat angles linearly and use arithmetic
+  //    means. Hoisted above the worst-case branch so its midpoint anchor
+  //    works correctly when the natural cluster wraps around ±π.
   let maxGap = 2 * Math.PI - (points[n - 1].angle - points[0].angle)
   let maxGapIdx = 0
   for (let i = 1; i < n; i++) {
@@ -268,6 +255,23 @@ export function getSpreadCircularPoints(center, radius, connections, minArcCanva
       points.slice(0, maxGapIdx).map((p) => ({ ...p, angle: p.angle + 2 * Math.PI }))
     )
     for (let i = 0; i < n; i++) points[i] = rotated[i]
+  }
+
+  // Worst-case fallback: even minimum-gap spacing doesn't fit in 2π
+  // (happens at small radius + many connections, e.g. a bead at very
+  // deep zoom-out). Distribute evenly around the full circle, anchored
+  // so the midpoint of the distributed arc matches the midpoint of the
+  // natural cluster's arc — i.e. the whole ring of dots gets rotated to
+  // sit where the targets actually are, not at a hardcoded -π regardless
+  // of where the cluster's center is.
+  if (minAngleGap * n >= 2 * Math.PI) {
+    const naturalMidpoint     = (points[0].angle + points[n - 1].angle) / 2
+    const distributedMidpoint = (n - 1) * Math.PI / n
+    const phi = naturalMidpoint - distributedMidpoint
+    for (let i = 0; i < n; i++) {
+      points[i].angle = phi + (i / n) * 2 * Math.PI
+    }
+    return resolveAnglesToPoints(points, center, radius)
   }
 
   // 4. Group consecutive close points into clusters (transitive: if A-B
