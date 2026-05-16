@@ -92,33 +92,35 @@ slots in opportunistically alongside any of the above.
 
 ## Quick Win
 
-### Fix stale EditModal avatar-upload test
-- **Problem.** `src/components/EditModal.test.jsx` →
-  *"EditModal — avatar upload › uploads the selected file and saves the
-  returned path to thumbnail"* fails because it queries for a hidden
-  `<input type="file">` inside EditModalHeader that no longer exists.
-  The header was refactored in commit `01565b2`
-  ("Image upload: thumbnail integration with Swap, replace, and remove
-  (chunk 3)") to route avatar uploads through the shared Upload Image
-  modal instead of a local file input. The test was not updated when
-  the file input was removed and has been failing since then. Confirmed
-  pre-existing — not caused by the chunk-2 pipeline refactor (commit
-  `12efbd2`) which just made the failure visible.
-- **Success.** Test rewritten to drive the new flow: assert that
-  clicking the avatar's empty state or Swap button opens the Upload
-  Image modal with `mode: 'thumbnail'` and a card pipeline; simulate
-  a file pick / cropper save inside the modal; assert the returned
-  path is written to `thumbnail` and propagated through `onUpdate`.
-  Suite returns to all-green.
-- **Notes.** Likely needs a thin wrapper or context shim so the test
-  can intercept the Upload Image modal's `pipeline.upload` call without
-  hitting real Supabase. The other 22 EditModal tests already mock
-  Supabase; mirror that pattern.
-- **Dependencies.** None.
-- **Size:** S
-- **Sequencing.** Slot opportunistically alongside the analytics + zoom
-  sprint (2026-05-11 conversation). Was originally next-sprint, has been
-  reshuffled but is small enough to drop in any time.
+### Campaign thumbnail images
+- **Problem.** Campaigns are currently text-only on both surfaces where
+  users pick between them — the CampaignPicker home screen and the
+  UserMenu breadcrumb dropdown. As a tester or DM accumulates campaigns,
+  scanning by name alone is slower than scanning visually. The pattern
+  is well-trodden: every comparable tool (Notion, Roll20, Kanka) uses
+  campaign / workspace thumbnails for the same reason.
+- **Success.** Each campaign carries an optional thumbnail image. Two
+  render sites:
+  - **CampaignPicker** — thumbnail visible on each campaign card/tile;
+    "Edit thumbnail" affordance per campaign.
+  - **UserMenu breadcrumb dropdown** — small circular crop next to each
+    campaign name in the in-place switcher (the §7.6 surface).
+  Images upload via the existing UploadImageModal (reuse
+  `profile-avatar` cropper mode for 256×256 square — circular crop on
+  the dropdown is CSS-only). New `campaignThumbnailPipeline()` factory
+  in `imageStorage.js` mirroring `profileAvatarPipeline()`. New
+  `thumbnail_path` column on `campaigns` table via migration.
+- **Notes.** Architecture pattern from migration 003 (profile avatars)
+  carries directly. Decision point during build: which Storage bucket
+  hosts the images — `card-media` (campaign-scoped, RLS already
+  configured for ownership) or `profile-media` (user-scoped). Probably
+  `card-media` since campaigns are campaign-scoped objects.
+- **Dependencies.** None — strictly additive.
+- **Sequencing.** Deliberately deferred from the 2026-05-16 session
+  after surfacing as a candidate alongside Zoom v2 / invites. Slot
+  alongside Zoom v2 or just after; should land before invites if
+  schedule allows.
+- **Size:** S+ (4-8 hours focused).
 
 ### Dynamic card width
 - **Problem.** Long words and long titles in card headers either overflow
