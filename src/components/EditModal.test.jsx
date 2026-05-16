@@ -57,9 +57,6 @@ vi.mock('../store/useTypeStore', () => ({
 vi.mock('./Lightbox', () => ({
   useLightbox: () => ({ open: vi.fn() }),
 }))
-vi.mock('sonner', () => ({
-  toast: { error: vi.fn(), success: vi.fn() },
-}))
 
 // Phase-4 hook into the undo store so we can assert recordAction is NOT
 // called during typing (auto-save handles persistence; undo entries are
