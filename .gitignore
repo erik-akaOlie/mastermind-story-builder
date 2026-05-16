@@ -4,3 +4,9 @@ dist
 .env.local
 .DS_Store
 .claude/worktrees/
+
+# Erik's personal asset library — images he uses while building his own
+# Curse of Strahd campaign in the live app. Kept colocated with the
+# project for workflow convenience but never committed and never
+# bundled (lives outside `public/` so Vite doesn't copy it into dist).
+personal-assets/
