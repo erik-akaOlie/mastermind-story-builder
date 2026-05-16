@@ -648,7 +648,6 @@ Going forward:
 
 | Area | Current reality | Design-doc state | Why it's logged here |
 |---|---|---|---|
-| Top-left breadcrumb + campaign switcher (`UserMenu.jsx`) | Collapsible house-icon chip that expands on hover to reveal `Campaigns / <name> v`; chevron opens a dropdown that switches campaigns in place | Design doc still describes a top-right UserMenu with separate Campaigns button + avatar | New UX, shipped after the design-doc Sprint 1 sync. Design doc should be updated to match (preferred path per policy). |
 | Sync status chip (`SyncIndicator.jsx`) + lock overlay (`LockOverlay.jsx`) + 3-strike auto-retry (`persistWrite` + `useProbeLoop`) | Ambient bottom-left "Edited just now" chip; lock modal freezes edits on offline / 3 consecutive failures; 3s probe loop unlocks on reconnect; chip-style `toastSaveFailed` on final failure (same chip family as undo/redo toasts via `feedbackToasts.jsx`) | Bottom-left feedback strip is documented in `docs/design/design-system.md`; the probe / 3-failure / lock-overlay specifics still aren't | The chip vs lock-overlay split is the operational answer to the "loss of trust" failure signal in `docs/product/vision.md`. The probe-vs-requeue tradeoff and the 3-failure threshold remain a candidate for a future ADR. |
 
-Both of these divergences should be resolved either by updating `docs/design/design-system.md` or writing ADRs — they're not hacks, they're design decisions that happened after the most recent doc sync.
+This divergence should be resolved either by updating `docs/design/design-system.md` or writing an ADR — it's not a hack, it's a design decision that happened after the most recent doc sync.

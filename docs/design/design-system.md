@@ -429,6 +429,29 @@ Same pill shape, same frosted backdrop, opposite tonal direction. The light/dark
 
 **Why the chip system, not Sonner.** The original ADR-0006 §6 envisioned Sonner-rendered toasts. Sonner couldn't carry the slide-from-behind-chip mask + cross-fade pattern without significant fighting, so a small custom store + component pair (`useFeedbackToastStore` + `ChipToast` + `FeedbackChipBar`) handles these specific toasts. The persist-fail toast moved to the same system so all bottom-left feedback shares one visual family.
 
+### 7.6 Top-Left Identity + Campaign Switcher *(implemented)*
+
+A horizontal pair sitting at the top-left of the canvas, mirroring the bottom-left feedback strip's placement on the opposite corner:
+
+| Half | What it does | Visual treatment |
+|---|---|---|
+| **Profile avatar** (left) | Circular button with the user's profile photo (or first-letter initial fallback); clicking opens a dropdown with **Profile…** and **Sign out**. | Letter-initial fallback uses the luminance rule for readable text on the user's chosen avatar background. |
+| **Campaign breadcrumb chip** (right) | Collapsible identity chip showing where the user is in the product. | Light: white-90 backdrop blur, gray-500 text, rounded-full pill — same visual family as the sync chip at the opposite corner. |
+
+**Breadcrumb states:**
+
+- **Collapsed (default):** Just a house icon in a circular pill. Smallest possible footprint when the user is focused on the canvas.
+- **Expanded (on hover, or while the dropdown is pinned open):** `[house] Campaigns / <active campaign name> [v]`. The chevron opens an in-place campaign switcher dropdown.
+
+**Interactions:**
+
+- **House button (always clickable):** returns to the campaign picker — for jumping to a different campaign or creating a new one.
+- **Chevron button (expanded only):** opens the switcher dropdown. Items are the user's own campaigns; the active one is checkmarked. The list refreshes every time the dropdown opens so renames / deletions appear without a page reload.
+- **Picking a campaign:** switches in place — no return to the picker screen.
+- **Outside click or Escape:** closes the dropdown.
+
+**Why top-left, not top-right.** The right edge of the canvas is reserved for future surfaces — search (§8), notifications, settings — and the top-left is the natural anchor for "who am I and where am I." Keeping identity + location together at one corner leaves the opposite side free for future feature chrome.
+
 ---
 
 ## 8. Search *(designed, not yet built)*
