@@ -229,7 +229,10 @@ runs in seconds.
   substrate.
 - Related: [Tailor Card Types](../../BACKLOG.md) — `layout` overrides
   ride on the same table once that work begins.
-- Related: [Known Divergences](../../CLAUDE.md) — this ADR resolves the
-  "custom node types are still localStorage-only" divergence (cleared
-  by Manage Card Templates) AND the implicit divergence between code
-  defaults and user-stored defaults that the Faction icon swap exposed.
+- Related: [Known Divergences](../../CLAUDE.md) — this ADR addresses
+  the implicit divergence between code defaults and user-stored
+  defaults that the Faction icon swap exposed. The historically related
+  "custom node types are still localStorage-only" divergence was
+  independently cleared by an earlier migration to a DB-backed
+  `useTypeStore` (custom types now write straight to `node_types`)
+  and is no longer in the Known Divergences table.

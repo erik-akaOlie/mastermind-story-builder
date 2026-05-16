@@ -345,12 +345,12 @@ slots in opportunistically alongside any of the above.
 - **Size:** M
 
 ### Manage Card Templates
-- **Problem.** Custom card types live in `useTypeStore` (localStorage)
-  with no UI to list, duplicate, or delete them — only `CreateTypeModal`
-  for label / color / icon at creation time. The localStorage-only
-  persistence is also flagged as a Known Divergence in CLAUDE.md: the
-  `node_types` table already exists per campaign, but the UI never
-  writes to it.
+- **Problem.** Custom card types are persisted per-user as rows in the
+  `node_types` table (via `CreateTypeModal` → `createCustomType()`),
+  but there is no UI to **list, rename, recolor, re-icon, duplicate,
+  or delete** existing types — only the modal for creating new ones.
+  Users can pile up unwanted custom types with no way to manage them
+  after creation.
 - **Success.** A "Manage card templates" surface that lists all card
   types for the active campaign and supports: create, rename, recolor,
   re-icon, duplicate, delete. Persists to the Supabase `node_types`

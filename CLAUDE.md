@@ -52,7 +52,7 @@ Do not confuse visible salience with structural invariance. Recommendations shou
 | Styling | Tailwind CSS v3 | rem units throughout; `html { font-size: 100% }` |
 | Icons | **Phosphor Icons** (`@phosphor-icons/react`) | design doc says Lucide — **ignore that, we use Phosphor** |
 | Drag-to-reorder | `@dnd-kit/core`, `@dnd-kit/sortable`, `@dnd-kit/utilities` | used in EditModal for bullets and images |
-| State management | Zustand v5 | two stores: `useTypeStore` (node types, localStorage-persisted) and `useCanvasUiStore` (transient hover/select flags). Campaign data lives in React state hydrated from Supabase. |
+| State management | Zustand v5 | Several focused in-memory stores under `src/store/` — see the File Map. All are caches over Supabase, not persistence layers. Campaign data lives in React state hydrated from Supabase. |
 | Auth + Database | **Supabase** (Postgres + Auth + RLS) | `@supabase/supabase-js` client; schema in `supabase/schema.sql` |
 | Image storage | **Supabase Storage** (`card-media` + `profile-media` buckets) | both private; clients request signed URLs per render. card-media holds card avatars + inspiration images (two variants per upload). profile-media holds user profile avatars (single 256×256 variant). See ADR-0005 (card-media) and migration 003 (profile-media). |
 | Behavioral analytics | **PostHog Cloud** (`posthog-js`) | session replay + named events, scoped to `is_test_user=true` users only. Loaded via dynamic import (Vite splits into its own chunk; non-testers never download it). See ADR-0009. |
@@ -216,9 +216,12 @@ src/
                                    debounced auto-save, connection add/remove, Esc to close, avatar upload)
 
   store/
-    useTypeStore.js                Zustand store for node types; persists to localStorage under key "dnd-node-types"
-                                   NOTE: built-in types are also seeded into Supabase per campaign. Custom-type
-                                   persistence to the DB is a later sprint; currently localStorage-only.
+    useTypeStore.js                Zustand store for node types — in-memory cache hydrated from the `node_types`
+                                   table on app load (via useCampaignData → listNodeTypes → hydrate). Built-in and
+                                   custom types alike live as rows in `node_types` owned per user; CreateTypeModal
+                                   writes new custom types straight to the DB. The legacy `dnd-node-types`
+                                   localStorage key is actively cleaned up on store init for users who had it from
+                                   the old persist-middleware build.
     useCanvasUiStore.js            Zustand store for transient canvas UI flags (anySelected, anyHovered,
                                    hoveredEdgeNodeIds). Cards subscribe via narrow selectors so a hover event
                                    only re-renders cards whose computed state actually changed.
@@ -563,7 +566,7 @@ Not needed currently, but if we ever do:
 2. Add to `BUILT_IN_TYPES` in `src/lib/campaigns.js` so new campaigns seed it
 3. Add the Phosphor icon name to `iconRegistry.js` if not already there
 
-Custom user-created types are scoped per campaign in Supabase but the UI flow for creating them (`CreateTypeModal`) still writes to localStorage — wiring that to Supabase is a later sprint.
+Custom user-created types are persisted per-user as rows in the `node_types` table. `CreateTypeModal` calls `createCustomType()` (in `lib/campaigns.js`) which inserts the row, then appends to the in-memory `useTypeStore` cache via `addType()`.
 
 ---
 
@@ -627,8 +630,6 @@ native mobile apps) is captured in `roadmap.md` with rationale.
 
 **"Locked" state is in-memory only.** The Supabase schema has no `locked` column on `nodes`. If we reinstate the lock feature later, add a column and a migration. Until then, do not persist `data.locked`.
 
-**Custom node types are still localStorage-only.** The `node_types` table persists the built-in five per campaign, but user-created custom types (via CreateTypeModal) only live in the browser's localStorage. Migrating custom types to Supabase is a later task; flag it if it becomes user-facing.
-
 **Legacy base64 image entries are read-only.** `useImageUrl` still resolves base64 data URIs (so any old data renders), but EditModal no longer writes new base64 — uploads go to Storage. Once every campaign has zero base64 entries, the legacy branch in `useImageUrl` and the `MigrateImages` component can both be deleted in the same PR.
 
 ---
@@ -647,8 +648,7 @@ Going forward:
 
 | Area | Current reality | Design-doc state | Why it's logged here |
 |---|---|---|---|
-| Custom node types | Persisted per-browser in `localStorage` via `useTypeStore` (key `dnd-node-types`) | Described as per-campaign rows in `node_types` | Tactical: the DB already supports it; the UI write path wasn't migrated. Revisit before custom types become user-facing to anyone besides Erik. Cross-ref: "Cut Scope Notes" above. |
 | Top-left breadcrumb + campaign switcher (`UserMenu.jsx`) | Collapsible house-icon chip that expands on hover to reveal `Campaigns / <name> v`; chevron opens a dropdown that switches campaigns in place | Design doc still describes a top-right UserMenu with separate Campaigns button + avatar | New UX, shipped after the design-doc Sprint 1 sync. Design doc should be updated to match (preferred path per policy). |
 | Sync status chip (`SyncIndicator.jsx`) + lock overlay (`LockOverlay.jsx`) + 3-strike auto-retry (`persistWrite` + `useProbeLoop`) | Ambient bottom-left "Edited just now" chip; lock modal freezes edits on offline / 3 consecutive failures; 3s probe loop unlocks on reconnect; chip-style `toastSaveFailed` on final failure (same chip family as undo/redo toasts via `feedbackToasts.jsx`) | Bottom-left feedback strip is documented in `docs/design/design-system.md`; the probe / 3-failure / lock-overlay specifics still aren't | The chip vs lock-overlay split is the operational answer to the "loss of trust" failure signal in `docs/product/vision.md`. The probe-vs-requeue tradeoff and the 3-failure threshold remain a candidate for a future ADR. |
 
-These last two divergences should be resolved either by updating `docs/design/design-system.md` or writing ADRs — they're not hacks, they're design decisions that happened after the most recent doc sync.
+Both of these divergences should be resolved either by updating `docs/design/design-system.md` or writing ADRs — they're not hacks, they're design decisions that happened after the most recent doc sync.
