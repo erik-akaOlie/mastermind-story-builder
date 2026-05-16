@@ -646,8 +646,6 @@ Going forward:
 
 ### Known Divergences
 
-| Area | Current reality | Design-doc state | Why it's logged here |
-|---|---|---|---|
-| Sync status chip (`SyncIndicator.jsx`) + lock overlay (`LockOverlay.jsx`) + 3-strike auto-retry (`persistWrite` + `useProbeLoop`) | Ambient bottom-left "Edited just now" chip; lock modal freezes edits on offline / 3 consecutive failures; 3s probe loop unlocks on reconnect; chip-style `toastSaveFailed` on final failure (same chip family as undo/redo toasts via `feedbackToasts.jsx`) | Bottom-left feedback strip is documented in `docs/design/design-system.md`; the probe / 3-failure / lock-overlay specifics still aren't | The chip vs lock-overlay split is the operational answer to the "loss of trust" failure signal in `docs/product/vision.md`. The probe-vs-requeue tradeoff and the 3-failure threshold remain a candidate for a future ADR. |
+No current divergences.
 
-This divergence should be resolved either by updating `docs/design/design-system.md` or writing an ADR — it's not a hack, it's a design decision that happened after the most recent doc sync.
+When code drifts from design intent in a way that can't be cleanly resolved in the same pass, add a row here documenting: the area, the current reality, the design-doc state, and why it's logged. Then update [`docs/design/design-system.md`](./docs/design/design-system.md) or write an ADR to close the gap when convenient.

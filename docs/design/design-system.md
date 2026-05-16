@@ -452,6 +452,32 @@ A horizontal pair sitting at the top-left of the canvas, mirroring the bottom-le
 
 **Why top-left, not top-right.** The right edge of the canvas is reserved for future surfaces — search (§8), notifications, settings — and the top-left is the natural anchor for "who am I and where am I." Keeping identity + location together at one corner leaves the opposite side free for future feature chrome.
 
+### 7.7 Persistence Failure Escalation *(implemented)*
+
+Saves to Supabase normally happen optimistically and invisibly (see [ADR-0003](../decisions/0003-optimistic-ui-persistence.md)). When they start failing, the app escalates the user's visibility of the problem in three stages so a transient hiccup doesn't alarm the user but a persistent failure can't go unnoticed.
+
+| Stage | Trigger | What the user sees |
+|---|---|---|
+| **1. Silent retry** | One save fails | Nothing changes. Internally, the call retries up to 3 times (250 ms, then 500 ms between attempts). Most network blips heal here. |
+| **2. Chip warning** | All 3 retries failed | The sync chip (§7.5) flips from "Edited Xm ago" to **"Can't save."** The toast chip slot also fires a transient **"Can't save your changes — check your connection"** dark-body toast. Editing continues. |
+| **3. Lock overlay** | 3 consecutive failures, OR `navigator.onLine === false` | Full-screen modal appears, dimming the canvas behind it. Editing is blocked until the system recovers or the user refreshes. |
+
+**Lock overlay copy varies by trigger:**
+
+- **Failure-triggered:** Title "Couldn't save your last change." Body explains retry is happening and offers a **Refresh now** button.
+- **Offline-triggered:** Title "Paused." Body: "You're offline. Editing will resume automatically when you're back online." No button — auto-dismisses on reconnect.
+
+**Visual treatment of the lock:**
+
+- Black scrim at 30% opacity over the entire viewport
+- White card, shadow-xl, rounded-lg, max-w-sm, centered
+- Refresh button uses the system CTA color (`sky-600`)
+- The canvas stays visible behind the scrim so the user keeps spatial context — the modal interrupts edits, not orientation
+
+**Recovery — probe, not requeue:**
+
+While locked, the app runs a lightweight read against Supabase every 3 seconds. A successful probe resets the failure counter and the lock dissolves automatically. The original failed writes are **not** re-run — the user has to refresh to recover their editing state. See [ADR-0011](../decisions/0011-persistence-failure-escalation.md) for the reasoning behind the 3-failure threshold, the probe-not-requeue choice, and the "Refresh now" unlock path.
+
 ---
 
 ## 8. Search *(designed, not yet built)*

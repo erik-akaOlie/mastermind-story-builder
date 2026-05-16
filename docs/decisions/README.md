@@ -37,3 +37,4 @@ What does this enable? What does it prevent? What are the trade-offs?
 - [ADR-0008: Card-type defaults in code, customizations as sparse overrides](./0008-card-type-defaults-in-code.md)
 - [ADR-0009: Behavioral analytics + session replay, scoped to invited testers via PostHog](./0009-behavioral-analytics-session-replay.md)
 - [ADR-0010: Zoom-to-node-view — progressive disclosure via card↔circle morph at altitude](./0010-zoom-progressive-disclosure.md)
+- [ADR-0011: Persistence failure escalation — silent retry, lock overlay, probe-not-requeue](./0011-persistence-failure-escalation.md)
