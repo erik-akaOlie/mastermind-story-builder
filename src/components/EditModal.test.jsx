@@ -13,12 +13,34 @@ import EditModal from './EditModal'
 // Stub out the modules EditModal reaches into, so we're testing EditModal's
 // own behavior — not our auth, Storage uploads, Supabase RPCs, etc.
 
+// Mirror the real hook's null-pass-through so EditModalHeader picks the
+// correct branch for the avatar state. Without this, sampleNode's
+// avatar: null still resolves to a URL and the "Add avatar" empty-state
+// button is never rendered.
 vi.mock('../lib/useImageUrl', () => ({
-  useImageUrl: () => 'mock://image.jpg',
+  useImageUrl: (input) => (input ? 'mock://image.jpg' : null),
 }))
-const uploadCardImageMock = vi.fn().mockResolvedValue('mock/path.webp')
+// EditModalHeader.openUploadFresh / openUploadReplace call cardImagePipeline()
+// inside the click handler to build a pipeline for the upload modal. The
+// pipeline's internals don't matter for these tests — we only care that
+// the right config gets handed to the upload modal's open() — so a stub
+// with the expected method shape is sufficient.
 vi.mock('../lib/imageStorage', () => ({
-  uploadCardImage: (...args) => uploadCardImageMock(...args),
+  cardImagePipeline: vi.fn(() => ({
+    upload: vi.fn(),
+    delete: vi.fn(),
+    getUrl: vi.fn(),
+  })),
+}))
+// Replace the real Upload Image modal with a captured open() so the avatar-
+// upload test can inspect the config (mode / pipeline / onSave) and invoke
+// the onSave callback manually with a fake returned path. The provider
+// becomes a pass-through so EditModal's <UploadImageProvider> wrapper still
+// renders its children.
+const uploadOpenMock = vi.fn()
+vi.mock('./UploadImageProvider', () => ({
+  UploadImageProvider: ({ children }) => children,
+  useUploadImage: () => ({ open: uploadOpenMock, close: vi.fn() }),
 }))
 vi.mock('../lib/CampaignContext.jsx', () => ({
   useCampaign: () => ({ activeCampaignId: 'mock-campaign-id' }),
@@ -523,33 +545,30 @@ describe('EditModal — undo entries (phase 4)', () => {
 describe('EditModal — avatar upload', () => {
   beforeEach(() => {
     vi.useFakeTimers()
-    uploadCardImageMock.mockClear()
+    uploadOpenMock.mockClear()
   })
   afterEach(() => { vi.useRealTimers() })
 
-  it('uploads the selected file and saves the returned path to thumbnail', async () => {
+  it('opens the Upload Image modal in thumbnail mode and writes the saved path to thumbnail', () => {
     const { props } = renderModal()
     flushSave()
     props.onUpdate.mockClear()
 
-    // Find the avatar's hidden file input. There are two hidden file inputs
-    // (avatar + media); the avatar one is the first.
-    const fileInputs = document.querySelectorAll('input[type="file"]')
-    const avatarInput = fileInputs[0]
+    // sampleNode has avatar: null, so EditModalHeader renders the empty-state
+    // "Add avatar" button. Clicking it should open the Upload Image modal
+    // with the thumbnail-mode config.
+    fireEvent.click(screen.getByRole('button', { name: /add avatar/i }))
 
-    const file = new File(['fake-bytes'], 'portrait.jpg', { type: 'image/jpeg' })
+    expect(uploadOpenMock).toHaveBeenCalledTimes(1)
+    const cfg = uploadOpenMock.mock.calls[0][0]
+    expect(cfg.mode).toBe('thumbnail')
+    expect(cfg.pipeline).toBeTruthy()
+    expect(typeof cfg.onSave).toBe('function')
 
-    await act(async () => {
-      fireEvent.change(avatarInput, { target: { files: [file] } })
-      await Promise.resolve()  // let the async upload promise queue
-    })
-
-    expect(uploadCardImageMock).toHaveBeenCalledWith(expect.objectContaining({
-      campaignId: 'mock-campaign-id',
-      cardId: 'node-strahd',
-      section: 'avatar',
-      file,
-    }))
+    // Simulate the modal calling onSave with the Storage path it produced.
+    // (The real flow is: user picks a file, crops it, presses Save → modal
+    // runs pipeline.upload(blob) and invokes onSave with the returned path.)
+    act(() => { cfg.onSave('mock/path.webp') })
 
     flushSave()
 
