@@ -13,7 +13,6 @@
 // modal does not need to know about them.
 
 import { useEffect, useRef, useState } from 'react'
-import { toast } from 'sonner'
 import ImageCropper from './ImageCropper'
 
 // OS-aware paste hint label
@@ -50,6 +49,12 @@ export default function UploadImageModal({
   // removal — the user has to press Save (which sees pendingRemoval and
   // calls onRemove + deletes old variants) or Cancel (which discards).
   const [pendingRemoval,  setPendingRemoval]  = useState(false)
+  // errorMessage: inline modal feedback for failures the user needs to see —
+  // existing image fetch failed, cropper not ready on Save, upload failed.
+  // Rendered as a banner above the footer (near the Save button so it sits
+  // where the user is already looking). Cleared on any user action that
+  // supersedes the previous attempt (pick / paste / remove / save retry).
+  const [errorMessage,    setErrorMessage]    = useState(null)
   const fileInputRef = useRef(null)
   const cropperRef   = useRef(null)
   // Note: the ImageCropper handles its own object URL lifecycle for the
@@ -80,7 +85,7 @@ export default function UploadImageModal({
       } catch (err) {
         if (!cancelled) {
           console.error('Failed to load existing image', err)
-          toast.error("Couldn't load the existing image — pick or paste to start fresh")
+          setErrorMessage("Couldn't load the existing image — pick or paste to start fresh.")
         }
       } finally {
         if (!cancelled) setLoadingExisting(false)
@@ -106,6 +111,7 @@ export default function UploadImageModal({
             // If the user had clicked Remove, supplying a new image
             // overrides that intent — they're now replacing.
             setPendingRemoval(false)
+            setErrorMessage(null)
             return // first image only — multi-image clipboards take the first silently
           }
         }
@@ -136,6 +142,7 @@ export default function UploadImageModal({
       setImageBlob(file)
       setHasNewSource(true)
       setPendingRemoval(false)
+      setErrorMessage(null)
     }
   }
 
@@ -149,10 +156,12 @@ export default function UploadImageModal({
     setImageBlob(null)
     setHasNewSource(false)
     setPendingRemoval(true)
+    setErrorMessage(null)
   }
 
   const handleSave = async () => {
     if (uploading) return
+    setErrorMessage(null)  // clear any prior error so retry shows a fresh state
 
     // Pending-removal path: commit the removal, no new upload.
     if (pendingRemoval) {
@@ -178,7 +187,7 @@ export default function UploadImageModal({
     // Upload path: requires a loaded image and a ready cropper.
     if (!imageBlob || !pipeline) return
     if (!cropperRef.current) {
-      toast.error("Cropper isn't ready yet — try again in a moment")
+      setErrorMessage("Cropper isn't ready yet — try again in a moment.")
       return
     }
     setUploading(true)
@@ -203,7 +212,7 @@ export default function UploadImageModal({
       onClose()
     } catch (err) {
       console.error('Upload failed', err)
-      toast.error(`Couldn't upload image: ${err.message}`)
+      setErrorMessage(`Couldn't upload image: ${err.message}`)
     } finally {
       setUploading(false)
     }
@@ -289,6 +298,17 @@ export default function UploadImageModal({
               </div>
             )}
           </div>
+
+          {/* Inline error banner — sits above the footer so it appears
+              right where the user's attention is when Save fails. */}
+          {errorMessage && (
+            <div
+              role="alert"
+              className="mx-4 mb-3 px-3 py-2 bg-red-50 border border-red-200 rounded text-sm text-red-700"
+            >
+              {errorMessage}
+            </div>
+          )}
 
           {/* Footer — Cancel + Save bottom-right */}
           <div className="flex justify-end gap-3 px-4 pb-4">

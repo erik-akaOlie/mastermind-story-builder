@@ -28,8 +28,10 @@
 //   - ChipToast            z-30 and below — occluded by the chip during
 //                                            slide-in
 //
-// Mounted once in main.jsx, replacing what used to be a bare
-// <SyncIndicator /> + Sonner Toaster combo.
+// Mounted once in main.jsx. Replaced an earlier <SyncIndicator /> +
+// Sonner-Toaster combo that couldn't carry the slide-from-behind-chip
+// mask + cross-fade pattern; the custom chip system handles all
+// app-level toasts now (see lib/feedbackToasts + useFeedbackToastStore).
 // ============================================================================
 
 import SyncIndicator from './SyncIndicator.jsx'

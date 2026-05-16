@@ -174,7 +174,6 @@ src/
                                    class so :has() in index.css promotes the wrapper z-index
     TextNode.jsx                   freestanding text annotation blocks (persists directly via lib/textNodes)
     iconRegistry.js                70+ Phosphor icons with keywords; getIcon(), recommendIcons()
-    nodeTypes.js                   static NODE_TYPES object — LEGACY, prefer useNodeTypes()
 
   edges/
     FloatingEdge.jsx               straight-line edge renderer; reads sourcePoint/targetPoint from edge.data
@@ -271,7 +270,7 @@ docs/
 | `auth.users` | Supabase-managed; referenced by `campaigns.owner_id` and `profiles.id` |
 | `profiles` | one row per user — canonical home for app-level user metadata (`avatar_path`, `display_name`, `is_test_user`, future fields). Auto-created by an `auth.users` INSERT trigger; backfilled in migration 003. `is_test_user` added in migration 004; default flipped to `true` in migration 005 for the invite-only stage (revert before public launch). Gates whether PostHog loads for that user (ADR-0009) |
 | `campaigns` | one row per campaign; owned by a user |
-| `node_types` | card types per campaign (built-in five + any custom); `is_system` flags the built-ins |
+| `node_types` | card types per user (built-in five + any custom); `is_system` flags the built-ins. Per-user scope was introduced in migration 001 — every campaign a user owns shares the same set of types. |
 | `nodes` | cards on the canvas (label, summary, avatar_url, position, type_id) |
 | `node_sections` | modular sections inside each card: `kind` ∈ `narrative` \| `hidden_lore` \| `dm_notes` \| `media` \| `custom`; `content` is JSONB |
 | `connections` | edges between two nodes in the same campaign |
@@ -575,7 +574,7 @@ Custom user-created types are persisted per-user as rows in the `node_types` tab
 - [x] Supabase auth (email+password), login screen, sign-out, avatar dropdown
 - [x] Campaign CRUD (create, list, rename, delete, switch)
 - [x] RLS policies on every table
-- [x] 5 built-in node types seeded per campaign
+- [x] 5 built-in node types seeded per user on first campaign creation
 - [x] Campaign cards with header, avatar, summary, bullet body, connection dots
 - [x] Edit modal: title, type, avatar/thumbnail, summary, story notes, hidden lore, DM notes, media, connections
 - [x] Auto-save (400ms debounce, flush on close) — writes to Supabase

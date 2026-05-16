@@ -273,7 +273,8 @@ export default function CreateTypeModal({ onClose, onCreated }) {
       onCreated?.(row.key)
       onClose()
     } catch {
-      // persistWrite has already surfaced the error via Sonner toast.
+      // persistWrite has already surfaced the error via the chip-style
+      // save-fail toast (see lib/feedbackToasts → toastSaveFailed).
       // Leave the modal open so the user can retry without losing their input.
       setSaving(false)
     }
