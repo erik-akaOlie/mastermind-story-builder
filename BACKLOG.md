@@ -618,6 +618,39 @@ slots in opportunistically alongside any of the above.
 - **Target version:** V2+ (likely; reassess after spike)
 - **Size:** XL (spike, then product call, then likely a sprint)
 
+### Weekly-updates strategy — define streams, channels, voice, PROMPTs
+- **Problem (sketch).** Erik wants weekly progress posts that serve two
+  audiences: hobbyist DMs/GMs (building broader audience over time so
+  MasterMind has a warm community at wider sign-up) and product
+  designers + AI builders (positioning Erik as a designer building real
+  products with AI). Two separate streams chosen as the structural
+  shape — same posts won't serve both audiences cleanly. The current
+  [`PROMPT.md`](../weekly-updates/PROMPT.md) is single-stream and
+  produces too-technical engineer-diary voice, not the "idiot's guide
+  to working with AI" voice Erik wants. Several open questions:
+  channels per stream, cadence, voice specifics, PROMPT structure,
+  Patreon's role.
+- **What success might look like.** Each stream has a defined channel,
+  cadence, voice, and PROMPT (or handwritten convention). The first
+  post on each stream lands cleanly in Erik's voice for its audience.
+  A small queue of starter post topics so the first few weeks aren't
+  from-scratch decisions. Erik knows which channel a given week's
+  insight belongs on without re-deciding the strategy each time.
+- **Notes.** Audience-building work — runs parallel to product
+  development, not gated on V1 features. Deliberately deferred until
+  after the immediate V1 sprint (Zoom v2 → invites) clears. Vision
+  + open questions captured in
+  [`weekly-updates/README.md`](../weekly-updates/README.md); the
+  Week 1 archived draft at
+  [`weekly-updates/drafts/_archive/`](../weekly-updates/drafts/_archive/)
+  is the canonical "wrong-voice" reference for the future PROMPT
+  rewrite.
+- **Dependencies.** None code-side. Soft dependency on Erik's
+  creative bandwidth — voice work is best done between coding
+  sprints, not crammed alongside them.
+- **Target version:** N/A — runs parallel to product versioning.
+- **Size:** M (1–3 days of design + writing once it's the focus)
+
 ### Undo/redo residual flicker
 - **Problem.** When chaining several Ctrl+Z presses through
   create → move → delete (or similar), a card can occasionally exhibit
