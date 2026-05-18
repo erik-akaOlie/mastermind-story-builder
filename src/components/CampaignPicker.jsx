@@ -18,7 +18,7 @@ import {
   Check,
   X,
 } from '@phosphor-icons/react'
-import { useCampaign } from '../lib/CampaignContext.jsx'
+import { useWorkspace } from '../lib/WorkspaceContext.jsx'
 import UserAvatar from './UserAvatar.jsx'
 import {
   listWorkspaces,
@@ -28,7 +28,7 @@ import {
 } from '../lib/workspaces.js'
 
 export default function CampaignPicker() {
-  const { setActiveCampaignId } = useCampaign()
+  const { setActiveWorkspaceId } = useWorkspace()
 
   const [campaigns, setCampaigns] = useState([])
   const [loading, setLoading] = useState(true)
@@ -68,7 +68,7 @@ export default function CampaignPicker() {
       setCreating(false)
       await refresh()
       // Auto-enter the workspace you just created.
-      setActiveCampaignId(workspace.id)
+      setActiveWorkspaceId(workspace.id)
     } catch (err) {
       setError(err.message)
     }
@@ -212,7 +212,7 @@ export default function CampaignPicker() {
                         />
                       ) : (
                         <button
-                          onClick={() => setActiveCampaignId(c.id)}
+                          onClick={() => setActiveWorkspaceId(c.id)}
                           className="text-left w-full"
                         >
                           <div className="text-sm font-medium text-gray-900 truncate">
@@ -265,7 +265,7 @@ export default function CampaignPicker() {
                             <Trash size={14} weight="bold" />
                           </button>
                           <button
-                            onClick={() => setActiveCampaignId(c.id)}
+                            onClick={() => setActiveWorkspaceId(c.id)}
                             className="p-1.5 text-gray-500 hover:text-sky-700"
                             title="Open"
                           >

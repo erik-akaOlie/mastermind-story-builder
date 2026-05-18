@@ -10,8 +10,8 @@
 // surface. SyncIndicator itself just renders the chip styling — it doesn't
 // know where it sits on the page.
 //
-// lastSavedAt is seeded from the campaign's most recent updated_at on load
-// (see useCampaignData → getCampaignLastEditedAt) and bumps on both local
+// lastSavedAt is seeded from the workspace's most recent updated_at on load
+// (see useWorkspaceData → getWorkspaceLastEditedAt) and bumps on both local
 // saves and Realtime events from other tabs, so the chip reflects real
 // activity even on first paint.
 //
@@ -19,7 +19,7 @@
 //   Offline     — "Offline"
 //   Locked      — "Can't save"
 //   Saved       — "Edited just now" / "Edited 1m ago" / …
-//   Initial     — (renders nothing only for a brand-new campaign with no
+//   Initial     — (renders nothing only for a brand-new workspace with no
 //                  rows yet, since lastSavedAt would still be null)
 // ============================================================================
 

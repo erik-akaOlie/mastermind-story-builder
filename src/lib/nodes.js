@@ -236,7 +236,7 @@ export function buildDeleteCardSnapshot(cardId, { nodes, edges, campaignId, type
 // practice and would warrant a Postgres RPC if it becomes real.
 //
 // Realtime echoes these INSERTs back to all subscribers (including this tab),
-// but useCampaignData's handlers are idempotent — they skip rows whose ids
+// but useWorkspaceData's handlers are idempotent — they skip rows whose ids
 // already exist locally. So the optimistic setNodes/setEdges in the dispatcher
 // won't be double-applied.
 // ----------------------------------------------------------------------------

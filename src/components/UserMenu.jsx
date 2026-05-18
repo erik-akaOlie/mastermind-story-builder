@@ -17,13 +17,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { CaretDown, Check, House } from '@phosphor-icons/react'
 import { useAuth } from '../lib/AuthContext.jsx'
-import { useCampaign } from '../lib/CampaignContext.jsx'
+import { useWorkspace } from '../lib/WorkspaceContext.jsx'
 import { listWorkspaces } from '../lib/workspaces.js'
 import UserAvatar from './UserAvatar.jsx'
 
 export default function UserMenu() {
   const { user } = useAuth()
-  const { activeCampaign, activeCampaignId, setActiveCampaignId } = useCampaign()
+  const { activeWorkspace, activeWorkspaceId, setActiveWorkspaceId } = useWorkspace()
 
   const [hovered, setHovered] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -71,7 +71,7 @@ export default function UserMenu() {
   const expanded = hovered || menuOpen
 
   const handlePickCampaign = (id) => {
-    if (id !== activeCampaignId) setActiveCampaignId(id)
+    if (id !== activeWorkspaceId) setActiveWorkspaceId(id)
     close()
   }
 
@@ -90,7 +90,7 @@ export default function UserMenu() {
               When collapsed the button is equal-padded so it forms a proper
               circle centered on the icon. */}
           <button
-            onClick={() => setActiveCampaignId(null)}
+            onClick={() => setActiveWorkspaceId(null)}
             className={`flex items-center justify-center text-gray-500 hover:text-gray-900 transition-all duration-150 ease-out whitespace-nowrap ${
               expanded ? 'px-3 py-1.5 gap-1' : 'p-1.5'
             }`}
@@ -103,11 +103,11 @@ export default function UserMenu() {
 
           {/* Slash + current name + chevron — only rendered when expanded
               so the collapsed chip has no hidden children contributing width. */}
-          {expanded && activeCampaign && (
+          {expanded && activeWorkspace && (
             <div className="flex items-center gap-1.5 pr-3 whitespace-nowrap">
               <span className="text-gray-300" aria-hidden="true">/</span>
               <span className="text-gray-900 font-medium truncate max-w-[16rem]">
-                {activeCampaign.name}
+                {activeWorkspace.name}
               </span>
               <button
                 onClick={() => setMenuOpen((o) => !o)}
@@ -138,7 +138,7 @@ export default function UserMenu() {
             ) : (
               <div className="max-h-72 overflow-y-auto">
                 {campaigns.map((c) => {
-                  const isActive = c.id === activeCampaignId
+                  const isActive = c.id === activeWorkspaceId
                   return (
                     <button
                       key={c.id}

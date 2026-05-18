@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useNodeTypes } from '../store/useTypeStore'
-import { useCampaign } from '../lib/CampaignContext.jsx'
+import { useWorkspace } from '../lib/WorkspaceContext.jsx'
 import { useUndoStore } from '../store/useUndoStore'
 import { ACTION_TYPES, deepEqual } from '../lib/undo/index.js'
 import { normalizeBullets } from '../lib/nodes.js'
@@ -87,7 +87,7 @@ export default function EditModal({
   const typeConfig = NODE_TYPES[type] || { color: '#6B7280', label: type }
   const TypeIcon   = typeConfig.icon
   const hdrText    = textForHex(typeConfig.color)
-  const { activeCampaignId } = useCampaign()
+  const { activeWorkspaceId } = useWorkspace()
 
   // ── Connection state ──────────────────────────────────────────────────────
   // localConns shape: { id, nodeId, label, type, isNew }. `id` is the
@@ -396,7 +396,7 @@ export default function EditModal({
         if (e.kind === 'editCardField') {
           useUndoStore.getState().recordAction({
             type: ACTION_TYPES.EDIT_CARD_FIELD,
-            campaignId: activeCampaignId,
+            campaignId: activeWorkspaceId,
             label: `Edit ${FIELD_LABELS[e.field]}`,
             timestamp: isoTs,
             cardId: node.id,
@@ -407,7 +407,7 @@ export default function EditModal({
         } else if (e.kind === 'addConnection') {
           useUndoStore.getState().recordAction({
             type: ACTION_TYPES.ADD_CONNECTION,
-            campaignId: activeCampaignId,
+            campaignId: activeWorkspaceId,
             label: 'Add connection',
             timestamp: isoTs,
             connectionId: e.connectionId,
@@ -417,7 +417,7 @@ export default function EditModal({
         } else if (e.kind === 'removeConnection') {
           useUndoStore.getState().recordAction({
             type: ACTION_TYPES.REMOVE_CONNECTION,
-            campaignId: activeCampaignId,
+            campaignId: activeWorkspaceId,
             label: 'Remove connection',
             timestamp: isoTs,
             connectionId: e.connectionId,
@@ -427,7 +427,7 @@ export default function EditModal({
         } else if (e.kind === 'addListItem') {
           useUndoStore.getState().recordAction({
             type: ACTION_TYPES.ADD_LIST_ITEM,
-            campaignId: activeCampaignId,
+            campaignId: activeWorkspaceId,
             label: `Add ${LIST_ITEM_NOUNS[e.field] || 'item'}`,
             timestamp: isoTs,
             cardId: node.id,
@@ -438,7 +438,7 @@ export default function EditModal({
         } else if (e.kind === 'removeListItem') {
           useUndoStore.getState().recordAction({
             type: ACTION_TYPES.REMOVE_LIST_ITEM,
-            campaignId: activeCampaignId,
+            campaignId: activeWorkspaceId,
             label: `Remove ${LIST_ITEM_NOUNS[e.field] || 'item'}`,
             timestamp: isoTs,
             cardId: node.id,
@@ -449,7 +449,7 @@ export default function EditModal({
         } else if (e.kind === 'editListItem') {
           useUndoStore.getState().recordAction({
             type: ACTION_TYPES.EDIT_LIST_ITEM,
-            campaignId: activeCampaignId,
+            campaignId: activeWorkspaceId,
             label: `Edit ${LIST_ITEM_NOUNS[e.field] || 'item'}`,
             timestamp: isoTs,
             cardId: node.id,
@@ -461,7 +461,7 @@ export default function EditModal({
         } else if (e.kind === 'reorderListItem') {
           useUndoStore.getState().recordAction({
             type: ACTION_TYPES.REORDER_LIST_ITEM,
-            campaignId: activeCampaignId,
+            campaignId: activeWorkspaceId,
             label: `Reorder ${LIST_ITEM_NOUNS[e.field] || 'item'}`,
             timestamp: isoTs,
             cardId: node.id,
@@ -474,7 +474,7 @@ export default function EditModal({
       }
     }
     animateClose()
-  }, [flushSave, animateClose, activeCampaignId, node.id])
+  }, [flushSave, animateClose, activeWorkspaceId, node.id])
 
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') handleClose() }
@@ -522,7 +522,7 @@ export default function EditModal({
             TypeIcon={TypeIcon}
             thumbnail={thumbnail}
             setThumbnail={setThumbnail}
-            campaignId={activeCampaignId}
+            campaignId={activeWorkspaceId}
             onClose={handleClose}
             onCreateNewType={() => setShowCreateTypeModal(true)}
           />
@@ -564,7 +564,7 @@ export default function EditModal({
               items={media}
               onChange={setMedia}
               cardId={node.id}
-              campaignId={activeCampaignId}
+              campaignId={activeWorkspaceId}
               slug={title || node.data.label}
               {...mediaCallbacks}
             />

@@ -6,7 +6,7 @@ import {
 } from '@phosphor-icons/react'
 import { updateTextNode as dbUpdateTextNode } from '../lib/textNodes.js'
 import { useCanvasOps } from '../lib/CanvasOpsContext.jsx'
-import { useCampaign } from '../lib/CampaignContext.jsx'
+import { useWorkspace } from '../lib/WorkspaceContext.jsx'
 import { useUndoStore } from '../store/useUndoStore'
 import { ACTION_TYPES } from '../lib/undo/index.js'
 
@@ -74,7 +74,7 @@ function NativeButton({ onAction, className, title, children }) {
 export default function TextNode({ id, data, xPos, yPos }) {
   const { setNodes, getViewport } = useReactFlow()
   const { onDeleteNode } = useCanvasOps()
-  const { activeCampaignId } = useCampaign()
+  const { activeWorkspaceId } = useWorkspace()
 
   const width    = data.width    ?? DEFAULT_WIDTH
   const height   = data.height   ?? null
@@ -98,17 +98,17 @@ export default function TextNode({ id, data, xPos, yPos }) {
   // changed. Both `before` and `after` carry a partial field-set so the
   // dispatcher's drift check only looks at the relevant slots.
   const recordEdit = useCallback((before, after) => {
-    if (!activeCampaignId) return
+    if (!activeWorkspaceId) return
     useUndoStore.getState().recordAction({
       type: ACTION_TYPES.EDIT_TEXT_NODE,
-      campaignId: activeCampaignId,
+      campaignId: activeWorkspaceId,
       label: 'Edit text',
       timestamp: new Date().toISOString(),
       textNodeId: id,
       before,
       after,
     })
-  }, [id, activeCampaignId])
+  }, [id, activeWorkspaceId])
 
   // ── Enter edit mode when data.editing flips true ──────────────────────────
   useEffect(() => {

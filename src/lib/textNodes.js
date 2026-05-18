@@ -72,7 +72,7 @@ export async function createTextNode({
 // rows, so this is a single insert.
 //
 // Realtime echoes the INSERT back to all subscribers (including this tab),
-// but useCampaignData's text_nodes INSERT handler is idempotent — it skips
+// but useWorkspaceData's text_nodes INSERT handler is idempotent — it skips
 // rows whose ids already exist locally. So the optimistic setNodes in the
 // dispatcher won't be double-applied.
 // ----------------------------------------------------------------------------

@@ -8,7 +8,7 @@ import EditModal from './components/EditModal'
 import { LightboxProvider } from './components/Lightbox'
 import CampaignNode from './nodes/CampaignNode'
 import TextNode from './nodes/TextNode'
-import { useCampaign } from './lib/CampaignContext.jsx'
+import { useWorkspace } from './lib/WorkspaceContext.jsx'
 import {
   createNode as dbCreateNode,
   updateNode as dbUpdateNode,
@@ -26,7 +26,7 @@ import {
   deleteTextNode as dbDeleteTextNode,
 } from './lib/textNodes.js'
 import { useSpacebarPan } from './hooks/useSpacebarPan'
-import { useCampaignData } from './hooks/useCampaignData'
+import { useWorkspaceData } from './hooks/useWorkspaceData'
 import { useEdgeGeometry } from './hooks/useEdgeGeometry'
 import { useNodeHoverSelection } from './hooks/useNodeHoverSelection'
 import { useUndoShortcuts } from './hooks/useUndoShortcuts'
@@ -61,7 +61,7 @@ const edgeTypes = {
 }
 
 export default function App() {
-  const { activeCampaignId } = useCampaign()
+  const { activeWorkspaceId } = useWorkspace()
 
   // Type-id lookups live in useTypeStore (per-user, hydrated on load).
   // Read via useTypeStore.getState().idByKey inside callbacks.
@@ -70,8 +70,8 @@ export default function App() {
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
 
-  const { loading, loadError } = useCampaignData({
-    campaignId: activeCampaignId,
+  const { loading, loadError } = useWorkspaceData({
+    workspaceId: activeWorkspaceId,
     setNodes,
     setEdges,
   })
@@ -375,7 +375,7 @@ export default function App() {
           // grouped moveCard rollback but per-node.
           useUndoStore.getState().recordAction({
             type: ACTION_TYPES.MOVE_TEXT_NODE,
-            campaignId: activeCampaignId,
+            campaignId: activeWorkspaceId,
             label: 'Move text',
             timestamp: new Date().toISOString(),
             textNodeId: n.id,
@@ -401,7 +401,7 @@ export default function App() {
 
     useUndoStore.getState().recordAction({
       type: ACTION_TYPES.MOVE_CARD,
-      campaignId: activeCampaignId,
+      campaignId: activeWorkspaceId,
       label: cardMoves.length === 1 ? 'Move card' : `Move ${cardMoves.length} cards`,
       timestamp: new Date().toISOString(),
       cards: cardMoves,
@@ -416,7 +416,7 @@ export default function App() {
         useUndoStore.getState().popLastAction()
       }
     })
-  }, [activeCampaignId])
+  }, [activeWorkspaceId])
 
   const onNodeDragStart = useCallback((_event, node, nodes) => {
     // Fall back to [node] in case `nodes` is undefined (defensive — RF v11
@@ -478,7 +478,7 @@ export default function App() {
     }
     try {
       const newNode = await dbCreateNode({
-        campaignId: activeCampaignId,
+        campaignId: activeWorkspaceId,
         typeId,
         typeKey,
         label: '',
@@ -502,7 +502,7 @@ export default function App() {
       // the inputs that recreate the card on redo (with explicit id).
       useUndoStore.getState().recordAction({
         type: ACTION_TYPES.CREATE_CARD,
-        campaignId: activeCampaignId,
+        campaignId: activeWorkspaceId,
         label: 'Add card',
         timestamp: new Date().toISOString(),
         cardId: newNode.id,
@@ -528,13 +528,13 @@ export default function App() {
     } catch (err) {
       console.error('Failed to create card:', err)
     }
-  }, [activeCampaignId, nodes, setNodes])
+  }, [activeWorkspaceId, nodes, setNodes])
 
   // ── Add text (DB-backed) ─────────────────────────────────────────────────
   const addTextNode = useCallback(async (flowPos) => {
     try {
       const newTextNode = await dbCreateTextNode({
-        campaignId: activeCampaignId,
+        campaignId: activeWorkspaceId,
         contentHtml: '',
         positionX: flowPos.x,
         positionY: flowPos.y,
@@ -551,13 +551,13 @@ export default function App() {
       // createTextNode writes; redo replays them via createTextNode({ id }).
       useUndoStore.getState().recordAction({
         type: ACTION_TYPES.CREATE_TEXT_NODE,
-        campaignId: activeCampaignId,
+        campaignId: activeWorkspaceId,
         label: 'Add text',
         timestamp: new Date().toISOString(),
         textNodeId: newTextNode.id,
         dbRow: {
           id:           newTextNode.id,
-          campaign_id:  activeCampaignId,
+          campaign_id:  activeWorkspaceId,
           content_html: '',
           position_x:   flowPos.x,
           position_y:   flowPos.y,
@@ -570,7 +570,7 @@ export default function App() {
     } catch (err) {
       console.error('Failed to create text node:', err)
     }
-  }, [activeCampaignId, setNodes])
+  }, [activeWorkspaceId, setNodes])
 
   // ── Edit modal: building state ───────────────────────────────────────────
   const getNodeOriginRect = (nodeId) => {
@@ -700,7 +700,7 @@ export default function App() {
     addConnections.forEach(({ id, nodeId: targetId }) => {
       dbCreateConnection({
         id,
-        campaignId: activeCampaignId,
+        campaignId: activeWorkspaceId,
         sourceNodeId: nodeId,
         targetNodeId: targetId,
       })
@@ -709,7 +709,7 @@ export default function App() {
         })
         .catch(console.error)
     })
-  }, [nodes, edges, activeCampaignId, setNodes, setEdges])
+  }, [nodes, edges, activeWorkspaceId, setNodes, setEdges])
 
   // ── Duplicate (DB-backed) ───────────────────────────────────────────────
   const onDuplicate = useCallback(async (nodeId) => {
@@ -719,7 +719,7 @@ export default function App() {
     if (source.type === 'textNode') {
       try {
         const duplicate = await dbCreateTextNode({
-          campaignId:  activeCampaignId,
+          campaignId:  activeWorkspaceId,
           contentHtml: source.data.text,
           positionX:   source.position.x + 40,
           positionY:   source.position.y + 40,
@@ -743,7 +743,7 @@ export default function App() {
     }
     try {
       const duplicate = await dbCreateNode({
-        campaignId: activeCampaignId,
+        campaignId: activeWorkspaceId,
         typeId,
         typeKey: source.data.type,
         label: source.data.label,
@@ -760,7 +760,7 @@ export default function App() {
     } catch (err) {
       console.error('Failed to duplicate card:', err)
     }
-  }, [activeCampaignId, nodes, setNodes])
+  }, [activeWorkspaceId, nodes, setNodes])
 
   // ── Lock toggle — in-memory only (feature scoped out of V1) ─────────────
   const onLockToggle = useCallback((nodeId) => {
@@ -783,7 +783,7 @@ export default function App() {
       // restoreCardWithDependents path.
       const dbRow = {
         id:           target.id,
-        campaign_id:  activeCampaignId,
+        campaign_id:  activeWorkspaceId,
         content_html: target.data.text ?? '',
         position_x:   target.position.x,
         position_y:   target.position.y,
@@ -798,7 +798,7 @@ export default function App() {
 
       useUndoStore.getState().recordAction({
         type: ACTION_TYPES.DELETE_TEXT_NODE,
-        campaignId: activeCampaignId,
+        campaignId: activeWorkspaceId,
         label: 'Delete text',
         timestamp: new Date().toISOString(),
         textNodeId: target.id,
@@ -817,7 +817,7 @@ export default function App() {
     const snapshot = buildDeleteCardSnapshot(nodeId, {
       nodes,
       edges,
-      campaignId: activeCampaignId,
+      campaignId: activeWorkspaceId,
       typeIdByKey: useTypeStore.getState().idByKey,
     })
 
@@ -828,7 +828,7 @@ export default function App() {
     if (snapshot) {
       useUndoStore.getState().recordAction({
         type: ACTION_TYPES.DELETE_CARD,
-        campaignId: activeCampaignId,
+        campaignId: activeWorkspaceId,
         label: `Delete "${snapshot.dbCardRow.label || 'card'}"`,
         timestamp: new Date().toISOString(),
         dbCardRow:        snapshot.dbCardRow,
@@ -847,7 +847,7 @@ export default function App() {
       console.error(err)
       if (snapshot) useUndoStore.getState().popLastAction()
     })
-  }, [nodes, edges, activeCampaignId, setNodes, setEdges])
+  }, [nodes, edges, activeWorkspaceId, setNodes, setEdges])
 
   // ── Altitude trigger (per ADR-0010) ──────────────────────────────────────
   // onMove fires throughout pan/zoom gestures, giving Bead View an

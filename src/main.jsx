@@ -4,7 +4,7 @@ import 'reactflow/dist/style.css'  // third-party first — our styles override 
 import './index.css'
 import App from './App.jsx'
 import { AuthProvider, useAuth } from './lib/AuthContext.jsx'
-import { CampaignProvider, useCampaign } from './lib/CampaignContext.jsx'
+import { WorkspaceProvider, useWorkspace } from './lib/WorkspaceContext.jsx'
 import { ProfileProvider } from './lib/ProfileContext.jsx'
 import { useOnlineListener, useProbeLoop } from './lib/useSyncLifecycle.js'
 import Login from './components/Login.jsx'
@@ -40,7 +40,7 @@ function useHashRoute() {
 // ============================================================================
 function Root() {
   const { session, loading } = useAuth()
-  const { activeCampaignId } = useCampaign()
+  const { activeWorkspaceId } = useWorkspace()
   const hash = useHashRoute()
 
   // Keep the sync store in sync with navigator.onLine and probe while locked.
@@ -52,7 +52,7 @@ function Root() {
   if (!session) return <Login />
   if (hash === '#migrate') return <MigrateImages />
   if (hash === '#profile') return <Profile />
-  if (!activeCampaignId) return <CampaignPicker />
+  if (!activeWorkspaceId) return <CampaignPicker />
 
   return (
     <>
@@ -67,12 +67,12 @@ function Root() {
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <AuthProvider>
-      <CampaignProvider>
+      <WorkspaceProvider>
         <ProfileProvider>
           <AnalyticsBootstrap />
           <Root />
         </ProfileProvider>
-      </CampaignProvider>
+      </WorkspaceProvider>
     </AuthProvider>
   </StrictMode>,
 )

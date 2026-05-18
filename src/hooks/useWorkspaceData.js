@@ -1,7 +1,7 @@
 // ============================================================================
-// useCampaignData
+// useWorkspaceData
 // ----------------------------------------------------------------------------
-// Owns the load lifecycle for a single campaign's canvas data:
+// Owns the load lifecycle for a single workspace's canvas data:
 //
 //   - ensures the user's built-in node types exist and hydrates the local
 //     type store so components reading via useNodeTypes() are current,
@@ -9,7 +9,7 @@
 //     in parallel,
 //   - hands the results to the canvas via the supplied setNodes / setEdges
 //     setters (which come from React Flow's useNodesState / useEdgesState),
-//   - subscribes to Supabase Realtime channels for the same campaign and
+//   - subscribes to Supabase Realtime channels for the same workspace and
 //     merges incoming INSERT / UPDATE / DELETE events into the same setters
 //     so changes from another tab or device reflect here within ~100ms.
 //
@@ -27,8 +27,8 @@
 //     Ctrl+Z sequences. Cosmetic, not a correctness issue. Tracked as
 //     "Undo/redo residual flicker" in BACKLOG.md (Tier 4 polish), with
 //     suspected root cause in useEdgeGeometry's render cascade.
-//   - node_sections has no campaign_id column, so it can't be DB-filtered
-//     by campaign. RLS already restricts events to the user's own rows;
+//   - node_sections has no workspace_id column, so it can't be DB-filtered
+//     by workspace. RLS already restricts events to the user's own rows;
 //     handlers additionally drop events whose node_id isn't in local state.
 // ============================================================================
 
@@ -55,21 +55,25 @@ const KIND_TO_FIELD = {
 // as the legacy mixed shape.
 const BULLET_KINDS = new Set(['narrative', 'hidden_lore', 'dm_notes'])
 
-export function useCampaignData({ campaignId, setNodes, setEdges }) {
+export function useWorkspaceData({ workspaceId, setNodes, setEdges }) {
   const { user } = useAuth()
   const userId = user?.id ?? null
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(null)
 
   useEffect(() => {
-    if (!campaignId) return
+    if (!workspaceId) return
     let cancelled = false
     let channel = null
 
-    // Per-campaign undo scope. setScope hydrates from sessionStorage if this
-    // tab already has history for (userId × campaignId), otherwise starts
-    // empty. Switching campaigns or users automatically swaps the stack.
-    useUndoStore.getState().setScope({ userId, campaignId })
+    // Per-workspace undo scope. setScope hydrates from sessionStorage if this
+    // tab already has history for (userId × workspaceId), otherwise starts
+    // empty. Switching workspaces or users automatically swaps the stack.
+    //
+    // The undo store still expects `campaignId` on its scope object; that
+    // store's API + sessionStorage key prefix get renamed in commit 4/6 of
+    // this rename series alongside their backwards-compatibility shim.
+    useUndoStore.getState().setScope({ userId, campaignId: workspaceId })
 
     async function load() {
       setLoading(true)
@@ -83,20 +87,20 @@ export function useCampaignData({ campaignId, setNodes, setEdges }) {
           keyById[t.id] = { key: t.key, color: t.color, label: t.label, iconName: t.icon_name }
         }
 
-        const [campaignNodes, campaignConnections, campaignTextNodes, lastEditedAt] = await Promise.all([
-          loadNodes(campaignId, keyById),
-          loadConnections(campaignId),
-          loadTextNodes(campaignId),
-          getWorkspaceLastEditedAt(campaignId),
+        const [workspaceNodes, workspaceConnections, workspaceTextNodes, lastEditedAt] = await Promise.all([
+          loadNodes(workspaceId, keyById),
+          loadConnections(workspaceId),
+          loadTextNodes(workspaceId),
+          getWorkspaceLastEditedAt(workspaceId),
         ])
 
         if (cancelled) return
 
-        setNodes([...campaignNodes, ...campaignTextNodes])
-        setEdges(campaignConnections)
+        setNodes([...workspaceNodes, ...workspaceTextNodes])
+        setEdges(workspaceConnections)
         if (lastEditedAt) useSyncStore.getState().setLastSavedAt(lastEditedAt)
 
-        channel = subscribeRealtime({ campaignId, keyById, setNodes, setEdges })
+        channel = subscribeRealtime({ workspaceId, keyById, setNodes, setEdges })
       } catch (err) {
         if (!cancelled) setLoadError(err.message)
       } finally {
@@ -108,12 +112,12 @@ export function useCampaignData({ campaignId, setNodes, setEdges }) {
     return () => {
       cancelled = true
       if (channel) supabase.removeChannel(channel)
-      // Each campaign owns its own edit history. Clear lastSavedAt on
-      // campaign switch / unmount so the chip never carries a previous
-      // campaign's timestamp into a new view.
+      // Each workspace owns its own edit history. Clear lastSavedAt on
+      // workspace switch / unmount so the chip never carries a previous
+      // workspace's timestamp into a new view.
       useSyncStore.getState().setLastSavedAt(null)
     }
-  }, [campaignId, userId, setNodes, setEdges])
+  }, [workspaceId, userId, setNodes, setEdges])
 
   return { loading, loadError }
 }
@@ -121,21 +125,21 @@ export function useCampaignData({ campaignId, setNodes, setEdges }) {
 // ============================================================================
 // Realtime subscription wiring
 // ----------------------------------------------------------------------------
-// One channel per campaign with four postgres_changes listeners. Each handler
+// One channel per workspace with four postgres_changes listeners. Each handler
 // translates a DB event back into the React/React Flow shape used on the canvas.
 // Every incoming event also bumps the sync store's lastSavedAt so the "Edited
 // Nm ago" chip reflects activity from other tabs / sessions in real time.
 // (Self-writes also bump via writeSucceeded; setLastSavedAt only rolls
 // forward, so the double-bump is harmless.)
 // ============================================================================
-function subscribeRealtime({ campaignId, keyById, setNodes, setEdges }) {
-  const channel = supabase.channel(`campaign:${campaignId}`)
+function subscribeRealtime({ workspaceId, keyById, setNodes, setEdges }) {
+  const channel = supabase.channel(`workspace:${workspaceId}`)
   const bumpLastSaved = () => useSyncStore.getState().setLastSavedAt(new Date())
 
   // --- nodes -----------------------------------------------------------------
   channel.on(
     'postgres_changes',
-    { event: '*', schema: 'public', table: 'nodes', filter: `campaign_id=eq.${campaignId}` },
+    { event: '*', schema: 'public', table: 'nodes', filter: `workspace_id=eq.${workspaceId}` },
     (payload) => {
       bumpLastSaved()
       const { eventType, new: row, old } = payload
@@ -184,7 +188,7 @@ function subscribeRealtime({ campaignId, keyById, setNodes, setEdges }) {
   )
 
   // --- node_sections ---------------------------------------------------------
-  // No DB-side filter (no campaign_id column). RLS scopes to the user; we
+  // No DB-side filter (no workspace_id column). RLS scopes to the user; we
   // additionally drop events whose node_id isn't in our local state.
   channel.on(
     'postgres_changes',
@@ -227,7 +231,7 @@ function subscribeRealtime({ campaignId, keyById, setNodes, setEdges }) {
   // --- connections -----------------------------------------------------------
   channel.on(
     'postgres_changes',
-    { event: '*', schema: 'public', table: 'connections', filter: `campaign_id=eq.${campaignId}` },
+    { event: '*', schema: 'public', table: 'connections', filter: `workspace_id=eq.${workspaceId}` },
     (payload) => {
       bumpLastSaved()
       const { eventType, new: row, old } = payload
@@ -264,7 +268,7 @@ function subscribeRealtime({ campaignId, keyById, setNodes, setEdges }) {
   // --- text_nodes ------------------------------------------------------------
   channel.on(
     'postgres_changes',
-    { event: '*', schema: 'public', table: 'text_nodes', filter: `campaign_id=eq.${campaignId}` },
+    { event: '*', schema: 'public', table: 'text_nodes', filter: `workspace_id=eq.${workspaceId}` },
     (payload) => {
       bumpLastSaved()
       const { eventType, new: row, old } = payload

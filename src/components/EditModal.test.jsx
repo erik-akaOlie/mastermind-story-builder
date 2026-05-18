@@ -42,8 +42,8 @@ vi.mock('./UploadImageProvider', () => ({
   UploadImageProvider: ({ children }) => children,
   useUploadImage: () => ({ open: uploadOpenMock, close: vi.fn() }),
 }))
-vi.mock('../lib/CampaignContext.jsx', () => ({
-  useCampaign: () => ({ activeCampaignId: 'mock-campaign-id' }),
+vi.mock('../lib/WorkspaceContext.jsx', () => ({
+  useWorkspace: () => ({ activeWorkspaceId: 'mock-workspace-id' }),
 }))
 vi.mock('../store/useTypeStore', () => ({
   useNodeTypes: () => ({
