@@ -2,6 +2,8 @@
 Date: 2026-04-27
 Status: Accepted (design locked; build deferred to ~Sprint 4)
 
+> **Terminology note (post-2026-05-18):** This ADR predates ADR-0012's `campaign` -> `workspace` rename. References to "campaign(s)" / `campaign_id` here describe the architectural object now called "workspace" / `workspace_id`. The decision content remains accurate; only the names changed.
+
 ## Context
 
 Today, the only way to express a relationship between two cards is the

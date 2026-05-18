@@ -2,6 +2,8 @@
 Date: 2026-05-11
 Status: Accepted (V1 ships second in the current sprint, before tester invites; V2 ships during the first observation cycle)
 
+> **Terminology note (post-2026-05-18):** This ADR predates ADR-0012's `campaign` -> `workspace` rename. References to "campaign(s)" / `campaign_id` here describe the architectural object now called "workspace" / `workspace_id`. The decision content remains accurate; only the names changed.
+
 ## Context
 
 The current canvas zoom-out limit caps below the threshold needed to

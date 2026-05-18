@@ -2,6 +2,8 @@
 Date: 2026-04-22
 Status: Accepted
 
+> **Terminology note (post-2026-05-18):** This ADR predates ADR-0012's `campaign` -> `workspace` rename. References to "campaign(s)" / `campaign_id` here describe the architectural object now called "workspace" / `workspace_id`. The decision content remains accurate; only the names changed.
+
 ## Context
 
 MasterMind needs persistent storage for campaigns, cards (nodes), sections, connections, and text annotations. The app is inherently **graph-shaped**: cards connected to other cards via typed relationships, with cards belonging to campaigns, owned by users.

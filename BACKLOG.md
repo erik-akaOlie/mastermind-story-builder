@@ -584,6 +584,58 @@ slots in opportunistically alongside any of the above.
 
 ## Exploration
 
+### Product-language audit — story-building framing vs. generalized information-organization framing
+- **Problem (sketch).** ADR-0012 renamed the top-level architectural object
+  `campaign` → `workspace` because the original term narrowed the
+  architecture to its first audience. A parallel concern was surfaced at
+  the same time but explicitly deferred: the *product copy* still frames
+  MasterMind as a "Story Builder" for "Dungeon Masters and Game Masters"
+  building D&D campaigns. As the broader vision extends toward general
+  information-organization use cases (organizational mapping, user
+  journeys, knowledge systems, etc.), this framing may narrow the product
+  identity in the same way `campaign` narrowed the architecture.
+- **Why it's an exploration, not a sprint item.** The same discipline
+  ADR-0012 used for architecture applies here: don't preemptively
+  abstract product language without a concrete second audience to keep
+  the new language honest. We need either (a) a real second use case
+  trying the product or (b) deliberate broadening as a positioning
+  decision. Either way it's a product strategy conversation, not a
+  one-pass copywriting task.
+- **What the spike has to answer.**
+  - Which surfaces are story-builder-flavored (taglines, headings,
+    seed data, example prompts) vs. genre-neutral?
+  - Are there places where product copy and architecture *should*
+    intentionally say different things to signal current vs. eventual
+    audience?
+  - What's the lightest-weight way to support multiple product framings
+    without forking the codebase (theme/profile, route-scoped copy,
+    per-instance config, etc.)?
+- **Observations gathered during the campaign → workspace rename**
+  (captured as a starting list, not a prescription):
+  - `src/components/Login.jsx` and `src/components/Profile.jsx` tagline
+    "Sign in to your story builder." / "Your story builder."
+  - `src/components/EditModal.jsx` section labels "Story Notes,"
+    "Hidden Lore," "DM Notes" — story-genre framing baked into the
+    card schema.
+  - `src/components/CampaignPicker.jsx` placeholder examples (`e.g.
+    Curse of Strahd, The Lost Mines…`) — kept intentionally for now per
+    ADR-0012; flagged for re-evaluation here.
+  - `CLAUDE.md` product blurb: "interactive continuity database for
+    Dungeon Masters and Game Masters."
+  - Sample/seed data in `public/avatars/` and across product docs:
+    Strahd, Ireena, Madam Eva, Vistani, etc.
+  - Brand: "MasterMind: Story Builder" — product name itself.
+- **Notes.** Surfaced 2026-05-18 alongside the campaign → workspace
+  rename. Deliberately deferred so this conversation isn't conflated
+  with foundational architectural work. The new entry is a
+  *future-decision starting point*, not a commitment to broaden the
+  positioning.
+- **Dependencies.** None code-side. Soft dependency on Erik's product
+  strategy clarity (target audience(s) for V2+).
+- **Target version:** N/A — runs parallel to product versioning.
+- **Size:** M (1–3 days of design + writing + light implementation once
+  it's the focus).
+
 ### Physics layout layer — repulsion, auto-arrange, force-directed clustering
 - **Problem (sketch).** Today, cards stay exactly where the user
   places them. As campaigns grow and zoom-out reveals dense clusters,

@@ -2,6 +2,8 @@
 Date: 2026-05-11
 Status: Accepted (ships at the start of the current sprint, before tester invites)
 
+> **Terminology note (post-2026-05-18):** This ADR predates ADR-0012's `campaign` -> `workspace` rename. References to "campaign(s)" / `campaign_id` here describe the architectural object now called "workspace" / `workspace_id`. The decision content remains accurate; only the names changed.
+
 ## Context
 
 Erik plans to invite ~5–10 DMs as testers within the next two weeks.

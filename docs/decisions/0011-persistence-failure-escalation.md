@@ -2,6 +2,8 @@
 Date: 2026-05-16
 Status: Accepted
 
+> **Terminology note (post-2026-05-18):** This ADR predates ADR-0012's `campaign` -> `workspace` rename. References to "campaign(s)" / `campaign_id` here describe the architectural object now called "workspace" / `workspace_id`. The decision content remains accurate; only the names changed.
+
 ## Context
 
 [ADR-0003](./0003-optimistic-ui-persistence.md) established optimistic UI with fire-and-forget persistence: handlers update React state immediately, call the relevant `lib/*.js` function, and `.catch(console.error)` on failure. That pattern works under happy-path conditions but is silent when something is actually wrong — the user has no idea their work isn't being saved.

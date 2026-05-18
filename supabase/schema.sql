@@ -1,11 +1,15 @@
 -- ============================================================================
--- MasterMind: Story Builder — Database Schema (Sprint 1)
+-- MasterMind: Story Builder — Database Schema
 -- ============================================================================
 -- Paste this entire file into Supabase's SQL Editor and click Run.
--- Creates: 6 tables, 1 helper function, RLS policies on every table.
--- Safe to run once on a fresh project. DO NOT run on a project with data
--- unless you know what you're doing — it will not delete existing data but
--- will error if tables already exist.
+-- Creates the schema for a fresh project: tables, helper function,
+-- and RLS policies. Safe to run once on a fresh project. DO NOT run on a
+-- project with existing data — it will not delete data but will error
+-- if tables already exist.
+--
+-- Terminology note: "campaign" was renamed to "workspace" in 2026-05
+-- (see ADR-0012). This file reflects the current state. Older ADRs may
+-- still use the legacy term; they're historical and footer-link to 0012.
 -- ============================================================================
 
 
@@ -24,10 +28,10 @@ $$;
 
 
 -- ============================================================================
--- TABLE: campaigns
--- One row per campaign. Owned by a user.
+-- TABLE: workspaces
+-- One row per workspace. Owned by a user.
 -- ============================================================================
-create table public.campaigns (
+create table public.workspaces (
   id                uuid        primary key default gen_random_uuid(),
   owner_id          uuid        not null references auth.users(id) on delete cascade,
   name              text        not null,
@@ -37,36 +41,36 @@ create table public.campaigns (
   updated_at        timestamptz not null default now()
 );
 
-create index campaigns_owner_id_idx on public.campaigns(owner_id);
+create index workspaces_owner_id_idx on public.workspaces(owner_id);
 
-create trigger campaigns_set_updated_at
-  before update on public.campaigns
+create trigger workspaces_set_updated_at
+  before update on public.workspaces
   for each row execute function public.set_updated_at();
 
-alter table public.campaigns enable row level security;
+alter table public.workspaces enable row level security;
 
-create policy "Owner can read their campaigns"
-  on public.campaigns for select
+create policy "Owner can read their workspaces"
+  on public.workspaces for select
   using (auth.uid() = owner_id);
 
-create policy "Owner can insert their campaigns"
-  on public.campaigns for insert
+create policy "Owner can insert their workspaces"
+  on public.workspaces for insert
   with check (auth.uid() = owner_id);
 
-create policy "Owner can update their campaigns"
-  on public.campaigns for update
+create policy "Owner can update their workspaces"
+  on public.workspaces for update
   using (auth.uid() = owner_id);
 
-create policy "Owner can delete their campaigns"
-  on public.campaigns for delete
+create policy "Owner can delete their workspaces"
+  on public.workspaces for delete
   using (auth.uid() = owner_id);
 
 
 -- ============================================================================
 -- TABLE: node_types
--- Card types belong to a USER (not a campaign), so a user's "Character" type
--- is the same thing across every campaign they own. Built-in types are seeded
--- on first sign-in (see lib/campaigns.js#ensureBuiltinTypes). Users can add
+-- Card types belong to a USER (not a workspace), so a user's "Character" type
+-- is the same thing across every workspace they own. Built-in types are seeded
+-- on first sign-in (see lib/workspaces.js#ensureBuiltinTypes). Users can add
 -- custom types (is_system = false). Custom types are never shared across users.
 -- ============================================================================
 create table public.node_types (
@@ -105,12 +109,12 @@ create policy "Owner can delete their types"
 
 -- ============================================================================
 -- TABLE: nodes
--- Cards on the canvas. Linked to a campaign and a node_type.
+-- Cards on the canvas. Linked to a workspace and a node_type.
 -- Narrative content lives in node_sections, not here.
 -- ============================================================================
 create table public.nodes (
   id          uuid        primary key default gen_random_uuid(),
-  campaign_id uuid        not null references public.campaigns(id) on delete cascade,
+  workspace_id uuid        not null references public.workspaces(id) on delete cascade,
   type_id     uuid        not null references public.node_types(id),
   label       text        not null default '',
   summary     text        not null default '',
@@ -121,7 +125,7 @@ create table public.nodes (
   updated_at  timestamptz not null default now()
 );
 
-create index nodes_campaign_id_idx on public.nodes(campaign_id);
+create index nodes_workspace_id_idx on public.nodes(workspace_id);
 create index nodes_type_id_idx on public.nodes(type_id);
 
 create trigger nodes_set_updated_at
@@ -130,32 +134,32 @@ create trigger nodes_set_updated_at
 
 alter table public.nodes enable row level security;
 
-create policy "Owner can read nodes in their campaigns"
+create policy "Owner can read nodes in their workspaces"
   on public.nodes for select
   using (exists (
-    select 1 from public.campaigns c
-    where c.id = nodes.campaign_id and c.owner_id = auth.uid()
+    select 1 from public.workspaces c
+    where c.id = nodes.workspace_id and c.owner_id = auth.uid()
   ));
 
-create policy "Owner can insert nodes in their campaigns"
+create policy "Owner can insert nodes in their workspaces"
   on public.nodes for insert
   with check (exists (
-    select 1 from public.campaigns c
-    where c.id = nodes.campaign_id and c.owner_id = auth.uid()
+    select 1 from public.workspaces c
+    where c.id = nodes.workspace_id and c.owner_id = auth.uid()
   ));
 
-create policy "Owner can update nodes in their campaigns"
+create policy "Owner can update nodes in their workspaces"
   on public.nodes for update
   using (exists (
-    select 1 from public.campaigns c
-    where c.id = nodes.campaign_id and c.owner_id = auth.uid()
+    select 1 from public.workspaces c
+    where c.id = nodes.workspace_id and c.owner_id = auth.uid()
   ));
 
-create policy "Owner can delete nodes in their campaigns"
+create policy "Owner can delete nodes in their workspaces"
   on public.nodes for delete
   using (exists (
-    select 1 from public.campaigns c
-    where c.id = nodes.campaign_id and c.owner_id = auth.uid()
+    select 1 from public.workspaces c
+    where c.id = nodes.workspace_id and c.owner_id = auth.uid()
   ));
 
 
@@ -184,35 +188,35 @@ create trigger node_sections_set_updated_at
 
 alter table public.node_sections enable row level security;
 
-create policy "Owner can read sections in their campaigns"
+create policy "Owner can read sections in their workspaces"
   on public.node_sections for select
   using (exists (
     select 1 from public.nodes n
-    join public.campaigns c on c.id = n.campaign_id
+    join public.workspaces c on c.id = n.workspace_id
     where n.id = node_sections.node_id and c.owner_id = auth.uid()
   ));
 
-create policy "Owner can insert sections in their campaigns"
+create policy "Owner can insert sections in their workspaces"
   on public.node_sections for insert
   with check (exists (
     select 1 from public.nodes n
-    join public.campaigns c on c.id = n.campaign_id
+    join public.workspaces c on c.id = n.workspace_id
     where n.id = node_sections.node_id and c.owner_id = auth.uid()
   ));
 
-create policy "Owner can update sections in their campaigns"
+create policy "Owner can update sections in their workspaces"
   on public.node_sections for update
   using (exists (
     select 1 from public.nodes n
-    join public.campaigns c on c.id = n.campaign_id
+    join public.workspaces c on c.id = n.workspace_id
     where n.id = node_sections.node_id and c.owner_id = auth.uid()
   ));
 
-create policy "Owner can delete sections in their campaigns"
+create policy "Owner can delete sections in their workspaces"
   on public.node_sections for delete
   using (exists (
     select 1 from public.nodes n
-    join public.campaigns c on c.id = n.campaign_id
+    join public.workspaces c on c.id = n.workspace_id
     where n.id = node_sections.node_id and c.owner_id = auth.uid()
   ));
 
@@ -224,45 +228,45 @@ create policy "Owner can delete sections in their campaigns"
 -- ============================================================================
 create table public.connections (
   id              uuid        primary key default gen_random_uuid(),
-  campaign_id     uuid        not null references public.campaigns(id) on delete cascade,
+  workspace_id     uuid        not null references public.workspaces(id) on delete cascade,
   source_node_id  uuid        not null references public.nodes(id) on delete cascade,
   target_node_id  uuid        not null references public.nodes(id) on delete cascade,
   created_at      timestamptz not null default now(),
   check (source_node_id <> target_node_id)
 );
 
-create index connections_campaign_id_idx on public.connections(campaign_id);
+create index connections_workspace_id_idx on public.connections(workspace_id);
 create index connections_source_node_id_idx on public.connections(source_node_id);
 create index connections_target_node_id_idx on public.connections(target_node_id);
 
 alter table public.connections enable row level security;
 
-create policy "Owner can read connections in their campaigns"
+create policy "Owner can read connections in their workspaces"
   on public.connections for select
   using (exists (
-    select 1 from public.campaigns c
-    where c.id = connections.campaign_id and c.owner_id = auth.uid()
+    select 1 from public.workspaces c
+    where c.id = connections.workspace_id and c.owner_id = auth.uid()
   ));
 
-create policy "Owner can insert connections in their campaigns"
+create policy "Owner can insert connections in their workspaces"
   on public.connections for insert
   with check (exists (
-    select 1 from public.campaigns c
-    where c.id = connections.campaign_id and c.owner_id = auth.uid()
+    select 1 from public.workspaces c
+    where c.id = connections.workspace_id and c.owner_id = auth.uid()
   ));
 
-create policy "Owner can update connections in their campaigns"
+create policy "Owner can update connections in their workspaces"
   on public.connections for update
   using (exists (
-    select 1 from public.campaigns c
-    where c.id = connections.campaign_id and c.owner_id = auth.uid()
+    select 1 from public.workspaces c
+    where c.id = connections.workspace_id and c.owner_id = auth.uid()
   ));
 
-create policy "Owner can delete connections in their campaigns"
+create policy "Owner can delete connections in their workspaces"
   on public.connections for delete
   using (exists (
-    select 1 from public.campaigns c
-    where c.id = connections.campaign_id and c.owner_id = auth.uid()
+    select 1 from public.workspaces c
+    where c.id = connections.workspace_id and c.owner_id = auth.uid()
   ));
 
 
@@ -272,7 +276,7 @@ create policy "Owner can delete connections in their campaigns"
 -- ============================================================================
 create table public.text_nodes (
   id            uuid        primary key default gen_random_uuid(),
-  campaign_id   uuid        not null references public.campaigns(id) on delete cascade,
+  workspace_id   uuid        not null references public.workspaces(id) on delete cascade,
   content_html  text        not null default '',
   position_x    numeric     not null default 0,
   position_y    numeric     not null default 0,
@@ -284,7 +288,7 @@ create table public.text_nodes (
   updated_at    timestamptz not null default now()
 );
 
-create index text_nodes_campaign_id_idx on public.text_nodes(campaign_id);
+create index text_nodes_workspace_id_idx on public.text_nodes(workspace_id);
 
 create trigger text_nodes_set_updated_at
   before update on public.text_nodes
@@ -292,30 +296,30 @@ create trigger text_nodes_set_updated_at
 
 alter table public.text_nodes enable row level security;
 
-create policy "Owner can read text nodes in their campaigns"
+create policy "Owner can read text nodes in their workspaces"
   on public.text_nodes for select
   using (exists (
-    select 1 from public.campaigns c
-    where c.id = text_nodes.campaign_id and c.owner_id = auth.uid()
+    select 1 from public.workspaces c
+    where c.id = text_nodes.workspace_id and c.owner_id = auth.uid()
   ));
 
-create policy "Owner can insert text nodes in their campaigns"
+create policy "Owner can insert text nodes in their workspaces"
   on public.text_nodes for insert
   with check (exists (
-    select 1 from public.campaigns c
-    where c.id = text_nodes.campaign_id and c.owner_id = auth.uid()
+    select 1 from public.workspaces c
+    where c.id = text_nodes.workspace_id and c.owner_id = auth.uid()
   ));
 
-create policy "Owner can update text nodes in their campaigns"
+create policy "Owner can update text nodes in their workspaces"
   on public.text_nodes for update
   using (exists (
-    select 1 from public.campaigns c
-    where c.id = text_nodes.campaign_id and c.owner_id = auth.uid()
+    select 1 from public.workspaces c
+    where c.id = text_nodes.workspace_id and c.owner_id = auth.uid()
   ));
 
-create policy "Owner can delete text nodes in their campaigns"
+create policy "Owner can delete text nodes in their workspaces"
   on public.text_nodes for delete
   using (exists (
-    select 1 from public.campaigns c
-    where c.id = text_nodes.campaign_id and c.owner_id = auth.uid()
+    select 1 from public.workspaces c
+    where c.id = text_nodes.workspace_id and c.owner_id = auth.uid()
   ));

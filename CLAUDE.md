@@ -52,9 +52,9 @@ Do not confuse visible salience with structural invariance. Recommendations shou
 | Styling | Tailwind CSS v3 | rem units throughout; `html { font-size: 100% }` |
 | Icons | **Phosphor Icons** (`@phosphor-icons/react`) | design doc says Lucide — **ignore that, we use Phosphor** |
 | Drag-to-reorder | `@dnd-kit/core`, `@dnd-kit/sortable`, `@dnd-kit/utilities` | used in EditModal for bullets and images |
-| State management | Zustand v5 | Several focused in-memory stores under `src/store/` — see the File Map. All are caches over Supabase, not persistence layers. Campaign data lives in React state hydrated from Supabase. |
+| State management | Zustand v5 | Several focused in-memory stores under `src/store/` — see the File Map. All are caches over Supabase, not persistence layers. Workspace data lives in React state hydrated from Supabase. |
 | Auth + Database | **Supabase** (Postgres + Auth + RLS) | `@supabase/supabase-js` client; schema in `supabase/schema.sql` |
-| Image storage | **Supabase Storage** (`card-media` + `profile-media` buckets) | both private; clients request signed URLs per render. card-media holds card avatars + inspiration images (two variants per upload). profile-media holds user profile avatars (single 256×256 variant). See ADR-0005 (card-media) and migration 003 (profile-media). |
+| Image storage | **Supabase Storage** (`workspace-media` + `profile-media` buckets) | both private; clients request signed URLs per render. workspace-media holds card avatars + inspiration images (two variants per upload). profile-media holds user profile avatars (single 256×256 variant). See ADR-0005 (workspace-media) and migration 003 (profile-media). |
 | Behavioral analytics | **PostHog Cloud** (`posthog-js`) | session replay + named events, scoped to `is_test_user=true` users only. Loaded via dynamic import (Vite splits into its own chunk; non-testers never download it). See ADR-0009. |
 
 Firebase was previously installed but never wired; it has been uninstalled. Do not reintroduce.
@@ -91,7 +91,7 @@ must inject the env var; Erik's local `.env` already has it.
 src/
   App.jsx                          canvas orchestration: composes hooks, renders ReactFlow + menus + modal
   index.css                        Tailwind base + RF overrides + .is-lifted z-index rule
-  main.jsx                         entry; wraps app in AuthProvider → CampaignProvider → ProfileProvider →
+  main.jsx                         entry; wraps app in AuthProvider → WorkspaceProvider → ProfileProvider →
                                    Root gatekeeper; hash routes to <MigrateImages /> at #migrate and to
                                    <Profile /> at #profile
 
@@ -100,14 +100,14 @@ src/
     AuthContext.jsx                session + signIn/signUp/signOut context. signOut calls
                                    useUndoStore.clearAllForUser(userId) before Supabase clears the session
                                    so a different next user can't inherit prior undo history.
-    CampaignContext.jsx            active-campaign-id context; persists to localStorage
+    WorkspaceContext.jsx            active-workspace-id context; persists to localStorage
     ProfileContext.jsx             single source of truth for the signed-in user's public.profiles row
                                    (avatar_path, display_name, future user-level metadata). Loaded once
                                    per user, exposed via useProfile() with { profile, loading, error,
-                                   updateProfile, refresh }. Mirrors AuthProvider / CampaignProvider.
+                                   updateProfile, refresh }. Mirrors AuthProvider / WorkspaceProvider.
     profile.js                     CRUD for the public.profiles row: getProfile, setAvatarPath,
                                    clearAvatar (nulls column + best-effort storage delete), setDisplayName.
-    campaigns.js                   CRUD for campaigns + listNodeTypes
+    workspaces.js                  CRUD for workspaces + listNodeTypes
     nodes.js                       CRUD for nodes + node_sections; shape-marshaling. Includes
                                    buildDeleteCardSnapshot + restoreCardWithDependents for undo's delete-card
                                    round-trip.
@@ -115,7 +115,7 @@ src/
     textNodes.js                   CRUD for text annotations; includes restoreTextNode for undo's delete-text
                                    round-trip.
     imageStorage.js                Storage helpers for both image domains. Card images: transcode → two
-                                   WebP variants → upload to card-media. Profile avatars: single 256×256
+                                   WebP variants → upload to workspace-media. Profile avatars: single 256×256
                                    WebP variant → upload to profile-media. getImageUrl(path, variant,
                                    bucket) is bucket-aware. Two pipeline factories — cardImagePipeline()
                                    and profileAvatarPipeline() — bundle {upload, delete, getUrl} so
@@ -123,7 +123,7 @@ src/
     useImageUrl.js                 hook resolving avatar/media values to renderable URLs (handles base64,
                                    external https, and Storage paths). Signature: useImageUrl(input,
                                    {variant, bucket}); a string second arg is treated as {variant} for
-                                   backward compat. Default bucket is 'card-media'.
+                                   backward compat. Default bucket is 'workspace-media'.
     errorReporting.js              persistWrite() retry wrapper; on final failure, fires toastSaveFailed
                                    (chip-toast, no longer Sonner)
     feedbackToasts.jsx             public push API for undo / redo / conflict / save-fail chip toasts.
@@ -156,10 +156,10 @@ src/
 
   hooks/                           reusable hooks extracted from App.jsx and EditModal
     useSpacebarPan.js              spacebar-held-down panning state
-    useCampaignData.js             load lifecycle for the active campaign (types + nodes + edges + text)
+    useWorkspaceData.js             load lifecycle for the active workspace (types + nodes + edges + text)
                                    AND Supabase Realtime subscriptions that mirror remote INSERT/UPDATE/DELETE
                                    into setNodes/setEdges. Calls useUndoStore.setScope() so undo rehydrates
-                                   on F5 and re-scopes when the active campaign switches.
+                                   on F5 and re-scopes when the active workspace switches.
     useEdgeGeometry.js             recomputes spread border points + connection-dot positions when nodes move
     useNodeHoverSelection.js       returns the four ReactFlow hover/select handlers, all backed by useCanvasUiStore
     useAutoSave.js                 debounced save with explicit flush; used by EditModal
@@ -167,10 +167,10 @@ src/
                                    returned animateClose for exit); used by EditModal
     useUndoShortcuts.js            global Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y listener with the Word-style typing
                                    exemption (Ctrl+Z inside an input/textarea/contenteditable is left to the
-                                   browser; outside it reverses the last campaign action)
+                                   browser; outside it reverses the last workspace action)
 
   nodes/
-    CampaignNode.jsx               colored campaign cards; subscribes to useCanvasUiStore; adds .is-lifted
+    CampaignNode.jsx               renders a node as a colored card; subscribes to useCanvasUiStore; adds .is-lifted
                                    class so :has() in index.css promotes the wrapper z-index
     TextNode.jsx                   freestanding text annotation blocks (persists directly via lib/textNodes)
     iconRegistry.js                70+ Phosphor icons with keywords; getIcon(), recommendIcons()
@@ -180,7 +180,7 @@ src/
 
   components/
     Login.jsx                      email+password auth form
-    CampaignPicker.jsx             post-login landing; list/create/rename/delete campaigns
+    CampaignPicker.jsx             post-login landing; list/create/rename/delete workspaces
     UserAvatar.jsx                 circular profile button with dropdown (sign-out, etc.)
     UserMenu.jsx                   top-left breadcrumb chip + UserAvatar overlay on the canvas
     EditModal.jsx                  orchestration shell: form state + auto-save trigger + composes the
@@ -195,13 +195,13 @@ src/
     ConnectionsSection.jsx         chip list + node picker with click-outside-to-dismiss
     TypePicker.jsx                 type dropdown (used inside EditModalHeader) + "Create new type…" row
     SectionLabel.jsx               tiny uppercase-tracked label utility used across sections
-    ContextMenu.jsx                right-click menu on campaign nodes (Edit/Duplicate/Delete)
+    ContextMenu.jsx                right-click menu on canvas card nodes (Edit/Duplicate/Delete)
     CanvasContextMenu.jsx          right-click menu on empty canvas (Add card / Add text). Submenu uses
                                    a 16px invisible hover-bridge + 200ms hover-intent close delay
     CreateTypeModal.jsx            custom card type creation (label + icon + color picker)
     Lightbox.jsx                   shared <LightboxProvider>; any consumer calls useLightbox().open(value)
     MigrateImages.jsx              one-shot tool at #migrate to backfill base64 → Storage; safe to delete
-                                   once no campaign has any base64 image entries
+                                   once no workspace has any base64 image entries
     AnalyticsBootstrap.jsx         mounted inside <ProfileProvider> in main.jsx. Watches profile.id +
                                    profile.is_test_user; on change, calls initAnalytics(profile) (which
                                    itself bails for non-testers). Renders nothing.
@@ -216,7 +216,7 @@ src/
 
   store/
     useTypeStore.js                Zustand store for node types — in-memory cache hydrated from the `node_types`
-                                   table on app load (via useCampaignData → listNodeTypes → hydrate). Built-in and
+                                   table on app load (via useWorkspaceData → listNodeTypes → hydrate). Built-in and
                                    custom types alike live as rows in `node_types` owned per user; CreateTypeModal
                                    writes new custom types straight to the DB. The legacy `dnd-node-types`
                                    localStorage key is actively cleaned up on store init for users who had it from
@@ -225,8 +225,8 @@ src/
                                    hoveredEdgeNodeIds). Cards subscribe via narrow selectors so a hover event
                                    only re-renders cards whose computed state actually changed.
     useSyncStore.js                Zustand store for write-success/failure tracking (drives SyncIndicator + LockOverlay)
-    useUndoStore.js                Zustand store for the undo/redo stacks; per-tab, per-(user × campaign);
-                                   sessionStorage-backed under `mastermind:undo:${userId}:${campaignId}`;
+    useUndoStore.js                Zustand store for the undo/redo stacks; per-tab, per-(user × workspace);
+                                   sessionStorage-backed under `mastermind:undo:${userId}:${workspaceId}`;
                                    capped at 75. clearAllForUser() called on sign-out wipes every entry under
                                    the user's prefix.
     useFeedbackToastStore.js       Zustand store for the chip-toast queue: lifecycle (visible → exiting →
@@ -239,8 +239,8 @@ src/
 supabase/
   schema.sql                       full DB schema + RLS policies — run once in the Supabase SQL Editor
   migrations/
-    001_node_types_per_user.sql    moves node_types from per-campaign to per-user ownership
-    002_card_media_bucket.sql      creates the card-media Storage bucket + SECURITY DEFINER RLS helper
+    001_node_types_per_user.sql    moves node_types from per-workspace to per-user ownership
+    002_card_media_bucket.sql      creates the workspace-media Storage bucket + SECURITY DEFINER RLS helper
     003_profiles_and_profile_media.sql
                                    creates the public.profiles table (avatar_path + display_name +
                                    timestamps), the on_auth_user_created trigger that auto-creates a
@@ -267,23 +267,23 @@ docs/
 
 | Table | Purpose |
 |---|---|
-| `auth.users` | Supabase-managed; referenced by `campaigns.owner_id` and `profiles.id` |
+| `auth.users` | Supabase-managed; referenced by `workspaces.owner_id` and `profiles.id` |
 | `profiles` | one row per user — canonical home for app-level user metadata (`avatar_path`, `display_name`, `is_test_user`, future fields). Auto-created by an `auth.users` INSERT trigger; backfilled in migration 003. `is_test_user` added in migration 004; default flipped to `true` in migration 005 for the invite-only stage (revert before public launch). Gates whether PostHog loads for that user (ADR-0009) |
-| `campaigns` | one row per campaign; owned by a user |
-| `node_types` | card types per user (built-in five + any custom); `is_system` flags the built-ins. Per-user scope was introduced in migration 001 — every campaign a user owns shares the same set of types. |
+| `workspaces` | one row per workspace; owned by a user |
+| `node_types` | card types per user (built-in five + any custom); `is_system` flags the built-ins. Per-user scope was introduced in migration 001 — every workspace a user owns shares the same set of types. |
 | `nodes` | cards on the canvas (label, summary, avatar_url, position, type_id) |
 | `node_sections` | modular sections inside each card: `kind` ∈ `narrative` \| `hidden_lore` \| `dm_notes` \| `media` \| `custom`; `content` is JSONB |
-| `connections` | edges between two nodes in the same campaign |
+| `connections` | edges between two nodes in the same workspace |
 | `text_nodes` | free-floating text annotations on the canvas |
 
-Full DDL in `supabase/schema.sql`. Every table has RLS enabled; policies require that the row's campaign belongs to the current `auth.uid()`.
+Full DDL in `supabase/schema.sql`. Every table has RLS enabled; policies require that the row's workspace belongs to the current `auth.uid()`.
 
 ### React shape (what handlers work with)
 
 The data layer marshals DB rows back to the flatter React shape the canvas expects. See `src/lib/nodes.js`.
 
 ```js
-// Campaign node (React/React Flow shape)
+// Canvas node, in the React/React Flow shape (representation-level — note CampaignNode.jsx file name and the 'campaignNode' RF type id are retained for now per ADR-0012)
 {
   id: string,
   type: 'campaignNode',
@@ -292,7 +292,7 @@ The data layer marshals DB rows back to the flatter React shape the canvas expec
     id: string,                     // duplicated for convenience
     label: string,
     type: 'character' | 'location' | 'item' | 'faction' | 'story' | string,
-    avatar: string | null,          // Supabase Storage path (e.g. "<campaignId>/<cardId>/avatar-…full.webp"),
+    avatar: string | null,          // Supabase Storage path (e.g. "<workspaceId>/<cardId>/avatar-…full.webp"),
                                     // OR a /avatars/* external URL for the bundled Strahd sample data.
                                     // Legacy base64 data URIs render fine via useImageUrl but no new ones are written.
     summary: string,
@@ -346,7 +346,7 @@ Position changes persist only on `onNodeDragStop` (not on every pixel of drag). 
 
 ### System CTA color
 
-`#0284C7` (Tailwind `sky-600`) for all card-type-agnostic action buttons (login, "Create" in CreateTypeModal, "New campaign" in CampaignPicker). **Never reuse a card-type color for system UI.**
+`#0284C7` (Tailwind `sky-600`) for all card-type-agnostic action buttons (login, "Create" in CreateTypeModal, "New workspace" in CampaignPicker). **Never reuse a card-type color for system UI.**
 
 ### Luminance-based text color
 
@@ -391,29 +391,29 @@ const flowPos = rfInstance.project({ x: event.clientX, y: event.clientY })
 
 ### Auth flow
 
-- `src/main.jsx` wraps the app in `AuthProvider` → `CampaignProvider` → `ProfileProvider` → `Root`.
-- `Root` gatekeeper: loading → null; not signed in → `<Login />`; signed in with no active campaign → `<CampaignPicker />`; signed in with active campaign → `<App /> + <UserMenu />`.
-- Active campaign id is persisted in localStorage (`mastermind:activeCampaignId`) so refresh returns to the same campaign.
+- `src/main.jsx` wraps the app in `AuthProvider` → `WorkspaceProvider` → `ProfileProvider` → `Root`.
+- `Root` gatekeeper: loading → null; not signed in → `<Login />`; signed in with no active workspace → `<CampaignPicker />` (file name retained per ADR-0012 — the picker is the user-facing surface, "Workspace" is the architectural name); signed in with active workspace → `<App /> + <UserMenu />`.
+- Active workspace id is persisted in localStorage (`mastermind:activeWorkspaceId`) so refresh returns to the same workspace.
 
-### Campaign creation seeds node_types
+### Workspace creation
 
-`createCampaign(name, description)` in `lib/campaigns.js` inserts the campaign row AND inserts the five built-in node types (`character`, `location`, `item`, `faction`, `story`) linked to that campaign. Colors and icon names match `useTypeStore`'s `DEFAULT_TYPES`.
+`createWorkspace(name, description)` in `lib/workspaces.js` inserts the workspace row. Built-in node types are seeded **per user** (not per workspace) — `ensureBuiltinTypes()` runs from `useWorkspaceData` on app load and is idempotent, so this function does not seed types itself.
 
 ### Hooks layer (`src/hooks/`)
 
 `App.jsx` was 700+ lines after Sprint 1; the post-Sprint-1 refactor pulled four focused hooks out of it. They were extracted so Sprint 1.5 Realtime work had clean places to land instead of more sediment in App.jsx:
 
 - `useSpacebarPan()` — keyboard listeners; returns the `isPanning` boolean.
-- `useCampaignData({ campaignId, setNodes, setEdges })` — owns the load lifecycle (types + nodes + connections + text) AND the Supabase Realtime subscriptions. Returns `{ loading, loadError }`.
+- `useWorkspaceData({ workspaceId, setNodes, setEdges })` — owns the load lifecycle (types + nodes + connections + text) AND the Supabase Realtime subscriptions. Returns `{ loading, loadError }`.
 - `useEdgeGeometry({ nodes, edges, setNodes, setEdges })` — recomputes spread border points + connection-dot positions on node movement. Pure derivation; mutates state via the supplied setters.
 - `useNodeHoverSelection({ setEdges })` — returns the four ReactFlow handlers (`onSelectionChange`, `onNodeMouseEnter`, `onNodeMouseLeave`, `onEdgeMouseEnter`, `onEdgeMouseLeave`). All five mutate `useCanvasUiStore`; only `onEdgeMouseEnter`/`onEdgeMouseLeave` also touch the edges array (for stroke styling).
 
 ### Realtime sync (Sprint 1.5)
 
-`useCampaignData` opens one Supabase channel per active campaign with four `postgres_changes` listeners — one each for `nodes`, `node_sections`, `connections`, and `text_nodes`. Incoming events are translated back into the React/React Flow shape via the existing marshalers (`dbNodeToReactFlow`, `dbTextNodeToReactFlow`) and merged into `setNodes` / `setEdges`. The channel is torn down when the campaign id changes or the hook unmounts.
+`useWorkspaceData` opens one Supabase channel per active workspace with four `postgres_changes` listeners — one each for `nodes`, `node_sections`, `connections`, and `text_nodes`. Incoming events are translated back into the React/React Flow shape via the existing marshalers (`dbNodeToReactFlow`, `dbTextNodeToReactFlow`) and merged into `setNodes` / `setEdges`. The channel is torn down when the workspace id changes or the hook unmounts.
 
-- **DB-side filter:** `campaign_id=eq.${campaignId}` on three tables. `node_sections` has no `campaign_id` column, so it's filtered client-side by checking whether `node_id` is in local state; RLS already restricts to the user's own rows.
-- **Required SQL (run once per project):** TWO setup steps — (a) the four tables must be members of the `supabase_realtime` publication; (b) the four tables must be set to `REPLICA IDENTITY FULL` so DELETE broadcasts include all columns. Without (b), the `campaign_id=eq.X` filter rejects DELETE events because the broadcast `old` row only carries the primary key. See both SQL blocks in the Sprint 1.5 + Sprint 1.5b entries of `CHANGELOG.md`. **Apply this `REPLICA IDENTITY FULL` pattern to any future table whose Realtime DELETE events need to pass an RLS or column-filter check.**
+- **DB-side filter:** `workspace_id=eq.${workspaceId}` on three tables. `node_sections` has no `workspace_id` column, so it's filtered client-side by checking whether `node_id` is in local state; RLS already restricts to the user's own rows.
+- **Required SQL (run once per project):** TWO setup steps — (a) the four tables must be members of the `supabase_realtime` publication; (b) the four tables must be set to `REPLICA IDENTITY FULL` so DELETE broadcasts include all columns. Without (b), the `workspace_id=eq.X` filter rejects DELETE events because the broadcast `old` row only carries the primary key. See both SQL blocks in the Sprint 1.5 + Sprint 1.5b entries of `CHANGELOG.md`. **Apply this `REPLICA IDENTITY FULL` pattern to any future table whose Realtime DELETE events need to pass an RLS or column-filter check.**
 - **No echo filter (V1).** Self-writes round-trip through the channel and re-set identical values. If two tabs simultaneously edit the same field, the last write wins and a character may be dropped — accepted trade-off, revisit only if it becomes noticeable in practice.
 - **UI-only state preservation:** the `text_nodes` UPDATE handler preserves `data.editing` so a remote update can't kick the local tab out of edit mode mid-keystroke. The `nodes` UPDATE handler preserves the in-memory `storyNotes/hiddenLore/dmNotes/media` arrays (those flow through `node_sections` events instead).
 
@@ -423,22 +423,22 @@ const flowPos = rfInstance.project({ x: event.clientX, y: event.clientY })
 
 ### Image storage (per ADR-0005)
 
-Card avatars and inspiration images live in the **`card-media` Supabase Storage bucket**, not as base64 inside the database. Two variants per upload (`.thumb.webp` 256px / 40% q, `.full.webp` 1920px / 80% q), generated client-side via Canvas at upload time. The DB stores only the path string (avatars) or `{path, alt, uploaded_at}` object (inspiration entries) — see the React shape above.
+Card avatars and inspiration images live in the **`workspace-media` Supabase Storage bucket**, not as base64 inside the database. Two variants per upload (`.thumb.webp` 256px / 40% q, `.full.webp` 1920px / 80% q), generated client-side via Canvas at upload time. The DB stores only the path string (avatars) or `{path, alt, uploaded_at}` object (inspiration entries) — see the React shape above.
 
 - `src/lib/imageStorage.js` owns transcode + upload + delete.
 - `src/lib/useImageUrl.js` is the hook every renderer uses; it accepts a value of any shape and returns either a signed URL, a base64 string passthrough, or null.
 - `src/components/Lightbox.jsx` is the single shared lightbox (provider + hook); CampaignNode and EditModal both call `useLightbox().open(value)`.
 - **Bucket RLS uses a SECURITY DEFINER helper** (`public.user_owns_card_media_path`) instead of inlining the campaign-ownership lookup inside each policy. The inlined version silently fails — the cross-schema query from `storage.objects` to `public.campaigns` returns no rows even when the user owns the campaign, and every upload errors with "new row violates row-level security policy". The helper bypasses RLS on `public.campaigns` while still pinning the check to `auth.uid()`. See [supabase/migrations/002_card_media_bucket.sql](./supabase/migrations/002_card_media_bucket.sql) for the canonical version. **Apply this pattern to any future Storage bucket that needs cross-schema ownership checks.**
-- `#migrate` is a temporary hash route to the migration tool ([src/components/MigrateImages.jsx](src/components/MigrateImages.jsx)) for backfilling any base64 entries; once a campaign has zero base64 entries the page reports "Nothing to migrate" and the route can be removed.
+- `#migrate` is a temporary hash route to the migration tool ([src/components/MigrateImages.jsx](src/components/MigrateImages.jsx)) for backfilling any base64 entries; once a workspace has zero base64 entries the page reports "Nothing to migrate" and the route can be removed.
 
 ### Profile avatars (per migration 003)
 
-User profile avatars live in a **separate `profile-media` Supabase Storage bucket**, distinct from `card-media`. Why separate: profile photos are user-scoped (path: `{user_id}/avatar-{timestamp_ms}.webp`), not campaign-scoped, so the access rules differ. Single 256×256 WebP variant — profile avatars never render larger than ~64px in real UI.
+User profile avatars live in a **separate `profile-media` Supabase Storage bucket**, distinct from `workspace-media`. Why separate: profile photos are user-scoped (path: `{user_id}/avatar-{timestamp_ms}.webp`), not workspace-scoped, so the access rules differ. Single 256×256 WebP variant — profile avatars never render larger than ~64px in real UI.
 
 - `public.profiles` is the canonical home for app-level user metadata. One row per `auth.users` row, linked 1:1 by `id`. Currently holds `avatar_path`, `display_name` (the latter has no UI yet — schema-ready for future surfaces), and `is_test_user` (added in migration 004; default flipped from false to true in migration 005 — appropriate for the invite-only stage, revert before public launch; gates PostHog loading per ADR-0009). Auto-created by an `on_auth_user_created` trigger so app code can assume every signed-in user has a profile row; backfilled in migration 003 for users that pre-date the trigger.
 - `src/lib/profile.js` is the data-access layer: `getProfile`, `setAvatarPath`, `clearAvatar`, `setDisplayName`. `clearAvatar` updates the DB column first, then best-effort deletes the storage object — the user-visible state is correct even if the storage delete fails (orphan-cleanup per ADR-0005 §7).
 - `src/lib/ProfileContext.jsx` is the shared store. One `getProfile()` per signed-in user, exposed via `useProfile() → { profile, loading, error, updateProfile, refresh }`. Profile.jsx and UserAvatar.jsx both subscribe so an avatar change on the Profile page propagates to the top-left chip immediately, without a reload.
-- **The `profile-media` bucket does NOT need a SECURITY DEFINER helper** because its RLS check is same-schema: `(storage.foldername(name))[1] = auth.uid()::text`. The cross-schema gymnastics that `card-media` needs only kick in when storage policies have to JOIN against tables in `public`. Profile-bucket policies live entirely against the path prefix and `auth.uid()` — pure storage, no cross-schema lookups.
+- **The `profile-media` bucket does NOT need a SECURITY DEFINER helper** because its RLS check is same-schema: `(storage.foldername(name))[1] = auth.uid()::text`. The cross-schema gymnastics that `workspace-media` needs only kick in when storage policies have to JOIN against tables in `public`. Profile-bucket policies live entirely against the path prefix and `auth.uid()` — pure storage, no cross-schema lookups.
 - The same `UploadImageModal` handles both card images and profile avatars. Domain switching is via the `pipeline` prop — built by `cardImagePipeline({...})` or `profileAvatarPipeline({...})` from `imageStorage.js`. The modal does not know what kind of image it is editing. New image domains in the future drop in by adding a third factory.
 - `ImageCropper` adds a `profile-avatar` mode alongside the existing `image-section` and `thumbnail` modes. Behavior is identical to thumbnail (image-corner handles, no frame reshape, cover-fit on entry, fixed-pixel save) but with a 256×256 square frame and 256×256 saved output.
 
@@ -499,9 +499,9 @@ EditModal is the orchestration shell — it owns form state and composes sub-com
 
 | Piece | Owns | Receives from EditModal |
 |---|---|---|
-| `<EditModalHeader>` | uploading-avatar state, file-picker ref, `titleRef` (focus on mount) | title/setTitle, type/setType, typeConfig, hdrText, TypeIcon, thumbnail/setThumbnail, campaignId, onClose, onCreateNewType |
+| `<EditModalHeader>` | uploading-avatar state, file-picker ref, `titleRef` (focus on mount) | title/setTitle, type/setType, typeConfig, hdrText, TypeIcon, thumbnail/setThumbnail, workspaceId, onClose, onCreateNewType |
 | `<BulletSection>` | DnD context, sensors, refs for focus-on-new, add/remove/update logic | items, onChange, label, placeholder, dotColor, addLabel |
-| `<MediaSection>` | DnD context, file-picker ref, `uploadingCount`, `currentItemsRef` (parallel-upload safety) | items, onChange, cardId, campaignId, slug |
+| `<MediaSection>` | DnD context, file-picker ref, `uploadingCount`, `currentItemsRef` (parallel-upload safety) | items, onChange, cardId, workspaceId, slug |
 | `<ConnectionsSection>` | picker open/close, click-outside dismissal, available-nodes filtering + sort | localConns, setLocalConns, allOtherNodes |
 | `<TypePicker>` | dropdown open/close, hover state | type, setType, hdrText, onCreateNewType |
 | `useAutoSave` | doSaveRef pattern, debounce timer | doSave callback, deps array, optional delay |
@@ -562,20 +562,20 @@ The context-menu delete path goes through `App.onDeleteNode`, which also calls `
 Not needed currently, but if we ever do:
 
 1. Add to `DEFAULT_TYPES` in `useTypeStore.js` with `{ label, color, iconName }`
-2. Add to `BUILT_IN_TYPES` in `src/lib/campaigns.js` so new campaigns seed it
+2. Add to `BUILT_IN_TYPES` in `src/lib/workspaces.js` so it gets seeded on first sign-in for any user that doesn't already have it (via `ensureBuiltinTypes`)
 3. Add the Phosphor icon name to `iconRegistry.js` if not already there
 
-Custom user-created types are persisted per-user as rows in the `node_types` table. `CreateTypeModal` calls `createCustomType()` (in `lib/campaigns.js`) which inserts the row, then appends to the in-memory `useTypeStore` cache via `addType()`.
+Custom user-created types are persisted per-user as rows in the `node_types` table. `CreateTypeModal` calls `createCustomType()` (in `lib/workspaces.js`) which inserts the row, then appends to the in-memory `useTypeStore` cache via `addType()`.
 
 ---
 
 ## What Is Built
 
 - [x] Supabase auth (email+password), login screen, sign-out, avatar dropdown
-- [x] Campaign CRUD (create, list, rename, delete, switch)
+- [x] Workspace CRUD (create, list, rename, delete, switch)
 - [x] RLS policies on every table
-- [x] 5 built-in node types seeded per user on first campaign creation
-- [x] Campaign cards with header, avatar, summary, bullet body, connection dots
+- [x] 5 built-in node types seeded per user on first sign-in
+- [x] Canvas cards with header, avatar, summary, bullet body, connection dots
 - [x] Edit modal: title, type, avatar/thumbnail, summary, story notes, hidden lore, DM notes, media, connections
 - [x] Auto-save (400ms debounce, flush on close) — writes to Supabase
 - [x] Drag-to-reorder bullets and images in edit modal
@@ -594,12 +594,12 @@ Custom user-created types are persisted per-user as rows in the `node_types` tab
 - [x] **Shared lightbox** — clicking a card avatar (canvas or modal) or any inspiration tile opens the same overlay.
 - [x] **App.jsx refactor** — load lifecycle, edge geometry, hover/select, and spacebar pan all extracted into focused hooks under `src/hooks/`. Hover/select state moved into `useCanvasUiStore` so a hover event no longer re-renders every card.
 - [x] Z-index lift — hovered/selected cards rise above their neighbors via a `:has(.is-lifted)` rule.
-- [x] **Realtime sync** — Supabase Realtime channel in `useCampaignData` mirrors remote `nodes` / `node_sections` / `connections` / `text_nodes` INSERT/UPDATE/DELETE into local state. No echo filter in V1; self-writes round-trip harmlessly. Requires `REPLICA IDENTITY FULL` on each table for DELETE events to pass RLS + filter checks.
+- [x] **Realtime sync** — Supabase Realtime channel in `useWorkspaceData` mirrors remote `nodes` / `node_sections` / `connections` / `text_nodes` INSERT/UPDATE/DELETE into local state. No echo filter in V1; self-writes round-trip harmlessly. Requires `REPLICA IDENTITY FULL` on each table for DELETE events to pass RLS + filter checks.
 - [x] **EditModal decomposition** — 792-line component split into `<EditModalHeader>`, `<BulletSection>` (×3), `<MediaSection>`, `<ConnectionsSection>`, `<TypePicker>` + `useAutoSave` and `useMorphAnimation` hooks. EditModal itself is now 228 lines of orchestration.
 - [x] **Component tests** — Vitest + React Testing Library + jsdom; `EditModal.test.jsx` covers 10 happy-path scenarios. Run with `npm test`.
-- [x] **Undo / redo** — Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y reverses recent campaign actions. Per-tab, per-(user × campaign), capped at 75. Conflict-aware in both directions (refuses + toasts when state has drifted from another tab's Realtime updates). 14 action types covered; sessionStorage-backed for F5 protection. Word-style typing exemption: `Ctrl+Z` inside an input/textarea/contenteditable is left to the browser. See [ADR-0006](./docs/decisions/0006-undo-redo.md).
+- [x] **Undo / redo** — Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y reverses recent workspace actions. Per-tab, per-(user × workspace), capped at 75. Conflict-aware in both directions (refuses + toasts when state has drifted from another tab's Realtime updates). 14 action types covered; sessionStorage-backed for F5 protection. Word-style typing exemption: `Ctrl+Z` inside an input/textarea/contenteditable is left to the browser. See [ADR-0006](./docs/decisions/0006-undo-redo.md).
 - [x] **Bottom-left feedback strip** — `FeedbackChipBar` composes the existing `SyncIndicator` (light, ambient "Edited Nm ago") with a chip-toast slot (dark, transient action feedback). Toasts slide in from behind the chip via CSS @keyframes (no JS state ping-pong, no entry delay), masked by an `overflow:hidden` container so no toast pixels are visible left of the chip's left edge. Undo/redo toasts lead with a Phosphor curved-arrow icon (`ArrowUUpLeft` / `ArrowUUpRight`) followed by the entry's label. 2s visible, 300ms fadeout, hover pauses both phases (including freezing the visual opacity transition mid-fadeout). Replaces Sonner for these toasts; persist-fail uses the same chip family with a sticky id.
-- [x] **Sign-out cleanup** — `AuthContext.signOut` calls `useUndoStore.clearAllForUser(userId)` before Supabase clears the session, wiping the in-memory undo stack AND every `mastermind:undo:${userId}:*` sessionStorage entry across any campaigns the user touched in this tab.
+- [x] **Sign-out cleanup** — `AuthContext.signOut` calls `useUndoStore.clearAllForUser(userId)` before Supabase clears the session, wiping the in-memory undo stack AND every `mastermind:undo:${userId}:*` sessionStorage entry across any workspaces the user touched in this tab.
 - [x] **Profile avatars** — Profile page lets the user upload, replace, and remove a profile photo (1:1 crop, 256×256 WebP, stored in the new `profile-media` Supabase Storage bucket). `public.profiles` row holds `avatar_path` + `display_name` (latter has no UI yet). Auto-create trigger on `auth.users` INSERT so every sign-up gets a profile row. Shared `ProfileContext` so the top-left UserAvatar chip updates immediately when the photo changes — same source of truth as the Profile page header. Cropper gains a `profile-avatar` mode (square frame, 256×256 output); UploadImageModal becomes pipeline-agnostic via `cardImagePipeline()` / `profileAvatarPipeline()` factories so the same UI shell handles both image domains. See migration 003.
 - [x] **Behavioral analytics + session replay** — PostHog Cloud wired (per ADR-0009). Loads only when `profile.is_test_user === true` via dynamic import (separate Vite chunk; non-testers download zero bytes of `posthog-js`). 16 named events fire at action sites across `App.jsx`, `ConnectionsSection`, `TypePicker`, and `useUndoShortcuts`. `AuthContext.signOut` resets the session so it doesn't bleed across users on the same browser. Three safety guards (conditional load, try/catch on every public call, early bail) ensure non-testers see zero behavioral or performance impact. Password fields are protected by a `.ph-mask` class + PostHog's default `type=password` masking + the fact that the login screen renders pre-init. Migration 004 adds the `is_test_user` boolean column.
 - [x] **Altitude rail** — Left-edge instrument that reads navigation state (current zoom, threshold, dynamic minZoom, altitude) and writes back exactly one value (`thresholdGridGapMm`). Two visual states: ambient line at rest, expanded controls (icons + draggable thumb + label + bar-chevron marker) on hover. The thumb's vertical extent IS the hysteresis dead-band; dragging it retunes the Card↔Bead threshold and morphs the canvas in real time (App.jsx subscribes to `thresholdGridGapMm` and re-runs the shared `evaluateAltitude` helper). Highlight semantics differ by state — active reads as "threshold structure," rest reads as "current altitude" — so the rail never lies about which side of the dead-band the user is on. Hue-matched dark scrim behind the UI scales wider when active. See [ADR-0010 addendum (2026-05-15)](./docs/decisions/0010-zoom-progressive-disclosure.md).
@@ -629,7 +629,7 @@ native mobile apps) is captured in `roadmap.md` with rationale.
 
 **"Locked" state is in-memory only.** The Supabase schema has no `locked` column on `nodes`. If we reinstate the lock feature later, add a column and a migration. Until then, do not persist `data.locked`.
 
-**Legacy base64 image entries are read-only.** `useImageUrl` still resolves base64 data URIs (so any old data renders), but EditModal no longer writes new base64 — uploads go to Storage. Once every campaign has zero base64 entries, the legacy branch in `useImageUrl` and the `MigrateImages` component can both be deleted in the same PR.
+**Legacy base64 image entries are read-only.** `useImageUrl` still resolves base64 data URIs (so any old data renders), but EditModal no longer writes new base64 — uploads go to Storage. Once every workspace has zero base64 entries, the legacy branch in `useImageUrl` and the `MigrateImages` component can both be deleted in the same PR.
 
 ---
 
@@ -645,6 +645,11 @@ Going forward:
 
 ### Known Divergences
 
-No current divergences.
+| Area | Current reality | Design state | Why logged |
+|---|---|---|---|
+| Canvas card component & RF type id | File: `src/nodes/CampaignNode.jsx`; React Flow type identifier: `'campaignNode'` | The architectural object was renamed `campaign` → `workspace` in ADR-0012; these are the file/component-level holdouts. | Representation-level names (the component that renders a node *as a card in the canvas*) deliberately kept per ADR-0012's entity-vs-representation principle. Cosmetic; safe to rename in a separate pass when the canvas card UI itself gets a redesign. |
+| Picker component | File: `src/components/CampaignPicker.jsx` | Same as above. | File name retained because the picker is a user-facing surface still labeled as targeting the D&D campaign audience in V1. When product positioning broadens, the file name follows. |
+
+When code drifts from design intent in a way that can't be cleanly resolved in the same pass, add a row here documenting: the area, the current reality, the design-doc state, and why it's logged. Then update [`docs/design/design-system.md`](./docs/design/design-system.md) or write an ADR to close the gap when convenient.
 
 When code drifts from design intent in a way that can't be cleanly resolved in the same pass, add a row here documenting: the area, the current reality, the design-doc state, and why it's logged. Then update [`docs/design/design-system.md`](./docs/design/design-system.md) or write an ADR to close the gap when convenient.

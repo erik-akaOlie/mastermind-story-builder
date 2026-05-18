@@ -2,6 +2,8 @@
 Date: 2026-05-09
 Status: Proposed (will ship before Manage Card Templates)
 
+> **Terminology note (post-2026-05-18):** This ADR predates ADR-0012's `campaign` -> `workspace` rename. References to "campaign(s)" / `campaign_id` here describe the architectural object now called "workspace" / `workspace_id`. The decision content remains accurate; only the names changed.
+
 ## Context
 
 Built-in card types — Character, Location, Item, Faction, Story — today
