@@ -1,8 +1,12 @@
 // ============================================================================
-// CampaignPicker
+// CampaignPicker (file name retained as the user-facing surface for V1)
 // ----------------------------------------------------------------------------
-// Landing screen after sign-in. Lists existing campaigns and lets the user
+// Landing screen after sign-in. Lists existing workspaces and lets the user
 // open one, rename one, delete one, or create a new one.
+//
+// File name keeps "Campaign" because it's still the user-facing surface for
+// the D&D-positioned product. When the surface itself gets a generic name,
+// this file follows. See ADR-0012.
 //
 // Intentionally minimal visually — Erik will restyle this once the plumbing
 // is proven. Uses Phosphor icons + sky-600 CTA per CLAUDE.md conventions.
@@ -30,11 +34,11 @@ import {
 export default function CampaignPicker() {
   const { setActiveWorkspaceId } = useWorkspace()
 
-  const [campaigns, setCampaigns] = useState([])
+  const [workspaces, setWorkspaces] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
-  // "new campaign" form state
+  // "new workspace" form state
   const [creating, setCreating] = useState(false)
   const [newName, setNewName] = useState('')
 
@@ -46,7 +50,7 @@ export default function CampaignPicker() {
     setError(null)
     try {
       const rows = await listWorkspaces()
-      setCampaigns(rows)
+      setWorkspaces(rows)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -91,7 +95,7 @@ export default function CampaignPicker() {
 
   async function handleDelete(id, name) {
     const ok = confirm(
-      `Delete "${name}"? This permanently removes all cards, connections, and notes in this campaign.`
+      `Delete "${name}"? This permanently removes all cards, connections, and notes in this workspace.`
     )
     if (!ok) return
     setError(null)
@@ -123,14 +127,14 @@ export default function CampaignPicker() {
 
         <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-            <h2 className="text-sm font-medium text-gray-900">Your campaigns</h2>
+            <h2 className="text-sm font-medium text-gray-900">Your workspaces</h2>
             {!creating && (
               <button
                 onClick={() => setCreating(true)}
                 className="flex items-center gap-1 text-xs font-medium text-sky-600 hover:text-sky-700"
               >
                 <Plus size={14} weight="bold" />
-                New campaign
+                New workspace
               </button>
             )}
           </div>
@@ -138,7 +142,7 @@ export default function CampaignPicker() {
           {creating && (
             <form onSubmit={handleCreate} className="px-6 py-4 border-b border-gray-100 bg-gray-50">
               <label className="block text-xs font-medium text-gray-700 mb-1">
-                Campaign name
+                Workspace name
               </label>
               <div className="flex gap-2">
                 <input
@@ -174,22 +178,22 @@ export default function CampaignPicker() {
             <div className="px-6 py-8 text-center text-sm text-gray-500">
               Loading…
             </div>
-          ) : campaigns.length === 0 && !creating ? (
+          ) : workspaces.length === 0 && !creating ? (
             <div className="px-6 py-12 text-center">
               <p className="text-sm text-gray-600 mb-4">
-                No campaigns yet. Create your first one to get started.
+                No workspaces yet. Create your first one to get started.
               </p>
               <button
                 onClick={() => setCreating(true)}
                 className="inline-flex items-center gap-1 px-4 py-2 text-sm font-medium text-white bg-sky-600 rounded-md hover:bg-sky-700"
               >
                 <Plus size={14} weight="bold" />
-                New campaign
+                New workspace
               </button>
             </div>
           ) : (
             <ul className="divide-y divide-gray-100">
-              {campaigns.map((c) => {
+              {workspaces.map((c) => {
                 const isRenaming = renamingId === c.id
                 return (
                   <li

@@ -4,10 +4,11 @@
 // Top-LEFT canvas overlay that serves as identity + location anchor:
 //   - Profile avatar (with dropdown for sign out)
 //   - Breadcrumb chip that collapses to a house icon by default and expands
-//     on hover to reveal "Campaigns / <current campaign>" + a dropdown
-//     chevron. The chevron opens a menu of all campaigns the user owns so
-//     they can jump directly between campaigns without going back to the
-//     picker screen.
+//     on hover to reveal "Home / <current workspace>" + a dropdown
+//     chevron. "Home" is the navigation destination (the picker screen), not
+//     a label for the data model — see ADR-0012. The chevron opens a menu
+//     of all workspaces the user owns so they can jump directly between
+//     them without going back to the picker.
 //
 // The sync-status indicator is intentionally NOT rendered here — it lives in
 // its own bottom-left chip so persistent system state doesn't collide with
@@ -27,22 +28,22 @@ export default function UserMenu() {
 
   const [hovered, setHovered] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
-  const [campaigns, setCampaigns] = useState(null) // null = not yet fetched
+  const [workspaces, setWorkspaces] = useState(null) // null = not yet fetched
   const wrapperRef = useRef(null)
 
   const close = useCallback(() => setMenuOpen(false), [])
 
-  // Fetch the campaign list on first menu open; refresh every subsequent open
-  // so new/renamed/deleted campaigns show up without a page reload.
+  // Fetch the workspace list on first menu open; refresh every subsequent open
+  // so new/renamed/deleted workspaces show up without a page reload.
   useEffect(() => {
     if (!menuOpen) return
     let cancelled = false
     listWorkspaces()
-      .then((rows) => { if (!cancelled) setCampaigns(rows) })
+      .then((rows) => { if (!cancelled) setWorkspaces(rows) })
       .catch((err) => {
         if (!cancelled) {
-          console.error('Failed to list campaigns', err)
-          setCampaigns([])
+          console.error('Failed to list workspaces', err)
+          setWorkspaces([])
         }
       })
     return () => { cancelled = true }
@@ -70,7 +71,7 @@ export default function UserMenu() {
   // Expanded when the user is hovering OR the dropdown is pinned open.
   const expanded = hovered || menuOpen
 
-  const handlePickCampaign = (id) => {
+  const handlePickWorkspace = (id) => {
     if (id !== activeWorkspaceId) setActiveWorkspaceId(id)
     close()
   }
@@ -94,11 +95,11 @@ export default function UserMenu() {
             className={`flex items-center justify-center text-gray-500 hover:text-gray-900 transition-all duration-150 ease-out whitespace-nowrap ${
               expanded ? 'px-3 py-1.5 gap-1' : 'p-1.5'
             }`}
-            title="Back to campaigns"
-            aria-label="Back to campaigns"
+            title="Home"
+            aria-label="Go to home"
           >
             <House size={14} weight="bold" />
-            {expanded && <span>Campaigns</span>}
+            {expanded && <span>Home</span>}
           </button>
 
           {/* Slash + current name + chevron — only rendered when expanded
@@ -112,7 +113,7 @@ export default function UserMenu() {
               <button
                 onClick={() => setMenuOpen((o) => !o)}
                 className="text-gray-400 hover:text-gray-900 transition-colors p-0.5"
-                aria-label="Switch campaign"
+                aria-label="Switch workspace"
                 aria-haspopup="menu"
                 aria-expanded={menuOpen}
               >
@@ -128,22 +129,22 @@ export default function UserMenu() {
             className="absolute top-full left-0 mt-2 w-64 bg-white rounded-lg shadow-lg border border-gray-200 py-1 text-sm z-50"
           >
             <div className="px-3 py-1.5 text-[0.6875rem] uppercase tracking-wide text-gray-500 border-b border-gray-100">
-              Switch campaign
+              Switch workspace
             </div>
 
-            {campaigns === null ? (
+            {workspaces === null ? (
               <div className="px-3 py-2 text-xs text-gray-500">Loading…</div>
-            ) : campaigns.length === 0 ? (
-              <div className="px-3 py-2 text-xs text-gray-500">No other campaigns.</div>
+            ) : workspaces.length === 0 ? (
+              <div className="px-3 py-2 text-xs text-gray-500">No other workspaces.</div>
             ) : (
               <div className="max-h-72 overflow-y-auto">
-                {campaigns.map((c) => {
+                {workspaces.map((c) => {
                   const isActive = c.id === activeWorkspaceId
                   return (
                     <button
                       key={c.id}
                       role="menuitem"
-                      onClick={() => handlePickCampaign(c.id)}
+                      onClick={() => handlePickWorkspace(c.id)}
                       className={`w-full text-left px-3 py-2 flex items-center justify-between gap-2 hover:bg-gray-50 ${
                         isActive ? 'bg-sky-50 text-sky-900' : 'text-gray-800'
                       }`}

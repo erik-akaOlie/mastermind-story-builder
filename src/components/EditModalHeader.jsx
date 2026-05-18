@@ -37,7 +37,7 @@ export default function EditModalHeader({
   TypeIcon,
   thumbnail,
   setThumbnail,
-  campaignId,
+  workspaceId,
   onClose,
   onCreateNewType,
 }) {
@@ -55,7 +55,7 @@ export default function EditModalHeader({
   // the modal pre-loads the cropper with the current thumbnail and
   // deletes the old variants from Storage on Save.
   const buildPipeline = () => cardImagePipeline({
-    campaignId,
+    workspaceId,
     cardId: node.id,
     section: 'avatar',
     slug: title || node.data.label,

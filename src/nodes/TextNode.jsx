@@ -101,7 +101,7 @@ export default function TextNode({ id, data, xPos, yPos }) {
     if (!activeWorkspaceId) return
     useUndoStore.getState().recordAction({
       type: ACTION_TYPES.EDIT_TEXT_NODE,
-      campaignId: activeWorkspaceId,
+      workspaceId: activeWorkspaceId,
       label: 'Edit text',
       timestamp: new Date().toISOString(),
       textNodeId: id,

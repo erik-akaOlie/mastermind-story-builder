@@ -44,7 +44,7 @@ export function useProbeLoop() {
     let cancelled = false
     async function probe() {
       if (cancelled) return
-      const { error } = await supabase.from('campaigns').select('id').limit(1)
+      const { error } = await supabase.from('workspaces').select('id').limit(1)
       if (cancelled) return
       if (!error) {
         // Probe succeeded — pretend a real write just landed so the store

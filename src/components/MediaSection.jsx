@@ -6,7 +6,7 @@
 //
 // State (the array of `{id, src}` entries) is held by the parent so the
 // auto-save useEffect in EditModal can read it. The parent passes `items`
-// and `onChange(nextItems)` props plus the upload context (campaignId,
+// and `onChange(nextItems)` props plus the upload context (workspaceId,
 // cardId, slug) needed to compute Storage paths.
 //
 // The Upload Image modal handles its own file picking, paste capture, and
@@ -67,7 +67,7 @@ function SortableImage({ id, value, onRemove, onLightbox }) {
 //   onReorderItem({ itemId, from, to }) // itemId = item.path for storage,
 //                                          string itself for legacy
 export default function MediaSection({
-  items, onChange, cardId, campaignId, slug,
+  items, onChange, cardId, workspaceId, slug,
   onAddItem, onRemoveItem, onReorderItem,
 }) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
@@ -75,10 +75,10 @@ export default function MediaSection({
   const upload   = useUploadImage()
 
   const handleAddImage = () => {
-    if (!campaignId) return
+    if (!workspaceId) return
     upload.open({
       mode: 'image-section',
-      pipeline: cardImagePipeline({ campaignId, cardId, section: 'inspiration', slug }),
+      pipeline: cardImagePipeline({ workspaceId, cardId, section: 'inspiration', slug }),
       onSave: (path) => {
         const entry = { path, alt: '', uploaded_at: new Date().toISOString() }
         const insertPosition = items.length

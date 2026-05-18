@@ -3,9 +3,9 @@
 // ----------------------------------------------------------------------------
 // Owns the Supabase Storage interactions for two image domains:
 //
-//   1. Card images (avatars + inspiration) — bucket `card-media`, two
+//   1. Card images (avatars + inspiration) — bucket `workspace-media`, two
 //      variants (thumb 256px / full 1920px), per ADR-0005.
-//      Path: {campaign_id}/{card_id}/{section}-{timestamp_ms}-{slug}.{variant}.webp
+//      Path: {workspace_id}/{card_id}/{section}-{timestamp_ms}-{slug}.{variant}.webp
 //
 //   2. Profile avatars — bucket `profile-media`, single 256×256 variant
 //      per migration 003. Profile photos never render larger than ~64px
@@ -27,7 +27,7 @@
 
 import { supabase } from './supabase.js'
 
-const BUCKET_CARD     = 'card-media'
+const BUCKET_WORKSPACE = 'workspace-media'
 const BUCKET_PROFILE  = 'profile-media'
 
 const VARIANTS = {
@@ -60,8 +60,8 @@ export function slugify(label) {
 }
 
 // Compose the storage path for a single variant.
-export function buildImagePath({ campaignId, cardId, section, slug, timestamp, variant }) {
-  return `${campaignId}/${cardId}/${section}-${timestamp}-${slug}.${variant}.webp`
+export function buildImagePath({ workspaceId, cardId, section, slug, timestamp, variant }) {
+  return `${workspaceId}/${cardId}/${section}-${timestamp}-${slug}.${variant}.webp`
 }
 
 // Recognise a value as a base64 data URI (legacy storage shape).
@@ -153,14 +153,14 @@ export function base64ToBlob(dataUri) {
 
 // Upload a file/blob as both variants. Returns the .full.webp path; callers
 // store this string and use pathForVariant() to derive the thumb path.
-export async function uploadCardImage({ campaignId, cardId, section, slug, file, timestamp = Date.now() }) {
+export async function uploadCardImage({ workspaceId, cardId, section, slug, file, timestamp = Date.now() }) {
   const variants = await transcodeImage(file)
   const cleanSlug = slugify(slug)
 
   const paths = {}
   for (const [variant, blob] of Object.entries(variants)) {
-    const path = buildImagePath({ campaignId, cardId, section, slug: cleanSlug, timestamp, variant })
-    const { error } = await supabase.storage.from(BUCKET_CARD).upload(path, blob, {
+    const path = buildImagePath({ workspaceId, cardId, section, slug: cleanSlug, timestamp, variant })
+    const { error } = await supabase.storage.from(BUCKET_WORKSPACE).upload(path, blob, {
       contentType: 'image/webp',
       upsert: false,
     })
@@ -173,8 +173,8 @@ export async function uploadCardImage({ campaignId, cardId, section, slug, file,
 
 // Variant of uploadCardImage that takes already-transcoded blobs (used by the
 // migration script which has already decoded base64 to a Blob).
-export async function uploadCardImageBlob({ campaignId, cardId, section, slug, blob, timestamp = Date.now() }) {
-  return uploadCardImage({ campaignId, cardId, section, slug, file: blob, timestamp })
+export async function uploadCardImageBlob({ workspaceId, cardId, section, slug, blob, timestamp = Date.now() }) {
+  return uploadCardImage({ workspaceId, cardId, section, slug, file: blob, timestamp })
 }
 
 // Remove both variants of an image. Accepts either the full or thumb path.
@@ -182,18 +182,18 @@ export async function deleteCardImage(path) {
   if (!isStoragePath(path)) return
   const fullPath = pathForVariant(path, 'full')
   const thumbPath = pathForVariant(path, 'thumb')
-  const { error } = await supabase.storage.from(BUCKET_CARD).remove([fullPath, thumbPath])
+  const { error } = await supabase.storage.from(BUCKET_WORKSPACE).remove([fullPath, thumbPath])
   if (error) throw error
 }
 
 // Resolve a path into a signed URL. The variant suffix swap only applies to
-// card-media paths (which carry .full.webp / .thumb.webp suffixes). Profile
-// avatars are single-variant; passing a profile path with any variant value
-// is harmless because pathForVariant no-ops on paths without the suffix.
+// workspace-media paths (which carry .full.webp / .thumb.webp suffixes).
+// Profile avatars are single-variant; passing a profile path with any variant
+// value is harmless because pathForVariant no-ops on paths without the suffix.
 //
 // Returns null for falsy input or signing failure (caller decides how to
 // render absence).
-export async function getImageUrl(path, variant = 'full', bucket = BUCKET_CARD) {
+export async function getImageUrl(path, variant = 'full', bucket = BUCKET_WORKSPACE) {
   if (!isStoragePath(path)) return null
   const targetPath = pathForVariant(path, variant)
   const { data, error } = await supabase.storage
@@ -264,11 +264,11 @@ export async function deleteProfileAvatar(path) {
 // functions bound to the right bucket and path conventions for that domain.
 // ----------------------------------------------------------------------------
 
-export function cardImagePipeline({ campaignId, cardId, section, slug }) {
+export function cardImagePipeline({ workspaceId, cardId, section, slug }) {
   return {
-    upload: (blob) => uploadCardImage({ campaignId, cardId, section, slug, file: blob }),
+    upload: (blob) => uploadCardImage({ workspaceId, cardId, section, slug, file: blob }),
     delete: (path) => deleteCardImage(path),
-    getUrl: (path) => getImageUrl(path, 'full', BUCKET_CARD),
+    getUrl: (path) => getImageUrl(path, 'full', BUCKET_WORKSPACE),
   }
 }
 

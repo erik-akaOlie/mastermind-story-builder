@@ -10,13 +10,13 @@ import { supabase } from './supabase.js'
 import { persistWrite } from './errorReporting.js'
 
 // ----------------------------------------------------------------------------
-// Load all text annotations for a campaign, shaped as React Flow nodes.
+// Load all text annotations for a workspace, shaped as React Flow nodes.
 // ----------------------------------------------------------------------------
-export async function loadTextNodes(campaignId) {
+export async function loadTextNodes(workspaceId) {
   const { data, error } = await supabase
     .from('text_nodes')
     .select('*')
-    .eq('campaign_id', campaignId)
+    .eq('workspace_id', workspaceId)
   if (error) throw error
 
   return data.map(dbTextNodeToReactFlow)
@@ -32,7 +32,7 @@ export async function loadTextNodes(campaignId) {
 // ----------------------------------------------------------------------------
 export async function createTextNode({
   id,
-  campaignId,
+  workspaceId,
   contentHtml = '',
   positionX = 0,
   positionY = 0,
@@ -43,7 +43,7 @@ export async function createTextNode({
 }) {
   return persistWrite(async () => {
     const insertRow = {
-      campaign_id:  campaignId,
+      workspace_id:  workspaceId,
       content_html: contentHtml,
       position_x:   positionX,
       position_y:   positionY,

@@ -48,7 +48,7 @@ export async function removeConnectionImpl(entry, { setEdges } = {}) {
 }
 
 export async function restoreConnectionImpl(entry, { setEdges } = {}) {
-  const { connectionId, sourceNodeId, targetNodeId, campaignId } = entry
+  const { connectionId, sourceNodeId, targetNodeId, workspaceId } = entry
   if (!connectionId || !sourceNodeId || !targetNodeId) {
     throw new Error('[undoActions] connection: missing id / source / target')
   }
@@ -57,7 +57,7 @@ export async function restoreConnectionImpl(entry, { setEdges } = {}) {
   // connection still finds it. createConnection returns the React Flow edge.
   const edge = await createConnection({
     id: connectionId,
-    campaignId,
+    workspaceId,
     sourceNodeId,
     targetNodeId,
   })

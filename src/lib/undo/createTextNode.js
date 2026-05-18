@@ -32,7 +32,7 @@ export async function applyForward(entry, { setNodes } = {}) {
   }
   const reactNode = await createTextNode({
     id:           textNodeId,
-    campaignId:   entry.campaignId,
+    workspaceId:   entry.workspaceId,
     contentHtml:  dbRow.content_html ?? '',
     positionX:    dbRow.position_x,
     positionY:    dbRow.position_y,

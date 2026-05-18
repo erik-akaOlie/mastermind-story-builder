@@ -375,7 +375,7 @@ export default function App() {
           // grouped moveCard rollback but per-node.
           useUndoStore.getState().recordAction({
             type: ACTION_TYPES.MOVE_TEXT_NODE,
-            campaignId: activeWorkspaceId,
+            workspaceId: activeWorkspaceId,
             label: 'Move text',
             timestamp: new Date().toISOString(),
             textNodeId: n.id,
@@ -401,7 +401,7 @@ export default function App() {
 
     useUndoStore.getState().recordAction({
       type: ACTION_TYPES.MOVE_CARD,
-      campaignId: activeWorkspaceId,
+      workspaceId: activeWorkspaceId,
       label: cardMoves.length === 1 ? 'Move card' : `Move ${cardMoves.length} cards`,
       timestamp: new Date().toISOString(),
       cards: cardMoves,
@@ -478,7 +478,7 @@ export default function App() {
     }
     try {
       const newNode = await dbCreateNode({
-        campaignId: activeWorkspaceId,
+        workspaceId: activeWorkspaceId,
         typeId,
         typeKey,
         label: '',
@@ -502,7 +502,7 @@ export default function App() {
       // the inputs that recreate the card on redo (with explicit id).
       useUndoStore.getState().recordAction({
         type: ACTION_TYPES.CREATE_CARD,
-        campaignId: activeWorkspaceId,
+        workspaceId: activeWorkspaceId,
         label: 'Add card',
         timestamp: new Date().toISOString(),
         cardId: newNode.id,
@@ -534,7 +534,7 @@ export default function App() {
   const addTextNode = useCallback(async (flowPos) => {
     try {
       const newTextNode = await dbCreateTextNode({
-        campaignId: activeWorkspaceId,
+        workspaceId: activeWorkspaceId,
         contentHtml: '',
         positionX: flowPos.x,
         positionY: flowPos.y,
@@ -551,13 +551,13 @@ export default function App() {
       // createTextNode writes; redo replays them via createTextNode({ id }).
       useUndoStore.getState().recordAction({
         type: ACTION_TYPES.CREATE_TEXT_NODE,
-        campaignId: activeWorkspaceId,
+        workspaceId: activeWorkspaceId,
         label: 'Add text',
         timestamp: new Date().toISOString(),
         textNodeId: newTextNode.id,
         dbRow: {
           id:           newTextNode.id,
-          campaign_id:  activeWorkspaceId,
+          workspace_id:  activeWorkspaceId,
           content_html: '',
           position_x:   flowPos.x,
           position_y:   flowPos.y,
@@ -700,7 +700,7 @@ export default function App() {
     addConnections.forEach(({ id, nodeId: targetId }) => {
       dbCreateConnection({
         id,
-        campaignId: activeWorkspaceId,
+        workspaceId: activeWorkspaceId,
         sourceNodeId: nodeId,
         targetNodeId: targetId,
       })
@@ -719,7 +719,7 @@ export default function App() {
     if (source.type === 'textNode') {
       try {
         const duplicate = await dbCreateTextNode({
-          campaignId:  activeWorkspaceId,
+          workspaceId:  activeWorkspaceId,
           contentHtml: source.data.text,
           positionX:   source.position.x + 40,
           positionY:   source.position.y + 40,
@@ -743,7 +743,7 @@ export default function App() {
     }
     try {
       const duplicate = await dbCreateNode({
-        campaignId: activeWorkspaceId,
+        workspaceId: activeWorkspaceId,
         typeId,
         typeKey: source.data.type,
         label: source.data.label,
@@ -783,7 +783,7 @@ export default function App() {
       // restoreCardWithDependents path.
       const dbRow = {
         id:           target.id,
-        campaign_id:  activeWorkspaceId,
+        workspace_id:  activeWorkspaceId,
         content_html: target.data.text ?? '',
         position_x:   target.position.x,
         position_y:   target.position.y,
@@ -798,7 +798,7 @@ export default function App() {
 
       useUndoStore.getState().recordAction({
         type: ACTION_TYPES.DELETE_TEXT_NODE,
-        campaignId: activeWorkspaceId,
+        workspaceId: activeWorkspaceId,
         label: 'Delete text',
         timestamp: new Date().toISOString(),
         textNodeId: target.id,
@@ -817,7 +817,7 @@ export default function App() {
     const snapshot = buildDeleteCardSnapshot(nodeId, {
       nodes,
       edges,
-      campaignId: activeWorkspaceId,
+      workspaceId: activeWorkspaceId,
       typeIdByKey: useTypeStore.getState().idByKey,
     })
 
@@ -828,7 +828,7 @@ export default function App() {
     if (snapshot) {
       useUndoStore.getState().recordAction({
         type: ACTION_TYPES.DELETE_CARD,
-        campaignId: activeWorkspaceId,
+        workspaceId: activeWorkspaceId,
         label: `Delete "${snapshot.dbCardRow.label || 'card'}"`,
         timestamp: new Date().toISOString(),
         dbCardRow:        snapshot.dbCardRow,

@@ -396,7 +396,7 @@ export default function EditModal({
         if (e.kind === 'editCardField') {
           useUndoStore.getState().recordAction({
             type: ACTION_TYPES.EDIT_CARD_FIELD,
-            campaignId: activeWorkspaceId,
+            workspaceId: activeWorkspaceId,
             label: `Edit ${FIELD_LABELS[e.field]}`,
             timestamp: isoTs,
             cardId: node.id,
@@ -407,7 +407,7 @@ export default function EditModal({
         } else if (e.kind === 'addConnection') {
           useUndoStore.getState().recordAction({
             type: ACTION_TYPES.ADD_CONNECTION,
-            campaignId: activeWorkspaceId,
+            workspaceId: activeWorkspaceId,
             label: 'Add connection',
             timestamp: isoTs,
             connectionId: e.connectionId,
@@ -417,7 +417,7 @@ export default function EditModal({
         } else if (e.kind === 'removeConnection') {
           useUndoStore.getState().recordAction({
             type: ACTION_TYPES.REMOVE_CONNECTION,
-            campaignId: activeWorkspaceId,
+            workspaceId: activeWorkspaceId,
             label: 'Remove connection',
             timestamp: isoTs,
             connectionId: e.connectionId,
@@ -427,7 +427,7 @@ export default function EditModal({
         } else if (e.kind === 'addListItem') {
           useUndoStore.getState().recordAction({
             type: ACTION_TYPES.ADD_LIST_ITEM,
-            campaignId: activeWorkspaceId,
+            workspaceId: activeWorkspaceId,
             label: `Add ${LIST_ITEM_NOUNS[e.field] || 'item'}`,
             timestamp: isoTs,
             cardId: node.id,
@@ -438,7 +438,7 @@ export default function EditModal({
         } else if (e.kind === 'removeListItem') {
           useUndoStore.getState().recordAction({
             type: ACTION_TYPES.REMOVE_LIST_ITEM,
-            campaignId: activeWorkspaceId,
+            workspaceId: activeWorkspaceId,
             label: `Remove ${LIST_ITEM_NOUNS[e.field] || 'item'}`,
             timestamp: isoTs,
             cardId: node.id,
@@ -449,7 +449,7 @@ export default function EditModal({
         } else if (e.kind === 'editListItem') {
           useUndoStore.getState().recordAction({
             type: ACTION_TYPES.EDIT_LIST_ITEM,
-            campaignId: activeWorkspaceId,
+            workspaceId: activeWorkspaceId,
             label: `Edit ${LIST_ITEM_NOUNS[e.field] || 'item'}`,
             timestamp: isoTs,
             cardId: node.id,
@@ -461,7 +461,7 @@ export default function EditModal({
         } else if (e.kind === 'reorderListItem') {
           useUndoStore.getState().recordAction({
             type: ACTION_TYPES.REORDER_LIST_ITEM,
-            campaignId: activeWorkspaceId,
+            workspaceId: activeWorkspaceId,
             label: `Reorder ${LIST_ITEM_NOUNS[e.field] || 'item'}`,
             timestamp: isoTs,
             cardId: node.id,
@@ -522,7 +522,7 @@ export default function EditModal({
             TypeIcon={TypeIcon}
             thumbnail={thumbnail}
             setThumbnail={setThumbnail}
-            campaignId={activeWorkspaceId}
+            workspaceId={activeWorkspaceId}
             onClose={handleClose}
             onCreateNewType={() => setShowCreateTypeModal(true)}
           />
@@ -564,7 +564,7 @@ export default function EditModal({
               items={media}
               onChange={setMedia}
               cardId={node.id}
-              campaignId={activeWorkspaceId}
+              workspaceId={activeWorkspaceId}
               slug={title || node.data.label}
               {...mediaCallbacks}
             />

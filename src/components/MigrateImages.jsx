@@ -5,11 +5,11 @@
 // and into Supabase Storage per ADR-0005. Visited at /#migrate.
 //
 // Flow:
-//   1. Scan every campaign the signed-in user owns (RLS scopes the queries).
+//   1. Scan every workspace the signed-in user owns (RLS scopes the queries).
 //   2. Collect avatars (nodes.avatar_url) and inspiration entries
 //      (node_sections.content for kind='media') that still hold base64 strings.
 //   3. On click, for each item: decode → transcode to two WebP variants →
-//      upload to card-media → rewrite the DB reference to the new path.
+//      upload to workspace-media → rewrite the DB reference to the new path.
 //   4. Avatars become a plain path string in nodes.avatar_url.
 //      Inspiration entries become { path, alt, uploaded_at } objects in the
 //      JSONB media array (per ADR-0005).
@@ -29,7 +29,7 @@ import {
   transcodeImage,
 } from '../lib/imageStorage.js'
 
-const BUCKET = 'card-media'
+const BUCKET = 'workspace-media'
 const SYSTEM_BLUE = '#0284C7'
 
 export default function MigrateImages() {
@@ -86,11 +86,11 @@ export default function MigrateImages() {
         </h1>
         <p className="text-sm text-gray-600 mb-6">
           Moves any image still stored as base64 inside the database into the
-          <code className="mx-1 px-1 py-0.5 bg-gray-100 rounded text-xs">card-media</code>
+          <code className="mx-1 px-1 py-0.5 bg-gray-100 rounded text-xs">workspace-media</code>
           bucket. Safe to run; safe to re-run.
         </p>
 
-        {scanning && <Status text="Scanning your campaigns…" />}
+        {scanning && <Status text="Scanning your workspaces…" />}
 
         {scanError && (
           <ErrorBox
@@ -230,19 +230,19 @@ function formatBytes(n) {
 // ============================================================================
 
 async function scan() {
-  // RLS limits these to campaigns/nodes/sections the user owns.
-  const { data: campaigns, error: campErr } = await supabase
-    .from('campaigns')
+  // RLS limits these to workspaces/nodes/sections the user owns.
+  const { data: workspaces, error: workspacesErr } = await supabase
+    .from('workspaces')
     .select('id')
-  if (campErr) throw campErr
-  if (!campaigns || campaigns.length === 0) return []
+  if (workspacesErr) throw workspacesErr
+  if (!workspaces || workspaces.length === 0) return []
 
-  const campaignIds = campaigns.map((c) => c.id)
+  const workspaceIds = workspaces.map((c) => c.id)
 
   const { data: nodeRows, error: nodesErr } = await supabase
     .from('nodes')
-    .select('id, label, avatar_url, campaign_id')
-    .in('campaign_id', campaignIds)
+    .select('id, label, avatar_url, workspace_id')
+    .in('workspace_id', workspaceIds)
   if (nodesErr) throw nodesErr
 
   const nodeIds = nodeRows.map((n) => n.id)
@@ -265,7 +265,7 @@ async function scan() {
     if (isBase64DataUri(n.avatar_url)) {
       items.push({
         kind: 'avatar',
-        campaignId: n.campaign_id,
+        workspaceId: n.workspace_id,
         nodeId: n.id,
         label: n.label,
         base64: n.avatar_url,
@@ -282,7 +282,7 @@ async function scan() {
         if (!node) return
         items.push({
           kind: 'media',
-          campaignId: node.campaign_id,
+          workspaceId: node.workspace_id,
           nodeId: s.node_id,
           sectionId: s.id,
           indexInArray,
@@ -320,7 +320,7 @@ async function migrateOne(item) {
   // base64 source is preserved for a retry.
   for (const [variant, b] of Object.entries(variants)) {
     const path = buildImagePath({
-      campaignId: item.campaignId,
+      workspaceId: item.workspaceId,
       cardId: item.nodeId,
       section,
       slug,
@@ -335,7 +335,7 @@ async function migrateOne(item) {
   }
 
   const fullPath = buildImagePath({
-    campaignId: item.campaignId,
+    workspaceId: item.workspaceId,
     cardId: item.nodeId,
     section,
     slug,

@@ -44,7 +44,7 @@ export async function applyForward(entry, { setNodes } = {}) {
 
   const reactNode = await createNode({
     id:         cardId,
-    campaignId: entry.campaignId,
+    workspaceId: entry.workspaceId,
     typeId:     dbRow.typeId,
     typeKey:    dbRow.typeKey,
     label:      dbRow.label,

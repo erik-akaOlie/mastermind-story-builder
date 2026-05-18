@@ -9,13 +9,13 @@ import { supabase } from './supabase.js'
 import { persistWrite } from './errorReporting.js'
 
 // ----------------------------------------------------------------------------
-// Load all connections for a campaign, shaped as React Flow edges.
+// Load all connections for a workspace, shaped as React Flow edges.
 // ----------------------------------------------------------------------------
-export async function loadConnections(campaignId) {
+export async function loadConnections(workspaceId) {
   const { data, error } = await supabase
     .from('connections')
     .select('*')
-    .eq('campaign_id', campaignId)
+    .eq('workspace_id', workspaceId)
   if (error) throw error
 
   return data.map((c) => ({
@@ -34,10 +34,10 @@ export async function loadConnections(campaignId) {
 // removed via undo) or undoing removeConnection. Without `id`, Postgres
 // assigns a fresh one.
 // ----------------------------------------------------------------------------
-export async function createConnection({ id, campaignId, sourceNodeId, targetNodeId }) {
+export async function createConnection({ id, workspaceId, sourceNodeId, targetNodeId }) {
   return persistWrite(async () => {
     const insertRow = {
-      campaign_id:    campaignId,
+      workspace_id:    workspaceId,
       source_node_id: sourceNodeId,
       target_node_id: targetNodeId,
     }

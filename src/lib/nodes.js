@@ -27,7 +27,7 @@ const SECTION_KINDS = ['narrative', 'hidden_lore', 'dm_notes', 'media']
 // Legacy data is `string[]`. We normalize lazily on read: any item that
 // arrives as a plain string gets a fresh UUID assigned right here. Those IDs
 // are NOT persisted on read alone (would cause a write storm on cold load
-// of a legacy campaign). They get persisted naturally the next time the user
+// of a legacy workspace). They get persisted naturally the next time the user
 // makes any edit to that card — auto-save then writes the structured form,
 // from which point IDs are stable across sessions.
 //
@@ -62,18 +62,18 @@ export function normalizeBullets(content) {
 }
 
 // ----------------------------------------------------------------------------
-// Load all card nodes + their sections for a campaign.
+// Load all card nodes + their sections for a workspace.
 // Returns React-shaped objects: { id, position, data: { label, type, storyNotes, ... } }
 // The caller still needs the node_types lookup to resolve type_id → type key.
 // ----------------------------------------------------------------------------
-export async function loadNodes(campaignId, nodeTypesById) {
+export async function loadNodes(workspaceId, nodeTypesById) {
   const [{ data: nodeRows, error: nodesErr }, { data: sectionRows, error: secErr }] =
     await Promise.all([
-      supabase.from('nodes').select('*').eq('campaign_id', campaignId),
+      supabase.from('nodes').select('*').eq('workspace_id', workspaceId),
       supabase
         .from('node_sections')
-        .select('*, node:nodes!inner(campaign_id)')
-        .eq('node.campaign_id', campaignId),
+        .select('*, node:nodes!inner(workspace_id)')
+        .eq('node.workspace_id', workspaceId),
     ])
 
   if (nodesErr) throw nodesErr
@@ -100,7 +100,7 @@ export async function loadNodes(campaignId, nodeTypesById) {
 // ----------------------------------------------------------------------------
 export async function createNode({
   id,
-  campaignId,
+  workspaceId,
   typeId,
   typeKey,
   label = '',
@@ -115,7 +115,7 @@ export async function createNode({
 }) {
   return persistWrite(async () => {
     const insertRow = {
-      campaign_id: campaignId,
+      workspace_id: workspaceId,
       type_id: typeId,
       label,
       summary,
@@ -194,13 +194,13 @@ export async function deleteNode(id) {
 //
 // Returns null if the card isn't in local state.
 // ----------------------------------------------------------------------------
-export function buildDeleteCardSnapshot(cardId, { nodes, edges, campaignId, typeIdByKey }) {
+export function buildDeleteCardSnapshot(cardId, { nodes, edges, workspaceId, typeIdByKey }) {
   const node = nodes.find((n) => n.id === cardId)
   if (!node) return null
 
   const dbCardRow = {
     id:          node.id,
-    campaign_id: campaignId,
+    workspace_id: workspaceId,
     type_id:     typeIdByKey?.[node.data.type] ?? null,
     label:       node.data.label   ?? '',
     summary:     node.data.summary ?? '',
@@ -220,7 +220,7 @@ export function buildDeleteCardSnapshot(cardId, { nodes, edges, campaignId, type
     .filter((e) => e.source === cardId || e.target === cardId)
     .map((e) => ({
       id:             e.id,
-      campaign_id:    campaignId,
+      workspace_id:    workspaceId,
       source_node_id: e.source,
       target_node_id: e.target,
     }))
