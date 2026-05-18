@@ -103,7 +103,7 @@ describe('computeMinZoom', () => {
       .toBe(DEFAULT_MIN_ZOOM)
   })
 
-  it('returns DEFAULT_MIN_ZOOM for a single-node campaign', () => {
+  it('returns DEFAULT_MIN_ZOOM for a single-node workspace', () => {
     const nodes = [{ id: 'a', position: { x: 0, y: 0 }, width: 256, height: 180 }]
     expect(computeMinZoom({ nodes, viewportWidth: VW, viewportHeight: VH }))
       .toBe(DEFAULT_MIN_ZOOM)
@@ -118,7 +118,7 @@ describe('computeMinZoom', () => {
       .toBe(DEFAULT_MIN_ZOOM)
   })
 
-  it('returns a value below DEFAULT_MIN_ZOOM for a wide-spread campaign', () => {
+  it('returns a value below DEFAULT_MIN_ZOOM for a wide-spread workspace', () => {
     const nodes = [
       { id: 'a', position: { x: 0,    y: 0    }, width: 256, height: 180 },
       { id: 'b', position: { x: 5000, y: 3000 }, width: 256, height: 180 },

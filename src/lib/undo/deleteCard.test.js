@@ -29,7 +29,7 @@ beforeEach(() => {
 
 const dbCardRow = {
   id:          'card-doomed',
-  campaign_id: 'c1',
+  workspace_id: 'c1',
   type_id:     'type-character-uuid',
   label:       'Strahd',
   summary:     'Vampire lord',
@@ -44,11 +44,11 @@ const dbSectionRows = [
   { node_id: 'card-doomed', kind: 'media',       content: [], sort_order: 3 },
 ]
 const dbConnectionRows = [
-  { id: 'edge-1', campaign_id: 'c1', source_node_id: 'card-doomed', target_node_id: 'ireena' },
+  { id: 'edge-1', workspace_id: 'c1', source_node_id: 'card-doomed', target_node_id: 'ireena' },
 ]
 const deleteEntry = (overrides = {}) => ({
   type: ACTION_TYPES.DELETE_CARD,
-  campaignId: 'c1',
+  workspaceId: 'c1',
   label: 'Delete "Strahd"',
   timestamp: '2026-04-30T17:00:00.000Z',
   dbCardRow,

@@ -39,7 +39,7 @@ const textNode = (id, overrides = {}) => ({
 
 const tnDbRow = (overrides = {}) => ({
   id:           'tn-1',
-  campaign_id:  'c1',
+  workspace_id:  'c1',
   content_html: '<p>Strahd notes</p>',
   position_x:   100,
   position_y:   200,
@@ -53,7 +53,7 @@ const tnDbRow = (overrides = {}) => ({
 describe('deleteTextNode', () => {
   const entry = {
     type: ACTION_TYPES.DELETE_TEXT_NODE,
-    campaignId: 'c1',
+    workspaceId: 'c1',
     label: 'Delete text',
     timestamp: '2026-05-01T00:00:00Z',
     textNodeId: 'tn-1',

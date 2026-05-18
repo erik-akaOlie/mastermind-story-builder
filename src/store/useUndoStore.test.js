@@ -58,7 +58,7 @@ const KEY = 'mastermind:undo:u1:c1'
 const s = () => useUndoStore.getState()
 
 const setScope = (overrides = {}) =>
-  s().setScope({ userId: 'u1', campaignId: 'c1', ...overrides })
+  s().setScope({ userId: 'u1', workspaceId: 'c1', ...overrides })
 
 beforeEach(() => {
   sessionStorage.clear()
@@ -75,7 +75,7 @@ beforeEach(() => {
   // Reset store to a clean slate between tests.
   useUndoStore.setState({
     userId: null,
-    campaignId: null,
+    workspaceId: null,
     past: [],
     future: [],
   })
@@ -325,7 +325,7 @@ describe('useUndoStore — setScope hydration', () => {
     expect(s().future).toEqual([A])
   })
 
-  it('switching campaignId clears the in-memory stack and re-hydrates from the new key', () => {
+  it('switching workspaceId clears the in-memory stack and re-hydrates from the new key', () => {
     sessionStorage.setItem(
       'mastermind:undo:u1:c1',
       JSON.stringify({ past: [A], future: [] }),
@@ -335,10 +335,10 @@ describe('useUndoStore — setScope hydration', () => {
       JSON.stringify({ past: [B], future: [] }),
     )
 
-    setScope({ campaignId: 'c1' })
+    setScope({ workspaceId: 'c1' })
     expect(s().past).toEqual([A])
 
-    setScope({ campaignId: 'c2' })
+    setScope({ workspaceId: 'c2' })
     expect(s().past).toEqual([B])
   })
 
@@ -360,11 +360,11 @@ describe('useUndoStore — setScope hydration', () => {
   })
 
   it('switching to a fresh scope produces empty stacks even if the prior scope had entries', () => {
-    setScope({ campaignId: 'c1' })
+    setScope({ workspaceId: 'c1' })
     s().recordAction(A)
     expect(s().past).toEqual([A])
 
-    setScope({ campaignId: 'c2' })
+    setScope({ workspaceId: 'c2' })
     expect(s().past).toEqual([])
     expect(s().future).toEqual([])
   })
@@ -402,7 +402,7 @@ describe('useUndoStore — clear', () => {
       'mastermind:undo:u1:c2',
       JSON.stringify({ past: [B], future: [] }),
     )
-    setScope({ campaignId: 'c1' })
+    setScope({ workspaceId: 'c1' })
     s().recordAction(A)
 
     s().clear()
@@ -499,7 +499,7 @@ describe('useUndoStore — toasts on undo / redo outcomes', () => {
 // first run, so a refreshed tab continues with the same undo history.
 describe('useUndoStore — F5 rehydrate end-to-end', () => {
   it('records actions, simulates a refresh, and undo still works on the rehydrated stack', async () => {
-    // 1. Record two actions while signed in to a campaign.
+    // 1. Record two actions while signed in to a workspace.
     setScope()
     s().recordAction(A)
     s().recordAction(B)
@@ -510,18 +510,18 @@ describe('useUndoStore — F5 rehydrate end-to-end', () => {
     // 2. Simulate F5: blow away in-memory state. (sessionStorage survives a
     // refresh; module-level Zustand state does not.) After this point the
     // store looks the same as it does immediately after the page reloads,
-    // before App.jsx → useCampaignData → setScope runs.
+    // before App.jsx → useWorkspaceData → setScope runs.
     useUndoStore.setState({
       userId: null,
-      campaignId: null,
+      workspaceId: null,
       past: [],
       future: [],
     })
     expect(s().past).toEqual([])
     expect(s().future).toEqual([])
 
-    // 3. App boots back up, useCampaignData calls setScope with the same
-    // (userId, campaignId). The store rehydrates from sessionStorage.
+    // 3. App boots back up, useWorkspaceData calls setScope with the same
+    // (userId, workspaceId). The store rehydrates from sessionStorage.
     setScope()
     expect(s().past).toEqual([A, B])
     expect(s().future).toEqual([])
@@ -542,7 +542,7 @@ describe('useUndoStore — F5 rehydrate end-to-end', () => {
 // user signing in next on this tab can't inherit history.
 describe('useUndoStore — clearAllForUser', () => {
   it('empties the in-memory stack regardless of current scope', () => {
-    setScope({ userId: 'u1', campaignId: 'c1' })
+    setScope({ userId: 'u1', workspaceId: 'c1' })
     s().recordAction(A)
     s().recordAction(B)
 
@@ -551,16 +551,16 @@ describe('useUndoStore — clearAllForUser', () => {
     expect(s().past).toEqual([])
     expect(s().future).toEqual([])
     expect(s().userId).toBeNull()
-    expect(s().campaignId).toBeNull()
+    expect(s().workspaceId).toBeNull()
   })
 
-  it('removes EVERY sessionStorage entry for that user across campaigns', () => {
-    // Pre-populate two campaigns' worth of history for u1.
+  it('removes EVERY sessionStorage entry for that user across workspaces', () => {
+    // Pre-populate two workspaces' worth of history for u1.
     sessionStorage.setItem('mastermind:undo:u1:c1', JSON.stringify({ past: [A], future: [] }))
     sessionStorage.setItem('mastermind:undo:u1:c2', JSON.stringify({ past: [B], future: [] }))
     sessionStorage.setItem('mastermind:undo:u1:c3', JSON.stringify({ past: [], future: [A] }))
 
-    setScope({ userId: 'u1', campaignId: 'c1' })
+    setScope({ userId: 'u1', workspaceId: 'c1' })
     s().clearAllForUser('u1')
 
     expect(sessionStorage.getItem('mastermind:undo:u1:c1')).toBeNull()

@@ -52,7 +52,7 @@ vi.mock('./nodes.js', async () => {
 
     createNode: vi.fn(async (args) => {
       const {
-        id, campaignId, typeId, typeKey,
+        id, workspaceId, typeId, typeKey,
         label = '', summary = '', avatarUrl = null,
         positionX = 0, positionY = 0,
         storyNotes = [], hiddenLore = [], dmNotes = [], media = [],
@@ -60,7 +60,7 @@ vi.mock('./nodes.js', async () => {
       const newId = id || `mock-uuid-${Math.random().toString(36).slice(2)}`
       const row = {
         id:           newId,
-        campaign_id:  campaignId,
+        workspace_id:  workspaceId,
         type_id:      typeId,
         label, summary,
         avatar_url:   avatarUrl,
@@ -119,11 +119,11 @@ vi.mock('./nodes.js', async () => {
 })
 
 vi.mock('./connections.js', () => ({
-  createConnection: vi.fn(async ({ id, campaignId, sourceNodeId, targetNodeId }) => {
+  createConnection: vi.fn(async ({ id, workspaceId, sourceNodeId, targetNodeId }) => {
     const newId = id || `mock-edge-${Math.random().toString(36).slice(2)}`
     const row = {
       id:             newId,
-      campaign_id:    campaignId,
+      workspace_id:    workspaceId,
       source_node_id: sourceNodeId,
       target_node_id: targetNodeId,
     }
@@ -145,7 +145,7 @@ vi.mock('./textNodes.js', async () => {
       const newId = args.id || `mock-tn-${Math.random().toString(36).slice(2)}`
       const row = {
         id:           newId,
-        campaign_id:  args.campaignId,
+        workspace_id:  args.workspaceId,
         content_html: args.contentHtml ?? '',
         position_x:   args.positionX,
         position_y:   args.positionY,
@@ -200,7 +200,7 @@ import { useUndoStore } from '../store/useUndoStore.js'
 
 const TYPE_ID  = 'type-character-uuid'
 const TYPE_KEY = 'character'
-const CAMPAIGN = 'c1'
+const WORKSPACE = 'c1'
 
 // Mutable React-state holder. Mirrors the (nodes, edges, setNodes, setEdges)
 // quartet App.jsx passes to the dispatcher via useUndoShortcuts.
@@ -264,7 +264,7 @@ function seedCard(rs, {
   storyNotes = [], hiddenLore = [], dmNotes = [], media = [],
 }) {
   const dbRow = {
-    id, campaign_id: CAMPAIGN, type_id: TYPE_ID,
+    id, workspace_id: WORKSPACE, type_id: TYPE_ID,
     label, summary, avatar_url: avatarUrl,
     position_x: positionX, position_y: positionY,
   }
@@ -286,7 +286,7 @@ function seedCard(rs, {
 
 function seedConnection(rs, { id, sourceNodeId, targetNodeId }) {
   const dbRow = {
-    id, campaign_id: CAMPAIGN,
+    id, workspace_id: WORKSPACE,
     source_node_id: sourceNodeId,
     target_node_id: targetNodeId,
   }
@@ -306,7 +306,7 @@ beforeEach(() => {
     idByKey: { [TYPE_KEY]: TYPE_ID },
   })
   // Reset undo store between tests.
-  useUndoStore.setState({ userId: null, campaignId: null, past: [], future: [] })
+  useUndoStore.setState({ userId: null, workspaceId: null, past: [], future: [] })
   sessionStorage.clear()
 })
 
@@ -324,7 +324,7 @@ describe('round-trip — moveCard', () => {
 
     const entry = {
       type: ACTION_TYPES.MOVE_CARD,
-      campaignId: CAMPAIGN,
+      workspaceId: WORKSPACE,
       label: 'Move 2 cards',
       cards: [
         { cardId: 'card-a', before: { x: 10, y: 20 }, after: { x: 100, y: 200 } },
@@ -404,7 +404,7 @@ describe('round-trip — editCardField', () => {
 
     const entry = {
       type: ACTION_TYPES.EDIT_CARD_FIELD,
-      campaignId: CAMPAIGN,
+      workspaceId: WORKSPACE,
       cardId: 'card-1',
       field,
       before,
@@ -425,7 +425,7 @@ describe('round-trip — editCardField', () => {
     const rs = makeReactState()
     // Seed manually so type_id matches the lookup.
     const dbRow = {
-      id: 'card-1', campaign_id: CAMPAIGN, type_id: 'type-character',
+      id: 'card-1', workspace_id: WORKSPACE, type_id: 'type-character',
       label: 'Strahd', summary: '', avatar_url: null,
       position_x: 0, position_y: 0,
     }
@@ -443,7 +443,7 @@ describe('round-trip — editCardField', () => {
 
     const entry = {
       type: ACTION_TYPES.EDIT_CARD_FIELD,
-      campaignId: CAMPAIGN,
+      workspaceId: WORKSPACE,
       cardId: 'card-1',
       field: 'type',
       before: 'character',
@@ -463,7 +463,7 @@ describe('round-trip — createCard', () => {
     const rs = makeReactState()
     // Forward: simulate addCardNode having just created a card.
     const dbRow = {
-      id: 'created-uuid', campaign_id: CAMPAIGN, type_id: TYPE_ID,
+      id: 'created-uuid', workspace_id: WORKSPACE, type_id: TYPE_ID,
       label: '', summary: '', avatar_url: null, position_x: 100, position_y: 200,
     }
     mockDb.nodes.set('created-uuid', dbRow)
@@ -472,7 +472,7 @@ describe('round-trip — createCard', () => {
 
     const entry = {
       type: ACTION_TYPES.CREATE_CARD,
-      campaignId: CAMPAIGN,
+      workspaceId: WORKSPACE,
       cardId: 'created-uuid',
       dbRow: {
         typeId: TYPE_ID, typeKey: TYPE_KEY,
@@ -525,7 +525,7 @@ describe('round-trip — deleteCard (the discipline test)', () => {
     const snapshot = buildDeleteCardSnapshot('card-doomed', {
       nodes: rs.state.nodes,
       edges: rs.state.edges,
-      campaignId: CAMPAIGN,
+      workspaceId: WORKSPACE,
       typeIdByKey: { [TYPE_KEY]: TYPE_ID },
     })
     expect(snapshot).not.toBeNull()
@@ -543,7 +543,7 @@ describe('round-trip — deleteCard (the discipline test)', () => {
     // Undo: applyInverse rebuilds React shape AND calls restoreCardWithDependents.
     const entry = {
       type: ACTION_TYPES.DELETE_CARD,
-      campaignId: CAMPAIGN,
+      workspaceId: WORKSPACE,
       label: 'Delete "Strahd"',
       ...snapshot,
     }
@@ -563,10 +563,10 @@ describe('round-trip — deleteCard (the discipline test)', () => {
     const snapshot = buildDeleteCardSnapshot('card-doomed', {
       nodes: rs.state.nodes,
       edges: rs.state.edges,
-      campaignId: CAMPAIGN,
+      workspaceId: WORKSPACE,
       typeIdByKey: { [TYPE_KEY]: TYPE_ID },
     })
-    const entry = { type: ACTION_TYPES.DELETE_CARD, campaignId: CAMPAIGN, ...snapshot }
+    const entry = { type: ACTION_TYPES.DELETE_CARD, workspaceId: WORKSPACE, ...snapshot }
 
     // Forward (= the original delete).
     await applyForward(entry, rs.ctx())
@@ -587,11 +587,11 @@ describe('chained operation through useUndoStore', () => {
     // This is the exact sequence that broke before the empty-label fold fix.
     // It uses the REAL store + REAL dispatcher to lock the regression in.
     const rs = makeReactState()
-    useUndoStore.getState().setScope({ userId: 'u1', campaignId: CAMPAIGN })
+    useUndoStore.getState().setScope({ userId: 'u1', workspaceId: WORKSPACE })
 
     // 1) Forward: create empty card.
     const dbRow = {
-      id: 'new-card', campaign_id: CAMPAIGN, type_id: TYPE_ID,
+      id: 'new-card', workspace_id: WORKSPACE, type_id: TYPE_ID,
       label: '', summary: '', avatar_url: null, position_x: 0, position_y: 0,
     }
     mockDb.nodes.set('new-card', dbRow)
@@ -599,7 +599,7 @@ describe('chained operation through useUndoStore', () => {
     rs.setNodes(() => [dbNodeToReactFlow(dbRow, mockDb.node_sections.get('new-card'), { [TYPE_ID]: { key: TYPE_KEY } })])
     useUndoStore.getState().recordAction({
       type: ACTION_TYPES.CREATE_CARD,
-      campaignId: CAMPAIGN,
+      workspaceId: WORKSPACE,
       cardId: 'new-card',
       dbRow: { typeId: TYPE_ID, typeKey: TYPE_KEY, label: '', summary: '', avatarUrl: null, positionX: 0, positionY: 0 },
     })
@@ -611,7 +611,7 @@ describe('chained operation through useUndoStore', () => {
     mockDb.nodes.get('new-card').label = 'My Title'
     useUndoStore.getState().recordAction({
       type: ACTION_TYPES.EDIT_CARD_FIELD,
-      campaignId: CAMPAIGN,
+      workspaceId: WORKSPACE,
       cardId: 'new-card',
       field: 'label',
       before: '',          // raw, post-fold-fix — used to be 'Untitled'
@@ -622,7 +622,7 @@ describe('chained operation through useUndoStore', () => {
     const snapshot = buildDeleteCardSnapshot('new-card', {
       nodes: rs.state.nodes,
       edges: rs.state.edges,
-      campaignId: CAMPAIGN,
+      workspaceId: WORKSPACE,
       typeIdByKey: { [TYPE_KEY]: TYPE_ID },
     })
     rs.setNodes((nds) => nds.filter((n) => n.id !== 'new-card'))
@@ -630,7 +630,7 @@ describe('chained operation through useUndoStore', () => {
     mockDb.node_sections.delete('new-card')
     useUndoStore.getState().recordAction({
       type: ACTION_TYPES.DELETE_CARD,
-      campaignId: CAMPAIGN,
+      workspaceId: WORKSPACE,
       ...snapshot,
     })
 
@@ -688,13 +688,13 @@ describe('round-trip — addConnection / removeConnection', () => {
     const edge = { id: 'edge-1', source: 'card-a', target: 'card-b', type: 'floating' }
     rs.setEdges(() => [edge])
     mockDb.connections.set('edge-1', {
-      id: 'edge-1', campaign_id: CAMPAIGN,
+      id: 'edge-1', workspace_id: WORKSPACE,
       source_node_id: 'card-a', target_node_id: 'card-b',
     })
 
     const entry = {
       type: ACTION_TYPES.ADD_CONNECTION,
-      campaignId: CAMPAIGN,
+      workspaceId: WORKSPACE,
       connectionId: 'edge-1',
       sourceNodeId: 'card-a',
       targetNodeId: 'card-b',
@@ -722,7 +722,7 @@ describe('round-trip — addConnection / removeConnection', () => {
 
     const entry = {
       type: ACTION_TYPES.REMOVE_CONNECTION,
-      campaignId: CAMPAIGN,
+      workspaceId: WORKSPACE,
       connectionId: 'edge-1',
       sourceNodeId: 'card-a',
       targetNodeId: 'card-b',
@@ -744,12 +744,12 @@ describe('round-trip — addConnection / removeConnection', () => {
 
     const entry = {
       type: ACTION_TYPES.REMOVE_CONNECTION,
-      campaignId: CAMPAIGN,
+      workspaceId: WORKSPACE,
       connectionId: 'edge-1',
       sourceNodeId: 'card-a',     // gone
       targetNodeId: 'card-b',
     }
-    useUndoStore.getState().setScope({ userId: 'u1', campaignId: CAMPAIGN })
+    useUndoStore.getState().setScope({ userId: 'u1', workspaceId: WORKSPACE })
     useUndoStore.getState().recordAction(entry)
 
     const result = await useUndoStore.getState().undo(rs.ctx())
@@ -765,13 +765,13 @@ describe('drift refusal at the dispatcher level', () => {
 
     const entry = {
       type: ACTION_TYPES.EDIT_CARD_FIELD,
-      campaignId: CAMPAIGN,
+      workspaceId: WORKSPACE,
       cardId: 'card-1',
       field: 'summary',
       before: 'old',
       after:  'new',          // current state is 'drifted text', not 'new'
     }
-    useUndoStore.getState().setScope({ userId: 'u1', campaignId: CAMPAIGN })
+    useUndoStore.getState().setScope({ userId: 'u1', workspaceId: WORKSPACE })
     useUndoStore.getState().recordAction(entry)
 
     const result = await useUndoStore.getState().undo(rs.ctx())
@@ -789,11 +789,11 @@ describe('drift refusal at the dispatcher level', () => {
 
     const entry = {
       type: ACTION_TYPES.CREATE_CARD,
-      campaignId: CAMPAIGN,
+      workspaceId: WORKSPACE,
       cardId: 'created-uuid',
       dbRow: { typeId: TYPE_ID, typeKey: TYPE_KEY, label: '', summary: '', avatarUrl: null, positionX: 0, positionY: 0 },
     }
-    useUndoStore.getState().setScope({ userId: 'u1', campaignId: CAMPAIGN })
+    useUndoStore.getState().setScope({ userId: 'u1', workspaceId: WORKSPACE })
     // Park the entry on the future stack as if we'd just undone the create.
     useUndoStore.setState({ past: [], future: [entry] })
 
@@ -842,7 +842,7 @@ describe('round-trip — per-item bullet ops (phase 7c)', () => {
 
     const entry = {
       type: ACTION_TYPES.REMOVE_LIST_ITEM,
-      campaignId: CAMPAIGN, cardId: 'card-1',
+      workspaceId: WORKSPACE, cardId: 'card-1',
       field: 'storyNotes',
       position: 1,
       item: { id: 'b2', value: 'TODO' },
@@ -889,7 +889,7 @@ describe('round-trip — per-item bullet ops (phase 7c)', () => {
 
     const entry = {
       type: ACTION_TYPES.REMOVE_LIST_ITEM,
-      campaignId: CAMPAIGN, cardId: 'card-1',
+      workspaceId: WORKSPACE, cardId: 'card-1',
       field: 'storyNotes',
       position: 0,
       item: { id: 'b1', value: 'first' },
@@ -936,7 +936,7 @@ describe('round-trip — per-item bullet ops (phase 7c)', () => {
 
     const entry = {
       type: ACTION_TYPES.REORDER_LIST_ITEM,
-      campaignId: CAMPAIGN, cardId: 'card-1',
+      workspaceId: WORKSPACE, cardId: 'card-1',
       field: 'storyNotes',
       itemId: 'b1', from: 0, to: 2,
     }
@@ -974,16 +974,16 @@ describe('round-trip — per-item bullet ops (phase 7c)', () => {
     })
 
     // Push the two entries through the live store, then walk back.
-    useUndoStore.getState().setScope({ userId: 'u1', campaignId: CAMPAIGN })
+    useUndoStore.getState().setScope({ userId: 'u1', workspaceId: WORKSPACE })
     useUndoStore.getState().recordAction({
       type: ACTION_TYPES.ADD_LIST_ITEM,
-      campaignId: CAMPAIGN, cardId: 'card-1',
+      workspaceId: WORKSPACE, cardId: 'card-1',
       field: 'storyNotes', position: 1,
       item: { id: 'b-new', value: 'B' },
     })
     useUndoStore.getState().recordAction({
       type: ACTION_TYPES.REORDER_LIST_ITEM,
-      campaignId: CAMPAIGN, cardId: 'card-1',
+      workspaceId: WORKSPACE, cardId: 'card-1',
       field: 'storyNotes', itemId: 'b-new', from: 1, to: 0,
     })
 
@@ -1034,7 +1034,7 @@ describe('round-trip — per-item bullet ops (phase 7c)', () => {
 
     const entry = {
       type: ACTION_TYPES.EDIT_LIST_ITEM,
-      campaignId: CAMPAIGN, cardId: 'card-1',
+      workspaceId: WORKSPACE, cardId: 'card-1',
       field: 'storyNotes',
       itemId: 'b2', before: 'B', after: 'B edited',
     }
@@ -1057,11 +1057,11 @@ describe('round-trip — per-item bullet ops (phase 7c)', () => {
 
     const entry = {
       type: ACTION_TYPES.REMOVE_LIST_ITEM,
-      campaignId: CAMPAIGN, cardId: 'card-1',
+      workspaceId: WORKSPACE, cardId: 'card-1',
       field: 'storyNotes', position: 1,
       item: { id: 'b2', value: 'B' },   // we recorded 'B' but world has 'restored'
     }
-    useUndoStore.getState().setScope({ userId: 'u1', campaignId: CAMPAIGN })
+    useUndoStore.getState().setScope({ userId: 'u1', workspaceId: WORKSPACE })
     useUndoStore.getState().recordAction(entry)
 
     const result = await useUndoStore.getState().undo(rs.ctx())
@@ -1085,7 +1085,7 @@ function seedTextNode(rs, {
   fontSize = 18, align = 'left',
 }) {
   const dbRow = {
-    id, campaign_id: CAMPAIGN,
+    id, workspace_id: WORKSPACE,
     content_html: contentHtml,
     position_x: positionX, position_y: positionY,
     width, height,
@@ -1113,7 +1113,7 @@ describe('round-trip — createTextNode', () => {
     // User added a text node at (50, 50) — simulate the persisted state.
     const tnId = 'tn-1'
     const dbRow = {
-      id: tnId, campaign_id: CAMPAIGN,
+      id: tnId, workspace_id: WORKSPACE,
       content_html: '', position_x: 50, position_y: 50,
       width: 256, height: null, font_size: 18, align: 'left',
     }
@@ -1127,7 +1127,7 @@ describe('round-trip — createTextNode', () => {
 
     const entry = {
       type: ACTION_TYPES.CREATE_TEXT_NODE,
-      campaignId: CAMPAIGN,
+      workspaceId: WORKSPACE,
       textNodeId: tnId,
       dbRow,
     }
@@ -1156,10 +1156,10 @@ describe('round-trip — deleteTextNode', () => {
 
     const entry = {
       type: ACTION_TYPES.DELETE_TEXT_NODE,
-      campaignId: CAMPAIGN,
+      workspaceId: WORKSPACE,
       textNodeId: 'tn-doomed',
       dbRow: {
-        id: 'tn-doomed', campaign_id: CAMPAIGN,
+        id: 'tn-doomed', workspace_id: WORKSPACE,
         content_html: '<p>Strahd notes</p>',
         position_x: 100, position_y: 200,
         width: 320, height: 160, font_size: 24, align: 'center',
@@ -1189,7 +1189,7 @@ describe('round-trip — moveTextNode', () => {
 
     const entry = {
       type: ACTION_TYPES.MOVE_TEXT_NODE,
-      campaignId: CAMPAIGN,
+      workspaceId: WORKSPACE,
       textNodeId: 'tn-1',
       before: { x: 10, y: 20 },
       after:  { x: 100, y: 200 },
@@ -1216,7 +1216,7 @@ describe('round-trip — editTextNode', () => {
 
     const entry = {
       type: ACTION_TYPES.EDIT_TEXT_NODE,
-      campaignId: CAMPAIGN,
+      workspaceId: WORKSPACE,
       textNodeId: 'tn-1',
       before: { text: '<p>old</p>' },
       after:  { text: '<p>new</p>' },
@@ -1241,7 +1241,7 @@ describe('round-trip — editTextNode', () => {
 
     const entry = {
       type: ACTION_TYPES.EDIT_TEXT_NODE,
-      campaignId: CAMPAIGN,
+      workspaceId: WORKSPACE,
       textNodeId: 'tn-1',
       before: { fontSize: 18 },
       after:  { fontSize: 24 },
@@ -1272,7 +1272,7 @@ describe('round-trip — editTextNode', () => {
 
     const entry = {
       type: ACTION_TYPES.EDIT_TEXT_NODE,
-      campaignId: CAMPAIGN,
+      workspaceId: WORKSPACE,
       textNodeId: 'tn-1',
       before: { width: 200, height: 80,  positionX: 100, positionY: 200 },
       after:  { width: 320, height: 120, positionX: 80,  positionY: 200 },
@@ -1287,12 +1287,12 @@ describe('round-trip — editTextNode', () => {
 
     const entry = {
       type: ACTION_TYPES.EDIT_TEXT_NODE,
-      campaignId: CAMPAIGN,
+      workspaceId: WORKSPACE,
       textNodeId: 'tn-1',
       before: { text: '<p>old</p>' },
       after:  { text: '<p>new</p>' },
     }
-    useUndoStore.getState().setScope({ userId: 'u1', campaignId: CAMPAIGN })
+    useUndoStore.getState().setScope({ userId: 'u1', workspaceId: WORKSPACE })
     useUndoStore.getState().recordAction(entry)
 
     const result = await useUndoStore.getState().undo(rs.ctx())

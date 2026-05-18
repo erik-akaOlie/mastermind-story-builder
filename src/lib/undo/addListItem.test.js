@@ -23,7 +23,7 @@ beforeEach(() => {
 
 const listEntry = (overrides = {}) => ({
   type: ACTION_TYPES.ADD_LIST_ITEM,
-  campaignId: 'c1',
+  workspaceId: 'c1',
   cardId: 'card-1',
   field: 'storyNotes',
   ...overrides,

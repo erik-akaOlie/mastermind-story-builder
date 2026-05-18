@@ -38,7 +38,7 @@ const textNode = (id, overrides = {}) => ({
 describe('editTextNode', () => {
   const textOnlyEntry = {
     type: ACTION_TYPES.EDIT_TEXT_NODE,
-    campaignId: 'c1',
+    workspaceId: 'c1',
     textNodeId: 'tn-1',
     before: { text: '<p>old</p>' },
     after:  { text: '<p>new</p>' },
@@ -77,7 +77,7 @@ describe('editTextNode', () => {
   it('handles a multi-field resize entry (width/height + position shift)', async () => {
     const resizeEntry = {
       type: ACTION_TYPES.EDIT_TEXT_NODE,
-      campaignId: 'c1',
+      workspaceId: 'c1',
       textNodeId: 'tn-1',
       before: { width: 200, height: 80,  positionX: 100, positionY: 200 },
       after:  { width: 320, height: 120, positionX: 80,  positionY: 200 },

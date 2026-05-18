@@ -26,7 +26,7 @@ beforeEach(() => {
 
 const editEntry = (overrides = {}) => ({
   type: ACTION_TYPES.EDIT_CARD_FIELD,
-  campaignId: 'c1',
+  workspaceId: 'c1',
   label: 'Edit summary',
   timestamp: '2026-04-30T17:00:00.000Z',
   cardId: 'card-1',

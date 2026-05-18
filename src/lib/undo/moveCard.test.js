@@ -22,7 +22,7 @@ beforeEach(() => {
 
 const singleMove = {
   type: ACTION_TYPES.MOVE_CARD,
-  campaignId: 'c1',
+  workspaceId: 'c1',
   label: 'Move card',
   timestamp: '2026-04-29T17:00:00.000Z',
   cards: [
@@ -41,7 +41,7 @@ const multiMove = {
 
 const legacySingleShape = {
   type: ACTION_TYPES.MOVE_CARD,
-  campaignId: 'c1',
+  workspaceId: 'c1',
   label: 'Move card',
   timestamp: '2026-04-29T17:00:00.000Z',
   cardId: 'a',

@@ -49,7 +49,7 @@ describe('slugify', () => {
 describe('buildImagePath', () => {
   it('composes the exact ADR-0005 path structure', () => {
     const path = buildImagePath({
-      campaignId: 'c8a',
+      workspaceId: 'c8a',
       cardId:     'strahd-uuid',
       section:    'avatar',
       slug:       'strahd-von-zarovich',

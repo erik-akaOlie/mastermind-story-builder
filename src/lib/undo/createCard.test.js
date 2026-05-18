@@ -1,6 +1,6 @@
 // createCard — phase 5.
 // Entry shape: { type, cardId, dbRow: { typeId, typeKey, label, summary,
-// avatarUrl, positionX, positionY }, campaignId, label, timestamp }.
+// avatarUrl, positionX, positionY }, workspaceId, label, timestamp }.
 // Inverse = deleteNode(cardId). Forward = createNode({ id: cardId, ... }).
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -25,7 +25,7 @@ beforeEach(() => {
 
 const createEntry = (overrides = {}) => ({
   type: ACTION_TYPES.CREATE_CARD,
-  campaignId: 'c1',
+  workspaceId: 'c1',
   label: 'Add card',
   timestamp: '2026-04-30T17:00:00.000Z',
   cardId: 'card-new',
@@ -96,7 +96,7 @@ describe('createCard — applyForward', () => {
 
     expect(createNode).toHaveBeenCalledWith({
       id:         'card-new',
-      campaignId: 'c1',
+      workspaceId: 'c1',
       typeId:     'type-character-uuid',
       typeKey:    'character',
       label:      '',

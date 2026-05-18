@@ -20,7 +20,7 @@ beforeEach(() => {
 
 const connectionEntry = (overrides = {}) => ({
   type: ACTION_TYPES.REMOVE_CONNECTION,
-  campaignId: 'c1',
+  workspaceId: 'c1',
   label: 'Remove connection',
   timestamp: '2026-04-30T17:00:00.000Z',
   connectionId: 'edge-1',
@@ -64,7 +64,7 @@ describe('removeConnection — apply*', () => {
     await applyInverse(connectionEntry(), {})
     expect(createConnection).toHaveBeenCalledWith({
       id: 'edge-1',
-      campaignId: 'c1',
+      workspaceId: 'c1',
       sourceNodeId: 'card-a',
       targetNodeId: 'card-b',
     })

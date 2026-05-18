@@ -49,7 +49,7 @@ const textNode = (id, overrides = {}) => ({
 
 const tnDbRow = (overrides = {}) => ({
   id:           'tn-1',
-  campaign_id:  'c1',
+  workspace_id:  'c1',
   content_html: '<p>Strahd notes</p>',
   position_x:   100,
   position_y:   200,
@@ -63,7 +63,7 @@ const tnDbRow = (overrides = {}) => ({
 describe('createTextNode', () => {
   const entry = {
     type: ACTION_TYPES.CREATE_TEXT_NODE,
-    campaignId: 'c1',
+    workspaceId: 'c1',
     label: 'Add text',
     timestamp: '2026-05-01T00:00:00Z',
     textNodeId: 'tn-1',
@@ -102,7 +102,7 @@ describe('createTextNode', () => {
     await applyForward(entry, { setNodes })
     expect(createTextNode).toHaveBeenCalledWith({
       id:           'tn-1',
-      campaignId:   'c1',
+      workspaceId:   'c1',
       contentHtml:  '<p>Strahd notes</p>',
       positionX:    100,
       positionY:    200,

@@ -36,7 +36,7 @@ const textNode = (id, overrides = {}) => ({
 describe('moveTextNode', () => {
   const entry = {
     type: ACTION_TYPES.MOVE_TEXT_NODE,
-    campaignId: 'c1',
+    workspaceId: 'c1',
     textNodeId: 'tn-1',
     before: { x: 10, y: 20 },
     after:  { x: 100, y: 200 },
