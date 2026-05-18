@@ -37,7 +37,7 @@ import { useTypeStore } from '../store/useTypeStore'
 import { useSyncStore } from '../store/useSyncStore.js'
 import { useUndoStore } from '../store/useUndoStore.js'
 import { useAuth } from '../lib/AuthContext.jsx'
-import { ensureBuiltinTypes, getCampaignLastEditedAt } from '../lib/campaigns.js'
+import { ensureBuiltinTypes, getWorkspaceLastEditedAt } from '../lib/workspaces.js'
 import { loadNodes, dbNodeToReactFlow, normalizeBullets } from '../lib/nodes.js'
 import { loadConnections } from '../lib/connections.js'
 import { loadTextNodes, dbTextNodeToReactFlow } from '../lib/textNodes.js'
@@ -87,7 +87,7 @@ export function useCampaignData({ campaignId, setNodes, setEdges }) {
           loadNodes(campaignId, keyById),
           loadConnections(campaignId),
           loadTextNodes(campaignId),
-          getCampaignLastEditedAt(campaignId),
+          getWorkspaceLastEditedAt(campaignId),
         ])
 
         if (cancelled) return

@@ -10,7 +10,7 @@
 // ============================================================================
 
 import { createContext, useContext, useEffect, useState } from 'react'
-import { getCampaign } from './campaigns.js'
+import { getWorkspace } from './workspaces.js'
 
 const ACTIVE_KEY = 'mastermind:activeCampaignId'
 
@@ -45,7 +45,7 @@ export function CampaignProvider({ children }) {
       setActiveCampaign(null)
       return
     }
-    getCampaign(activeCampaignId)
+    getWorkspace(activeCampaignId)
       .then((row) => { if (!cancelled) setActiveCampaign(row) })
       .catch((err) => {
         if (!cancelled) {

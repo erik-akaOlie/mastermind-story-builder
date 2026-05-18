@@ -18,7 +18,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { CaretDown, Check, House } from '@phosphor-icons/react'
 import { useAuth } from '../lib/AuthContext.jsx'
 import { useCampaign } from '../lib/CampaignContext.jsx'
-import { listCampaigns } from '../lib/campaigns.js'
+import { listWorkspaces } from '../lib/workspaces.js'
 import UserAvatar from './UserAvatar.jsx'
 
 export default function UserMenu() {
@@ -37,7 +37,7 @@ export default function UserMenu() {
   useEffect(() => {
     if (!menuOpen) return
     let cancelled = false
-    listCampaigns()
+    listWorkspaces()
       .then((rows) => { if (!cancelled) setCampaigns(rows) })
       .catch((err) => {
         if (!cancelled) {

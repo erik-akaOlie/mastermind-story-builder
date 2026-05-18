@@ -21,11 +21,11 @@ import {
 import { useCampaign } from '../lib/CampaignContext.jsx'
 import UserAvatar from './UserAvatar.jsx'
 import {
-  listCampaigns,
-  createCampaign,
-  updateCampaign,
-  deleteCampaign,
-} from '../lib/campaigns.js'
+  listWorkspaces,
+  createWorkspace,
+  updateWorkspace,
+  deleteWorkspace,
+} from '../lib/workspaces.js'
 
 export default function CampaignPicker() {
   const { setActiveCampaignId } = useCampaign()
@@ -45,7 +45,7 @@ export default function CampaignPicker() {
   const refresh = useCallback(async () => {
     setError(null)
     try {
-      const rows = await listCampaigns()
+      const rows = await listWorkspaces()
       setCampaigns(rows)
     } catch (err) {
       setError(err.message)
@@ -63,12 +63,12 @@ export default function CampaignPicker() {
     if (!newName.trim()) return
     setError(null)
     try {
-      const { campaign } = await createCampaign(newName)
+      const { workspace } = await createWorkspace(newName)
       setNewName('')
       setCreating(false)
       await refresh()
-      // Auto-enter the campaign you just created.
-      setActiveCampaignId(campaign.id)
+      // Auto-enter the workspace you just created.
+      setActiveCampaignId(workspace.id)
     } catch (err) {
       setError(err.message)
     }
@@ -81,7 +81,7 @@ export default function CampaignPicker() {
     }
     setError(null)
     try {
-      await updateCampaign(id, { name: renameValue.trim() })
+      await updateWorkspace(id, { name: renameValue.trim() })
       setRenamingId(null)
       await refresh()
     } catch (err) {
@@ -96,7 +96,7 @@ export default function CampaignPicker() {
     if (!ok) return
     setError(null)
     try {
-      await deleteCampaign(id)
+      await deleteWorkspace(id)
       await refresh()
     } catch (err) {
       setError(err.message)

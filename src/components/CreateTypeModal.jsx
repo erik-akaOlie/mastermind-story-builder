@@ -2,7 +2,7 @@ import { useState, useMemo, useRef, useEffect } from 'react'
 import { X, MagnifyingGlass } from '@phosphor-icons/react'
 import { ICON_REGISTRY, recommendIcons, getIcon } from '../nodes/iconRegistry'
 import { useTypeStore } from '../store/useTypeStore'
-import { createCustomType } from '../lib/campaigns.js'
+import { createCustomType } from '../lib/workspaces.js'
 
 // ── Color math ─────────────────────────────────────────────────────────────
 const hexToRgb = (hex) => {
