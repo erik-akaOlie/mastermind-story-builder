@@ -27,8 +27,14 @@
 
 import { supabase } from './supabase.js'
 
-const BUCKET_WORKSPACE = 'workspace-media'
-const BUCKET_PROFILE  = 'profile-media'
+// Exported as the single source of truth for the bucket names. Consumers
+// (useImageUrl, Profile, UserAvatar) MUST import these constants rather than
+// hardcoding the string — a rename of either bucket should only require
+// editing this file. The 2026-05 campaign -> workspace rename broke
+// because useImageUrl had hardcoded 'card-media' as a default; that
+// regression is what these exported constants exist to prevent.
+export const BUCKET_WORKSPACE = 'workspace-media'
+export const BUCKET_PROFILE   = 'profile-media'
 
 const VARIANTS = {
   thumb: { maxEdge: 256,  quality: 0.4 },

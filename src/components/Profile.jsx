@@ -23,7 +23,7 @@ import { ArrowLeft, WarningCircle, CheckCircle } from '@phosphor-icons/react'
 import { useAuth } from '../lib/AuthContext.jsx'
 import { useProfile } from '../lib/ProfileContext.jsx'
 import { useImageUrl } from '../lib/useImageUrl.js'
-import { profileAvatarPipeline } from '../lib/imageStorage.js'
+import { BUCKET_PROFILE, profileAvatarPipeline } from '../lib/imageStorage.js'
 import { setAvatarPath, clearAvatar } from '../lib/profile.js'
 import UserAvatar from './UserAvatar.jsx'
 import PasswordInput from './PasswordInput.jsx'
@@ -51,7 +51,7 @@ function ProfileContents() {
   const upload = useUploadImage()
 
   // Resolved signed URL for the avatar — null when no avatar set.
-  const avatarUrl = useImageUrl(profile?.avatar_path, { bucket: 'profile-media' })
+  const avatarUrl = useImageUrl(profile?.avatar_path, { bucket: BUCKET_PROFILE })
 
   // Initial fallback (first letter of email, uppercase). Mirrors UserAvatar.
   const initial = (user?.email?.[0] ?? '?').toUpperCase()

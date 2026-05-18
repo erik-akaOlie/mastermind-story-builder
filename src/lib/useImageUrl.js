@@ -12,21 +12,25 @@
 // Signature:
 //   useImageUrl(input, options?)
 //     options.variant — 'full' (default) or 'thumb'; only meaningful for
-//                       card-media paths.
-//     options.bucket  — 'card-media' (default) or 'profile-media'.
+//                       workspace-media paths (where uploads produce two
+//                       variants per image; profile avatars are single-variant).
+//     options.bucket  — BUCKET_WORKSPACE (default) or BUCKET_PROFILE. Import
+//                       these constants from imageStorage.js; do NOT pass
+//                       string literals — see the comment on the exported
+//                       constants for why.
 //
 // Backward compat: passing a plain string as the second argument is treated
 // as { variant: <string> }. Existing call sites continue to work unchanged.
 // ============================================================================
 
 import { useEffect, useState } from 'react'
-import { getImageUrl, isBase64DataUri, isStoragePath } from './imageStorage.js'
+import { BUCKET_WORKSPACE, getImageUrl, isBase64DataUri, isStoragePath } from './imageStorage.js'
 
 export function useImageUrl(input, options = {}) {
   // Accept the legacy string-variant form: useImageUrl(value, 'thumb').
   const opts = typeof options === 'string' ? { variant: options } : options
   const variant = opts.variant ?? 'full'
-  const bucket  = opts.bucket  ?? 'card-media'
+  const bucket  = opts.bucket  ?? BUCKET_WORKSPACE
 
   // Normalize: callers may pass a string or a { path, ... } object.
   const value = typeof input === 'string' ? input : input?.path ?? null

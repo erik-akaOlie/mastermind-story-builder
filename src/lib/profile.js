@@ -16,6 +16,7 @@
 
 import { supabase } from './supabase.js'
 import { persistWrite } from './errorReporting.js'
+import { BUCKET_PROFILE } from './imageStorage.js'
 
 // ----------------------------------------------------------------------------
 // Read the current user's profile row.
@@ -100,7 +101,7 @@ export async function clearAvatar() {
     // 3. Best-effort storage delete (don't fail the operation if this fails)
     if (oldPath) {
       try {
-        await supabase.storage.from('profile-media').remove([oldPath])
+        await supabase.storage.from(BUCKET_PROFILE).remove([oldPath])
       } catch (err) {
         console.warn('[clearAvatar] storage delete failed; orphan left at', oldPath, err)
       }

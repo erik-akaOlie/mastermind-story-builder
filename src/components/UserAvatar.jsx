@@ -22,6 +22,7 @@ import { SignOut, UserCircle } from '@phosphor-icons/react'
 import { useAuth } from '../lib/AuthContext.jsx'
 import { useProfile } from '../lib/ProfileContext.jsx'
 import { useImageUrl } from '../lib/useImageUrl.js'
+import { BUCKET_PROFILE } from '../lib/imageStorage.js'
 
 // Derive the placeholder initial from the user's email.
 function initialFor(user) {
@@ -33,7 +34,7 @@ function initialFor(user) {
 export default function UserAvatar({ menuAlign = 'right' }) {
   const { user, signOut } = useAuth()
   const { profile } = useProfile()
-  const avatarUrl = useImageUrl(profile?.avatar_path, { bucket: 'profile-media' })
+  const avatarUrl = useImageUrl(profile?.avatar_path, { bucket: BUCKET_PROFILE })
   const [open, setOpen] = useState(false)
   const wrapperRef = useRef(null)
 

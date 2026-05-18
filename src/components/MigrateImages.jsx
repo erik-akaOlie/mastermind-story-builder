@@ -23,13 +23,14 @@ import { ArrowLeft, CheckCircle, WarningCircle } from '@phosphor-icons/react'
 import { supabase } from '../lib/supabase.js'
 import {
   base64ToBlob,
+  BUCKET_WORKSPACE,
   buildImagePath,
   isBase64DataUri,
   slugify,
   transcodeImage,
 } from '../lib/imageStorage.js'
 
-const BUCKET = 'workspace-media'
+const BUCKET = BUCKET_WORKSPACE
 const SYSTEM_BLUE = '#0284C7'
 
 export default function MigrateImages() {
