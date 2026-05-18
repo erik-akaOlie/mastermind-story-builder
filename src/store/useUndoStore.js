@@ -1,7 +1,7 @@
 // ============================================================================
 // useUndoStore
 // ----------------------------------------------------------------------------
-// Per-tab, per-(user × campaign) undo/redo stack for the canvas.
+// Per-tab, per-(user × workspace) undo/redo stack for the canvas.
 //
 // Design ref: docs/decisions/0006-undo-redo.md
 //
@@ -9,9 +9,18 @@
 //   - past:    Action[] — newest at end
 //   - future:  Action[] — newest-undone at end
 //
-// Persistence: sessionStorage under `mastermind:undo:${userId}:${campaignId}`.
+// Persistence: sessionStorage under `mastermind:undo:${userId}:${workspaceId}`.
 // sessionStorage is per-tab and clears on tab close, which matches V1 lifecycle:
 // F5 mid-session preserves history; closing the tab forgets it.
+//
+// Note: the persistence key string itself never carries the literal text
+// "campaign" or "workspace" — both fields are UUIDs — so the campaign →
+// workspace rename (ADR-0012) didn't require a sessionStorage migration of
+// the keys themselves. Only the in-memory field name and entry-shape field
+// name (entry.workspaceId → entry.workspaceId) changed in production code.
+// Pre-rename entries on disk (if any survive the page reload that loads the
+// new code) will fail canApplyInverse / canApplyForward and be silently
+// dropped per the existing state-drift handling.
 //
 // undo() and redo() route through src/lib/undo/index.js (the dispatcher),
 // which decides whether the inverse/forward can still be applied (state
@@ -41,9 +50,9 @@ import {
 const MAX_STACK = 75
 const KEY_PREFIX = 'mastermind:undo:'
 
-function buildKey(userId, campaignId) {
-  if (!userId || !campaignId) return null
-  return `${KEY_PREFIX}${userId}:${campaignId}`
+function buildKey(userId, workspaceId) {
+  if (!userId || !workspaceId) return null
+  return `${KEY_PREFIX}${userId}:${workspaceId}`
 }
 
 function loadFromStorage(key) {
@@ -82,38 +91,38 @@ function removeFromStorage(key) {
 
 export const useUndoStore = create((set, get) => ({
   userId: null,
-  campaignId: null,
+  workspaceId: null,
   past: [],
   future: [],
 
-  setScope({ userId, campaignId }) {
-    const { past, future } = loadFromStorage(buildKey(userId, campaignId))
-    set({ userId, campaignId, past, future })
+  setScope({ userId, workspaceId }) {
+    const { past, future } = loadFromStorage(buildKey(userId, workspaceId))
+    set({ userId, workspaceId, past, future })
   },
 
   recordAction(entry) {
-    const { userId, campaignId, past } = get()
+    const { userId, workspaceId, past } = get()
     const next = [...past, entry]
     while (next.length > MAX_STACK) next.shift()
     const future = []
     set({ past: next, future })
-    saveToStorage(buildKey(userId, campaignId), next, future)
+    saveToStorage(buildKey(userId, workspaceId), next, future)
   },
 
   popLastAction() {
-    const { userId, campaignId, past, future } = get()
+    const { userId, workspaceId, past, future } = get()
     if (past.length === 0) return
     const next = past.slice(0, -1)
     set({ past: next })
-    saveToStorage(buildKey(userId, campaignId), next, future)
+    saveToStorage(buildKey(userId, workspaceId), next, future)
   },
 
   popLastFutureAction() {
-    const { userId, campaignId, past, future } = get()
+    const { userId, workspaceId, past, future } = get()
     if (future.length === 0) return
     const next = future.slice(0, -1)
     set({ future: next })
-    saveToStorage(buildKey(userId, campaignId), past, next)
+    saveToStorage(buildKey(userId, workspaceId), past, next)
   },
 
   // -------------------------------------------------------------------------
@@ -128,7 +137,7 @@ export const useUndoStore = create((set, get) => ({
   // the toast layer in phase 9) can surface the right feedback.
   // -------------------------------------------------------------------------
   async undo(context = {}) {
-    const { userId, campaignId, past, future } = get()
+    const { userId, workspaceId, past, future } = get()
     if (past.length === 0) return { ok: false, reason: 'empty' }
     const entry = past[past.length - 1]
 
@@ -138,7 +147,7 @@ export const useUndoStore = create((set, get) => ({
       // subsequent Ctrl+Z addresses the next action over (per ADR-0006 §2).
       const nextPast = past.slice(0, -1)
       set({ past: nextPast })
-      saveToStorage(buildKey(userId, campaignId), nextPast, future)
+      saveToStorage(buildKey(userId, workspaceId), nextPast, future)
       toastUndoConflict()
       return { ok: false, conflict: true, reason: check.reason, entry }
     }
@@ -157,14 +166,14 @@ export const useUndoStore = create((set, get) => ({
     const nextPast = past.slice(0, -1)
     const nextFuture = [...future, entry]
     set({ past: nextPast, future: nextFuture })
-    saveToStorage(buildKey(userId, campaignId), nextPast, nextFuture)
+    saveToStorage(buildKey(userId, workspaceId), nextPast, nextFuture)
     toastUndoSuccess(entry)
     return { ok: true, entry }
   },
 
   // Mirror of undo() for the redo path.
   async redo(context = {}) {
-    const { userId, campaignId, past, future } = get()
+    const { userId, workspaceId, past, future } = get()
     if (future.length === 0) return { ok: false, reason: 'empty' }
     const entry = future[future.length - 1]
 
@@ -172,7 +181,7 @@ export const useUndoStore = create((set, get) => ({
     if (!check.ok) {
       const nextFuture = future.slice(0, -1)
       set({ future: nextFuture })
-      saveToStorage(buildKey(userId, campaignId), past, nextFuture)
+      saveToStorage(buildKey(userId, workspaceId), past, nextFuture)
       toastRedoConflict()
       return { ok: false, conflict: true, reason: check.reason, entry }
     }
@@ -187,26 +196,26 @@ export const useUndoStore = create((set, get) => ({
     const nextFuture = future.slice(0, -1)
     const nextPast = [...past, entry]
     set({ past: nextPast, future: nextFuture })
-    saveToStorage(buildKey(userId, campaignId), nextPast, nextFuture)
+    saveToStorage(buildKey(userId, workspaceId), nextPast, nextFuture)
     toastRedoSuccess(entry)
     return { ok: true, entry }
   },
 
   clear() {
-    const { userId, campaignId } = get()
-    removeFromStorage(buildKey(userId, campaignId))
+    const { userId, workspaceId } = get()
+    removeFromStorage(buildKey(userId, workspaceId))
     set({ past: [], future: [] })
   },
 
   // Sign-out cleanup (per ADR-0006 §3). Wipes the in-memory stack AND every
   // sessionStorage entry under `mastermind:undo:${userId}:*` so a different
   // user signing in next on this tab can't inherit the prior user's history
-  // (across any campaigns they touched, not just the active one).
+  // (across any workspaces they touched, not just the active one).
   //
   // Called from AuthContext.signOut BEFORE supabase.auth.signOut() so the
   // userId is still available to scope the cleanup.
   clearAllForUser(userId) {
-    set({ userId: null, campaignId: null, past: [], future: [] })
+    set({ userId: null, workspaceId: null, past: [], future: [] })
     if (!userId) return
     const prefix = `${KEY_PREFIX}${userId}:`
     const keysToRemove = []

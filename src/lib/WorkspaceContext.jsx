@@ -8,35 +8,54 @@
 // Also fetches the active workspace's row when the id changes, so the rest
 // of the UI can reach for data.name without re-querying Supabase.
 //
-// "Workspace" replaces the prior "campaign" terminology (see ADR-0012);
-// the localStorage key still uses the old name until commit 4/6 in the
-// rename series swaps it with a backwards-compatibility shim.
+// "Workspace" replaces the prior "campaign" terminology (see ADR-0012). The
+// localStorage key was also renamed; readActiveKey() below transparently
+// migrates the legacy key on first read so existing testers don't bounce
+// back to the picker after the rename ships.
 // ============================================================================
 
 import { createContext, useContext, useEffect, useState } from 'react'
 import { getWorkspace } from './workspaces.js'
 
-const ACTIVE_KEY = 'mastermind:activeCampaignId'
+const ACTIVE_KEY = 'mastermind:activeWorkspaceId'
+const LEGACY_ACTIVE_KEY = 'mastermind:activeCampaignId'
+
+// One-time migration shim: if the legacy key holds a value and the new key
+// is empty, copy the value across and delete the legacy key. Subsequent
+// reads see only the new key. Removed once we're confident no existing
+// tester still has the legacy key set in localStorage.
+function readActiveKey() {
+  try {
+    const existing = localStorage.getItem(ACTIVE_KEY)
+    if (existing) return existing
+    const legacy = localStorage.getItem(LEGACY_ACTIVE_KEY)
+    if (legacy) {
+      localStorage.setItem(ACTIVE_KEY, legacy)
+      localStorage.removeItem(LEGACY_ACTIVE_KEY)
+      return legacy
+    }
+    return null
+  } catch {
+    return null
+  }
+}
 
 const WorkspaceContext = createContext(null)
 
 export function WorkspaceProvider({ children }) {
-  const [activeWorkspaceId, setActiveWorkspaceIdState] = useState(() => {
-    try {
-      return localStorage.getItem(ACTIVE_KEY) || null
-    } catch {
-      return null
-    }
-  })
+  const [activeWorkspaceId, setActiveWorkspaceIdState] = useState(() => readActiveKey())
 
   const [activeWorkspace, setActiveWorkspace] = useState(null)
 
-  // Wrap the setter to also mirror into localStorage.
+  // Wrap the setter to also mirror into localStorage. Always remove the
+  // legacy key alongside the new one so a stale legacy entry can't shadow
+  // a cleared active workspace on next read.
   const setActiveWorkspaceId = (id) => {
     setActiveWorkspaceIdState(id)
     try {
       if (id) localStorage.setItem(ACTIVE_KEY, id)
       else localStorage.removeItem(ACTIVE_KEY)
+      localStorage.removeItem(LEGACY_ACTIVE_KEY)
     } catch {
       // localStorage can throw in private mode / quota-exceeded — ignore.
     }

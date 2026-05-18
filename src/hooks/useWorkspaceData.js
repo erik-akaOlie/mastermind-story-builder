@@ -69,11 +69,7 @@ export function useWorkspaceData({ workspaceId, setNodes, setEdges }) {
     // Per-workspace undo scope. setScope hydrates from sessionStorage if this
     // tab already has history for (userId × workspaceId), otherwise starts
     // empty. Switching workspaces or users automatically swaps the stack.
-    //
-    // The undo store still expects `campaignId` on its scope object; that
-    // store's API + sessionStorage key prefix get renamed in commit 4/6 of
-    // this rename series alongside their backwards-compatibility shim.
-    useUndoStore.getState().setScope({ userId, campaignId: workspaceId })
+    useUndoStore.getState().setScope({ userId, workspaceId })
 
     async function load() {
       setLoading(true)
