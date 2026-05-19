@@ -92,6 +92,40 @@ slots in opportunistically alongside any of the above.
 
 ## Quick Win
 
+### Drop deprecated card-media bucket + helper function
+- **Problem.** The 2026-05-18 campaign → workspace rename (ADR-0012)
+  introduced a new Storage bucket (`workspace-media`) and a renamed RLS
+  helper (`public.user_owns_workspace_media_path`). The old bucket
+  (`card-media`) and the old helper (`public.user_owns_card_media_path`)
+  were deliberately retained as a temporary rollback artifact during
+  the 1–2 week observation window after rollout. They are NOT in use
+  by application code — `card-media`'s policies were dropped in
+  migration 007 so no client can access it, and the old helper has no
+  remaining callers. They cost a small amount of storage + one function
+  definition slot. Leaving them indefinitely creates confusion ("which
+  bucket is the live one?") and a small attack-surface increase.
+- **Success.** Both artifacts are gone:
+  - `card-media` bucket deleted via Supabase Storage dashboard
+    (UI action — no SQL equivalent; types bucket name to confirm).
+  - Old helper dropped via SQL Editor:
+    `drop function if exists public.user_owns_card_media_path(text);`
+  - CLAUDE.md image-storage section updated to remove the deprecation
+    callout (the deprecated artifact no longer exists, so the note
+    becomes stale).
+  - ADR-0012 "Post-rollout status" section updated to reflect Stage 5
+    completion.
+- **Notes.** This is the deferred Stage 5 of the workspace-rename
+  rollout. The bucket and helper sit inert today — read [ADR-0012's
+  "Post-rollout status" section](./docs/decisions/0012-rename-campaign-to-workspace.md#post-rollout-status-2026-05-19)
+  before running this for context on why they were retained.
+- **Dependencies.** 1–2 weeks of stable usage of `workspace-media`
+  with no rollback-triggering bugs surfaced. As of 2026-05-19,
+  countdown starts.
+- **Sequencing.** Earliest practical run date: 2026-05-26
+  (1 week minimum). Reasonable target: 2026-06-02 (2 weeks).
+- **Size:** S (15–30 minutes — two manual actions, one commit to
+  update docs).
+
 ### Campaign thumbnail images
 - **Problem.** Campaigns are currently text-only on both surfaces where
   users pick between them — the CampaignPicker home screen and the
@@ -111,16 +145,50 @@ slots in opportunistically alongside any of the above.
   in `imageStorage.js` mirroring `profileAvatarPipeline()`. New
   `thumbnail_path` column on `campaigns` table via migration.
 - **Notes.** Architecture pattern from migration 003 (profile avatars)
-  carries directly. Decision point during build: which Storage bucket
-  hosts the images — `card-media` (campaign-scoped, RLS already
-  configured for ownership) or `profile-media` (user-scoped). Probably
-  `card-media` since campaigns are campaign-scoped objects.
+  carries directly. Storage bucket decision is settled by ADR-0012:
+  workspace-scoped assets go in `workspace-media` (not `card-media`,
+  which is deprecated, and not `profile-media`, which is user-scoped).
+  Use the exported `BUCKET_WORKSPACE` constant from `imageStorage.js`
+  rather than a string literal.
 - **Dependencies.** None — strictly additive.
 - **Sequencing.** Deliberately deferred from the 2026-05-16 session
   after surfacing as a candidate alongside Zoom v2 / invites. Slot
   alongside Zoom v2 or just after; should land before invites if
   schedule allows.
 - **Size:** S+ (4-8 hours focused).
+
+### MigrateImages post-completion UX
+- **Problem.** [`src/components/MigrateImages.jsx`](./src/components/MigrateImages.jsx)
+  has a confusing post-completion state. After a successful migration
+  run, the page shows:
+  - A disabled blue button labeled "Done" (relabeled from "Start
+    migration", but visually looks clickable).
+  - A "Back to canvas" button next to it (the actual navigation
+    action).
+  - The pre-migration summary still showing the original count
+    (e.g. "Card avatars: 6 / Inspiration images: 2") with no re-scan
+    after the run completes — looks like the migration failed even
+    though it succeeded.
+  - No positive success message ("Migrated 8 / 8" or similar).
+- **Success.** Post-completion state communicates clearly:
+  - The disabled "Done" button either disappears entirely OR is
+    replaced with a non-button success indicator ("Migration complete
+    — 8 / 8 items migrated.").
+  - The summary either refreshes to show the new state ("0 left to
+    migrate") OR is hidden after completion.
+  - Clear primary action ("Back to canvas") with no competing
+    confusing button.
+- **Notes.** Surfaced during the 2026-05-19 workspace-rename rollout
+  Stage 4 verification — Erik ran the migration successfully but had
+  to ask whether it had actually worked because the UI gave no
+  positive signal. Pre-existing flaw, not introduced by the rename.
+- **Dependencies.** None — `MigrateImages` is a self-contained
+  one-shot tool. Per CLAUDE.md, the whole component can be deleted
+  once every workspace has zero base64 entries, which may make this
+  fix moot. Consider whether to fix or delete based on whether any
+  remaining users (testers post-invite) still have legacy base64
+  data.
+- **Size:** S (≤ 1 day — small visual cleanup in one file).
 
 ### Dynamic card width
 - **Problem.** Long words and long titles in card headers either overflow

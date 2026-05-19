@@ -104,6 +104,17 @@ The rename ships as one PR with the commit sequence:
 
 The two migrations + the destructive cleanup are documented in the PR description's rollout instructions.
 
+## Post-rollout status (2026-05-19)
+
+Stages 1–4 of the rollout completed successfully. Stage 5 (the destructive cleanup of `card-media` + the old helper function) was **deliberately deferred** for a 1–2 week observation window, to preserve a real rollback path while the new bucket gets day-to-day use.
+
+Status of the deprecated artifacts:
+
+- **`card-media` Supabase Storage bucket.** Retained. Its RLS policies were dropped in migration 007, so no client can read or write to it. The objects inside remain intact as a rollback safety net. **No new code should read from or write to this bucket.** Scheduled for permanent deletion after 1–2 weeks of stable usage; tracked in BACKLOG.md as "Drop deprecated card-media bucket + helper function" (Quick Win band).
+- **`public.user_owns_card_media_path` SQL function.** Retained. Has no callers (migration 007 dropped its policies). Kept as a paired artifact so that if `card-media` ever needs to be restored, both pieces of the old access path are still available without a redo of migration 002. Removed alongside the bucket when the cleanup commit runs.
+
+A post-rollout bug fix landed during Stage 3b — `useImageUrl.js` had `'card-media'` hardcoded as the default bucket, a string literal the original rename search missed. The systemic fix (eliminate hardcoded bucket strings in favor of imported constants from `imageStorage.js`) is captured in commit `d2cd4d6` and reflected in the §Naming convention principles above. The class of bug that caused the regression is now impossible by construction.
+
 ## Related decisions
 
 - Builds on the implicit convention from [ADR-0005](./0005-image-storage.md) (image storage in Supabase) — extends its path-prefix discipline to container-scoped (non-card) image roles.
