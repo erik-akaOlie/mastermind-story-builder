@@ -26,12 +26,12 @@ These five terms cover everything we use to describe and prioritize work.
 
 **What it describes:** the *kind* of value the work delivers. Replaces the previously overloaded use of "Tier" in the backlog.
 
-| Value Add | What it is | Typical Effort |
-|---|---|---|
-| **Quick Win** | Small, immediate user value. Ships fast, low risk, high leverage. | S |
-| **Foundational Progress** | Builds the core experience. Required for the product to be what it claims to be. | M – L |
-| **Strategic Bet** | Big differentiator features that need a spike + multi-sprint commit. The product's defensibility lives here. | XL |
-| **Exploration** | Investigative or experimental work. Bug investigations, hobbyhorse ideas, things whose value isn't yet clear. | Variable |
+| Value Add                 | What it is                                                                                                    | Typical Effort |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------- | -------------- |
+| **Quick Win**             | Small, immediate user value. Ships fast, low risk, high leverage.                                             | S              |
+| **Foundational Progress** | Builds the core experience. Required for the product to be what it claims to be.                              | M – L          |
+| **Strategic Bet**         | Big differentiator features that need a spike + multi-sprint commit. The product's defensibility lives here.  | XL             |
+| **Exploration**           | Investigative or experimental work. Bug investigations, hobbyhorse ideas, things whose value isn't yet clear. | Variable       |
 
 **Where used:** [`BACKLOG.md`](../../BACKLOG.md) — each item lives in exactly one Value Add band.
 
@@ -45,12 +45,12 @@ These five terms cover everything we use to describe and prioritize work.
 
 **What it describes:** engineering complexity / time to ship.
 
-| Size | Roughly |
-|---|---|
-| S | < 1 day |
-| M | 1–3 days |
-| L | 4–10 days (a sprint's "big thing") |
-| XL | needs a spike + multi-sprint commit |
+| Size | Roughly                             |
+| ---- | ----------------------------------- |
+| S    | < 1 day                             |
+| M    | 1–3 days                            |
+| L    | 4–10 days (a sprint's "big thing")  |
+| XL   | needs a spike + multi-sprint commit |
 
 **Where used:** [`BACKLOG.md`](../../BACKLOG.md), ADRs, sprint planning.
 
@@ -86,14 +86,14 @@ These five terms cover everything we use to describe and prioritize work.
 
 The following were used previously and should not appear in new docs. References in `CHANGELOG.md` (historical record) are left untouched.
 
-| Deprecated | Replaced by |
-|---|---|
-| Tier 1 | Quick Win (Value Add band) |
-| Tier 2 | Foundational Progress (Value Add band) |
-| Tier 3 | Strategic Bet (Value Add band) |
-| Tier 4 | Exploration (Value Add band) |
-| Priority Band | Value Add |
-| "Phase" (when used for the rollout) | Version |
+| Deprecated                          | Replaced by                            |
+| ----------------------------------- | -------------------------------------- |
+| Tier 1                              | Quick Win (Value Add band)             |
+| Tier 2                              | Foundational Progress (Value Add band) |
+| Tier 3                              | Strategic Bet (Value Add band)         |
+| Tier 4                              | Exploration (Value Add band)           |
+| Priority Band                       | Value Add                              |
+| "Phase" (when used for the rollout) | Version                                |
 
 If you encounter "Tier" in a new doc, replace it with the right term from the table above based on what the author meant.
 
@@ -103,13 +103,16 @@ If you encounter "Tier" in a new doc, replace it with the right term from the ta
 
 These aren't planning vocabulary, but they're project-specific terms a new contributor might miss.
 
-| Term | Meaning |
-|---|---|
-| **Card** | A node in the campaign — character, location, item, faction, story. Rendered as a colored rectangle on the canvas. |
-| **Connection** | An edge between two cards. May or may not carry a relationship type (typed connections ship in V1). |
-| **Nest** | A FigJam-section-style container that groups cards / connections / text annotations into a thematic unit. Recursive. Ships in V1. |
-| **Run mode** | Live-session UI optimized for mid-play retrieval. Surfaces relevant cards based on conversation context. V2 feature. |
-| **CoOS** | Campaign Operating System — the long-term product framing. The graph is V1–V2; ops layer is V3+. |
-| **GMOS** | Synonym for CoOS, used in some older strategy docs. Same thing. |
-| **Discovery state** | The two-layer model where the DM sees everything and players see only what their characters have encountered. Designed in `design-system.md` §4; player view ships in V3. |
-| **Realtime** | Cross-tab sync for one user's edits, via Supabase Realtime channels. Already shipped. Not the same as multi-user collaboration. |
+| Term                | Meaning                                                                                                                                                                                                                                                                              |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Node**            | The underlying content entity — a single character, location, item, faction, story element, or custom type. The node is the *data*; Card and Bead are how a node is *displayed*. |
+| **Card**            | A node shown in detailed form — a colored rectangle with title, type, image, and body. The display state at normal / zoomed-in levels. |
+| **Bead**            | A node shown in minimal form — a small circle, at zoomed-out levels. The form a card morphs into at altitude (see [ADR-0010](../decisions/0010-zoom-progressive-disclosure.md) and the Altitude Rail). |
+| **Workspace**       | The top-level container — owns a set of cards, connections, and text annotations as one self-contained graph. The architectural object renamed from "campaign" in [ADR-0012](../decisions/0012-rename-campaign-to-workspace.md); its user-facing product label is not yet finalized. |
+| **Connection**      | A relationship between two nodes, shown as a line between them with a connection point where it meets each node. May or may not carry a relationship type (typed connections ship in V1). |
+| **Nest**            | A FigJam-section-style container that groups cards / connections / text annotations into a thematic unit. Recursive. Ships in V1.                                                                                                                                                    |
+| **Run mode**        | Live-session UI optimized for mid-play retrieval. Surfaces relevant cards based on conversation context. V2 feature.                                                                                                                                                                 |
+| **Discovery state** | The two-layer model where the DM sees everything and players see only what their characters have encountered. Designed in `design-system.md` §4; player view ships in V3.                                                                                                            |
+| **Realtime**        | Cross-tab sync for one user's edits, via Supabase Realtime channels. Already shipped. Not the same as multi-user collaboration.                                                                                                                                                      |
+
+

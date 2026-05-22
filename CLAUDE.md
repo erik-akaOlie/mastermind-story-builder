@@ -7,8 +7,8 @@ Source of truth for any AI session working on this codebase. When this file conf
 ## Product
 
 **Name:** MasterMind: Story Builder
-**One-liner:** A visual, interactive continuity database for Dungeon Masters and Game Masters.
-**V1 user:** Erik (a UX designer building a D&D campaign for his family). The app is also intended to be usable by other DMs later, but family-scale use is the design target for now.
+**One-liner:** A visual canvas for building a story world as an interconnected web of cards — see the whole at once, trace connections, spot gaps and opportunities.
+**V1 user:** Game masters building tabletop-RPG campaigns — the currently-evidenced instance of a broader user (people building an invented fictional world and developing a story within it). See [ADR-0013](./docs/decisions/0013-product-positioning.md). Real-world use today is Erik building a D&D campaign for his family, so family-scale daily use is the practical design target.
 **Working model:** Erik drives product direction, UX, and project management; Claude writes code, owns architecture, audits for best practices every sprint.
 
 ---

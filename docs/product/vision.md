@@ -6,9 +6,9 @@
 
 ## The Problem
 
-Game Masters building narrative-rich campaigns manage a large, interconnected web of people, places, items, factions, and events. The relationships between these elements are as important as the elements themselves. Existing tools — notes apps, spreadsheets, wikis — store information linearly, making it difficult to understand how things connect, spot what's missing, and stay oriented across long stretches of time between sessions.
+When someone builds something out of many interconnected parts — people, places, factions, events, and the relationships among them — the relationships matter as much as the parts. But the parts accumulate faster than anyone can hold in mind, and existing tools — notes apps, spreadsheets, wikis — store the information linearly, one item at a time. That makes it hard to see how things connect, spot what's missing, and find the opportunities hiding in the web. People miss connections and insights they could have used — not for lack of information, but because they can never see enough of it at once.
 
-DMs need a visual, interactive continuity database — inspired by the investigator's case board — where they can see their whole world at a glance, trace connections between elements, navigate quickly from the macro to the micro, and edit on the fly. It needs to work across three distinct contexts:
+MasterMind's V1 takes this on for **game masters building narrative-rich campaigns**. A campaign is exactly this kind of web — a large, interconnected set of people, places, items, factions, and events that grows across months of play. GMs need a visual, interactive worldbuilding tool — inspired by the investigator's case board — where they can see the whole world at a glance, trace connections between elements, navigate quickly from the macro to the micro, and edit on the fly. It needs to work across three distinct contexts:
 
 - **Campaign building** — initial world construction, adding and connecting narrative elements
 - **Session preparation** — reviewing, completing, and updating the world before each session
@@ -18,11 +18,13 @@ DMs need a visual, interactive continuity database — inspired by the investiga
 
 ## Who It's For
 
-Game Masters and Dungeon Masters running long-term campaigns with many interconnected narrative elements: locations, characters, NPCs, items, factions, events, plot hooks, and more.
+The product serves people whose work is **building an invented fictional world and developing a story within it** — inventing and growing an interconnected set of characters, places, factions, and events over time, and shaping a narrative through them.
 
-**V1 user (current):** Erik, a UX designer building a D&D campaign for his family. The product is being built for daily evening worldbuilding use — tight feedback loop, real campaign data, family-scale collaboration.
+**V1 target user:** game masters building tabletop-RPG campaigns. GMs are the concrete, currently-evidenced instance of that broader user — a *target user with initial evidence and planned validation*, not a validated one. Initial evidence is the founder plus two outside testers (one DM, one game designer/writer); broader guerrilla testing with GMs is planned. See [ADR-0013](../decisions/0013-product-positioning.md) for the full positioning, assumptions, and open questions.
 
-**Audience expansion:** the product is intended to serve other long-campaign hobbyist DMs and, eventually, professional paid DMs. The transition from "Erik's tool" to "broader audience" is itself an open question — see `roadmap.md`.
+**V1 real-world use:** Erik, a UX designer, building a D&D campaign for his family — daily evening worldbuilding, tight feedback loop, real data.
+
+A durable label for this user is not yet settled; this doc describes the user by behavior. Whether the same underlying problem extends well beyond game mastering is a real but unvalidated hypothesis — see `roadmap.md`.
 
 ---
 

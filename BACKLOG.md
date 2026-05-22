@@ -653,6 +653,9 @@ slots in opportunistically alongside any of the above.
 ## Exploration
 
 ### Product-language audit — story-building framing vs. generalized information-organization framing
+
+> **Resolved (2026-05-21) by [ADR-0013](docs/decisions/0013-product-positioning.md).** A product-discovery exercise settled V1 positioning — GM target user, the one broad problem, custom card types core, and the cross-domain platform demoted to a documented hypothesis. This exploration item is closed.
+
 - **Problem (sketch).** ADR-0012 renamed the top-level architectural object
   `campaign` → `workspace` because the original term narrowed the
   architecture to its first audience. A parallel concern was surfaced at

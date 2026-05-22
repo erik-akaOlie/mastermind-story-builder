@@ -1,5 +1,7 @@
 # Your DM Tool Idea — Explained Like You're 12 (But In A Good Way)
 
+> **Note (2026-05-21):** Predates [ADR-0013](../decisions/0013-product-positioning.md) (V1 positioning). Retained as strategic context, not current product direction.
+
 *A friendly, no-jargon version of the big report. Same conclusions, way fewer fancy words.*
 
 ---

@@ -8,7 +8,7 @@
 
 ## V1 — The knowledge graph experience
 
-**Goal:** prove that a visual continuity database is a meaningfully better worldbuilding tool than the current alternatives (Obsidian, Notion, World Anvil, Kanka). Family-scale daily use is the design target; broader DM audience comes after V1 stabilizes.
+**Goal:** prove that a visual canvas is a meaningfully better worldbuilding tool than the current alternatives (Obsidian, Notion, World Anvil, Kanka). Family-scale daily use is the design target; broader DM audience comes after V1 stabilizes.
 
 **What V1 delivers:**
 
@@ -72,6 +72,14 @@
 **Deeper pro-DM ops.** CRM, recurring scheduling, content reuse across campaigns, no-show policy automation, IP protection for resellable homebrew.
 
 **Integration architecture.** D&D Beyond, Foundry, Roll20, Owlbear, Discord, StartPlaying. Integrate, don't replace.
+
+---
+
+## Recorded hypothesis — the problem may extend beyond game mastering
+
+A product-discovery exercise (see [ADR-0013](../decisions/0013-product-positioning.md)) produced strong evidence that MasterMind addresses *one broad underlying problem* — identifying opportunities and insights across many interconnected elements within a larger system — and that this problem is not unique to game mastering. The same difficulty appears to recur in UX research synthesis, organizational mapping, investigative work, and other relationship-heavy thinking.
+
+This is recorded as an **explicit, unvalidated hypothesis** — not a roadmap commitment and not a current product direction. V1 is focused on game masters. Whether the broader pattern is real, and whether MasterMind should ever serve those domains, is a question for future research; it does not shape V1, V2, or V3. [ADR-0014](../decisions/0014-workspace-schema-architecture.md) keeps the architecture from *blocking* a future move in that direction without building toward it now.
 
 ---
 

@@ -1,5 +1,7 @@
 # My thinking on the DM tool idea
 
+> **Note (2026-05-21):** Predates [ADR-0013](../decisions/0013-product-positioning.md) (V1 positioning). Retained as strategic context, not current product direction.
+
 *A note to myself, after spending some time actually looking at what exists.*
 
 ---

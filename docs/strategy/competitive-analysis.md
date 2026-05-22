@@ -1,5 +1,7 @@
 # An All-in-One Operating System for Dungeon Masters: Market Analysis & Strategic Assessment
 
+> **Note (2026-05-21):** Predates [ADR-0013](../decisions/0013-product-positioning.md) (V1 positioning). Retained as strategic context, not current product direction.
+
 *Prepared April 2026 · Audience: founder + potential co-founders / advisors · Focus: real user sentiment through early 2026*
 
 **Legend:** Throughout, claims are tagged **[F]** (verifiable fact), **[S]** (pattern in user sentiment), **[I]** (my interpretation), and **[U]** (uncertain / thin evidence). The goal is for you to trust the synthesis without having to re-verify every line.

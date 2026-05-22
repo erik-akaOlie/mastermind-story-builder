@@ -1,6 +1,6 @@
 # MasterMind: Story Builder
 
-A visual, interactive continuity database for Dungeon Masters and Game Masters. Cards on an infinite canvas, backed by a real database, with the relationships between them as first-class as the cards themselves. Think investigator's case board for D&D.
+A visual canvas for building a story world as an interconnected web of cards — see the whole at once, trace connections, spot gaps and opportunities. Backed by a real database, with the relationships between cards as first-class as the cards themselves. V1 is built for game masters; think investigator's case board for worldbuilding.
 
 ---
 
@@ -92,7 +92,7 @@ Opens at `http://localhost:5173`. Sign up with an email on first visit (Supabase
 | Drag-to-reorder | dnd-kit |
 | State | Zustand v5 (node types + canvas UI flags); React state for canvas data |
 | Auth + DB | Supabase (Postgres + Auth + RLS) |
-| Image storage | Supabase Storage (`card-media` bucket, signed URLs) |
+| Image storage | Supabase Storage (`workspace-media` bucket, signed URLs) |
 
 For the full file map, conventions, architectural notes, and current implementation reality, see [`CLAUDE.md`](./CLAUDE.md).
 

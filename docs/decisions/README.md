@@ -25,6 +25,10 @@ What did we decide?
 What does this enable? What does it prevent? What are the trade-offs?
 ```
 
+## What an ADR records
+
+An ADR records **settled decisions and architecture.** It stays intentionally silent on terminology, naming, and product labels that are not yet resolved. Illustrative examples used while discussing a decision are not promoted into an ADR as terminology unless they are explicitly chosen as decisions.
+
 ## Index
 
 - [ADR-0001: Supabase over Firebase as the backend](./0001-supabase-over-firebase.md)
@@ -38,3 +42,6 @@ What does this enable? What does it prevent? What are the trade-offs?
 - [ADR-0009: Behavioral analytics + session replay, scoped to invited testers via PostHog](./0009-behavioral-analytics-session-replay.md)
 - [ADR-0010: Zoom-to-node-view — progressive disclosure via card↔circle morph at altitude](./0010-zoom-progressive-disclosure.md)
 - [ADR-0011: Persistence failure escalation — silent retry, lock overlay, probe-not-requeue](./0011-persistence-failure-escalation.md)
+- [ADR-0012: Foundational rename — campaign → workspace](./0012-rename-campaign-to-workspace.md)
+- [ADR-0013: Product positioning](./0013-product-positioning.md)
+- [ADR-0014: Workspace schema architecture — data-driven, deferred](./0014-workspace-schema-architecture.md)

@@ -127,7 +127,7 @@ The card has three visual zones:
 
 Persistent fields (stored in Supabase; see `CLAUDE.md` for the full DB schema):
 - `label` — display title
-- `type` — one of the built-in type keys (`character`, `location`, `item`, `faction`, `story`) or a campaign-defined custom key
+- `type` — one of the built-in type keys (`character`, `location`, `item`, `faction`, `story`) or a user-defined custom key
 - `avatar` — Supabase Storage path string (current shape, per ADR-0005), or a `/avatars/*` URL for the bundled Strahd sample data, or null. Legacy base64 data URIs still render but no new ones are written.
 - `summary` — short summary text
 - `storyNotes` — array of bullet strings (the visible body of the card)
@@ -378,7 +378,7 @@ Single **scrolling panel**. Sections in order:
 
 **Implemented:**
 - Canvas right-click menu: "Add card" (with type submenu) and "Add text"
-- Undo / redo: Ctrl+Z and Ctrl+Shift+Z (Cmd on macOS, Ctrl+Y also accepted on Windows). Per-tab, per-(user × campaign) action stack capped at 75 entries. Word-style typing exemption: Ctrl+Z while focused inside an input / textarea / contenteditable is browser-native; outside of those, it reverses the last campaign action. See [ADR-0006](../decisions/0006-undo-redo.md) for the command-pattern architecture and the trade-offs against snapshot pattern.
+- Undo / redo: Ctrl+Z and Ctrl+Shift+Z (Cmd on macOS, Ctrl+Y also accepted on Windows). Per-tab, per-(user × workspace) action stack capped at 75 entries. Word-style typing exemption: Ctrl+Z while focused inside an input / textarea / contenteditable is browser-native; outside of those, it reverses the last workspace action. See [ADR-0006](../decisions/0006-undo-redo.md) for the command-pattern architecture and the trade-offs against snapshot pattern.
 
 **Still planned:**
 - Shift+1: fit all (zoom and pan to fit all nodes)
@@ -430,6 +430,8 @@ Same pill shape, same frosted backdrop, opposite tonal direction. The light/dark
 **Why the chip system, not Sonner.** The original ADR-0006 §6 envisioned Sonner-rendered toasts. Sonner couldn't carry the slide-from-behind-chip mask + cross-fade pattern without significant fighting, so a small custom store + component pair (`useFeedbackToastStore` + `ChipToast` + `FeedbackChipBar`) handles these specific toasts. The persist-fail toast moved to the same system so all bottom-left feedback shares one visual family.
 
 ### 7.6 Top-Left Identity + Campaign Switcher *(implemented)*
+
+> **Note (2026-05-21):** This section predates ADR-0012's `campaign` → `workspace` rename. The shipped UI uses "workspace" and a "Home" breadcrumb; the "campaign" wording in this section is original-intent text, not current copy.
 
 A horizontal pair sitting at the top-left of the canvas, mirroring the bottom-left feedback strip's placement on the opposite corner:
 
@@ -544,7 +546,7 @@ Font sizes use `rem`. The `html { font-size: 100% }` declaration in `index.css` 
 ### 10.4 Key Architectural Notes
 
 - All layout is free-form — physics/collision was built and then reverted. Nodes go where you put them.
-- `App.jsx` orchestrates canvas state via focused hooks under `src/hooks/`: `useCampaignData` (load lifecycle + Supabase Realtime), `useEdgeGeometry` (recompute spread border points + connection dots), `useNodeHoverSelection` (hover/select handlers backed by `useCanvasUiStore`), `useSpacebarPan` (pan keyboard state), `useUndoShortcuts` (Ctrl+Z / Ctrl+Shift+Z). Persistence is optimistic + fire-and-forget per [ADR-0003](../decisions/0003-optimistic-ui-persistence.md).
+- `App.jsx` orchestrates canvas state via focused hooks under `src/hooks/`: `useWorkspaceData` (load lifecycle + Supabase Realtime), `useEdgeGeometry` (recompute spread border points + connection dots), `useNodeHoverSelection` (hover/select handlers backed by `useCanvasUiStore`), `useSpacebarPan` (pan keyboard state), `useUndoShortcuts` (Ctrl+Z / Ctrl+Shift+Z). Persistence is optimistic + fire-and-forget per [ADR-0003](../decisions/0003-optimistic-ui-persistence.md).
 - Persistent vs. UI state in `node.data` is split: persistent fields flow from Supabase via `lib/nodes.js`; UI-only fields (`isEditing`, `connectionDots`) are derived per render. Hover/select flags (`anySelected`, `anyHovered`, `hoveredEdgeNodeIds`) live in `useCanvasUiStore` so a hover event mutates one atomic value instead of forcing every card to re-render.
 - The sample Curse of Strahd data now lives in Supabase as a real campaign seeded via the (now-deleted) `seedStrahd.js` utility. Avatar images are still self-hosted in `public/avatars/`.
 
