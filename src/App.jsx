@@ -32,6 +32,7 @@ import { useNodeHoverSelection } from './hooks/useNodeHoverSelection'
 import { useUndoShortcuts } from './hooks/useUndoShortcuts'
 import { useCustomMarquee } from './hooks/useCustomMarquee'
 import { useReducedMotion } from './hooks/useReducedMotion'
+import { useArrowKeyNavigation } from './hooks/useArrowKeyNavigation'
 import MarqueeRect from './components/MarqueeRect'
 import AltitudeRail from './components/AltitudeRail'
 import { useUndoStore } from './store/useUndoStore'
@@ -417,6 +418,76 @@ export default function App() {
       }
     })
   }, [activeWorkspaceId])
+
+  // Arrow-key nudge for selected nodes. Mirrors finalizeDragStop's persist +
+  // undo shape so a keyboard nudge round-trips through Ctrl+Z the same way a
+  // drag does. The 4px "movedFar" threshold from the drag path is intentionally
+  // skipped — keyboard input is deterministic, not jitter, so every press
+  // records an entry.
+  const nudgeSelectedNodes = useCallback((dx, dy) => {
+    const selectedIds = useCanvasUiStore.getState().selectedNodeIds
+    if (selectedIds.size === 0) return
+
+    const cardMoves    = []  // grouped into one MOVE_CARD entry per press
+    const cardPersists = []
+    const textMoves    = []  // one MOVE_TEXT_NODE entry per text node
+
+    for (const n of nodesRef.current) {
+      if (!selectedIds.has(n.id)) continue
+      const before = { x: n.position.x, y: n.position.y }
+      const after  = { x: before.x + dx, y: before.y + dy }
+      if (n.type === 'campaignNode') {
+        cardMoves.push({ cardId: n.id, before, after })
+        cardPersists.push(dbUpdateNode(n.id, { positionX: after.x, positionY: after.y }))
+      } else if (n.type === 'textNode') {
+        const persist = dbUpdateTextNode(n.id, { positionX: after.x, positionY: after.y })
+        textMoves.push({ textNodeId: n.id, before, after, persist })
+      }
+    }
+
+    if (cardMoves.length === 0 && textMoves.length === 0) return
+
+    setNodes((nds) => nds.map((n) => {
+      if (!selectedIds.has(n.id)) return n
+      if (n.type !== 'campaignNode' && n.type !== 'textNode') return n
+      return { ...n, position: { x: n.position.x + dx, y: n.position.y + dy } }
+    }))
+
+    if (cardMoves.length > 0) {
+      useUndoStore.getState().recordAction({
+        type: ACTION_TYPES.MOVE_CARD,
+        workspaceId: activeWorkspaceId,
+        label: cardMoves.length === 1 ? 'Move card' : `Move ${cardMoves.length} cards`,
+        timestamp: new Date().toISOString(),
+        cards: cardMoves,
+      })
+      Promise.allSettled(cardPersists).then((results) => {
+        const failures = results.filter((r) => r.status === 'rejected')
+        if (failures.length > 0) {
+          failures.forEach((r) => console.error(r.reason))
+          useUndoStore.getState().popLastAction()
+        }
+      })
+    }
+
+    textMoves.forEach(({ textNodeId, before, after, persist }) => {
+      useUndoStore.getState().recordAction({
+        type: ACTION_TYPES.MOVE_TEXT_NODE,
+        workspaceId: activeWorkspaceId,
+        label: 'Move text',
+        timestamp: new Date().toISOString(),
+        textNodeId,
+        before,
+        after,
+      })
+      persist.catch((err) => {
+        console.error(err)
+        useUndoStore.getState().popLastAction()
+      })
+    })
+  }, [setNodes, activeWorkspaceId])
+
+  useArrowKeyNavigation({ rfInstanceRef, onNudgeSelected: nudgeSelectedNodes })
 
   const onNodeDragStart = useCallback((_event, node, nodes) => {
     // Fall back to [node] in case `nodes` is undefined (defensive — RF v11
@@ -1003,7 +1074,7 @@ export default function App() {
         panOnDrag={isPanning}
         minZoom={dynamicMinZoom}
         panOnScroll={true}
-        panOnScrollMode="vertical"
+        panOnScrollMode="free"
         zoomOnScroll={false}
         zoomActivationKeyCode="Control"
         zoomOnPinch={true}
