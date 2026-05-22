@@ -44,49 +44,52 @@ Version-level scope (V1, V2+, V3+, out) lives in [`docs/product/roadmap.md`](./d
 
 ## Current sprint candidate — next
 
-The previous sprint shipped **Profile avatars + canvas UX polish**
-(see [CHANGELOG.md](./CHANGELOG.md)). The next sprint is **planned
-and locked** (2026-05-11 conversation):
+The previous sprint shipped **Analytics + session replay**,
+**Zoom-to-node-view (v1 → v2)**, the **Altitude Rail** instrument,
+**Profile avatars**, the **`campaign` → `workspace` rename**, and the
+**product-positioning ADRs (0013 / 0014) + documentation cascade**.
+See [CHANGELOG.md](./CHANGELOG.md) for the full list.
 
-**Sprint shape: "Open the doors to testers."** Two pieces of new work
-sequenced into three deliverables, with two weeks of runway before
-the first tester invites go out.
+The next sprint shape comes from the 2026-05-21 product-discovery
+exercise — see
+[ADR-0013](./docs/decisions/0013-product-positioning.md)
+(V1 positioning) and
+[ADR-0014](./docs/decisions/0014-workspace-schema-architecture.md)
+(workspace schema architecture). Build priorities, in order:
 
 | # | Deliverable | Band | Size |
 |---|---|---|---|
-| 1 | Behavioral analytics + session replay (PostHog, invited testers only) | Foundational Progress | S–M (3–4 days) |
-| 2 | Zoom-to-node-view v1 (morph + interaction, no perf optimization) | Foundational Progress | M–L (7–10 days) |
-| — | **Invites go out** | | |
-| 3 | Zoom-to-node-view v2 (viewport + connection-line culling for 500-card scale) | Foundational Progress | M (3–5 days) |
+| 1 | Code audit for hardcoded card-type logic (ADR-0014 discipline #1) | Foundational Progress | S (few hours) |
+| 2 | Custom card types as a fully-supported core path | Foundational Progress | depends on audit |
+| 3 | Typed connections | Foundational Progress | L |
+| 4 | Search | Foundational Progress | M |
 
-**Why this shape.** Erik wants to invite ~5–10 DMs to start using the
-product within the next two weeks. Two pieces of work are
-invite-blocking. First, analytics needs to be live before invites or
-the early-tester signal is lost — session replay + a small set of
-named events tied to research questions about cognitive friction (graph
-mental model adoption, "feels alive" moments, where overload sets in).
-Second, the current zoom-out limit is critical daily friction for Erik
-(blocking demos, structural campaign assessment, and spatial placement
-decisions); testers experiencing the wounded zoom on day one would burn
-research budget on a known problem.
+**Why this shape.** ADR-0013 confirmed custom card types as core to
+the product (no longer a speculative future feature). ADR-0014 added
+one architectural discipline that depends on a code audit — small
+enough to run first as the gate to #2. Typed Connections and Search
+are the two foundational gaps that turn the canvas from a graph viewer
+into a working campaign tool — Erik's own Strahd campaign is already
+~50 cards, and finding and labeling relationships is becoming daily
+friction.
 
-**Sequencing decision (Option B from the 2026-05-11 conversation).**
-Analytics ships first as the "if anything else slips, this is still
-done" insurance. Zoom v1 follows. Then invites go out with both pieces
-live. Zoom v2 (the 500-card performance optimization) ships during the
-early observation period — tester campaigns will start small and won't
-hit the scaling wall for weeks.
+**Tester invites.** ~5–10 hobbyist DMs planned. Originally targeted
+around 2026-05-25; timing is uncertain post-discovery and likely
+shifts to after #2 (custom card types) or #3 (typed connections)
+lands.
 
-**Three previously-queued items defer behind this sprint:** Card-type
-defaults in code, Manage Card Templates, Markdown export. The Quick
-Win *Fix stale EditModal avatar-upload test* (committed `0274693`)
-slots in opportunistically alongside any of the above.
+**Usability quick wins landed alongside this planning**
+(see [`docs/research/usability-findings.md`](./docs/research/usability-findings.md)):
+trackpad two-finger pan + arrow-key navigation (FigJam-style) and the
+EditModal thumbnail edit affordance (always-visible pencil icon when
+the card has no thumbnail). The remaining design question — *how to
+signal that spacebar+drag pans the canvas* — is logged as Open.
 
-**Documented in:**
-[ADR-0009](./docs/decisions/0009-behavioral-analytics-session-replay.md)
-(analytics) and
-[ADR-0010](./docs/decisions/0010-zoom-progressive-disclosure.md)
-(zoom-to-node-view).
+**Previously-queued items deferred behind this sprint:** Card-type
+defaults in code (ADR-0008), Manage Card Templates, Tailor Card
+Types, Markdown export, Nest, Background images V1, Copy / paste
+cards, Profile V2 (username only — the profile-image half shipped).
+They reorder relative to each other based on what #1 + #2 reveal.
 
 ---
 
