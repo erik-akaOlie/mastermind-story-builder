@@ -5,20 +5,25 @@
 //   - TypePicker (the type dropdown)
 //   - Close button
 //
-// Avatar has two states:
-//   - Empty (no thumbnail): clicking the letter-initial circle opens the
-//     Upload Image modal in thumbnail mode (no existing image).
-//   - Filled: clicking the image opens the lightbox; clicking the Swap
-//     button (hover affordance) opens the Upload Image modal pre-loaded
-//     with the existing thumbnail. Save in the modal replaces; Cancel
-//     preserves the old image.
+// Avatar has two states. Both surface a pencil-fill edit affordance in
+// the top-right corner — visibility differs by whether a thumbnail exists,
+// so that users with no thumbnail see the affordance unprompted (the
+// 2026-05-19 usability finding it addresses):
+//   - Empty (no thumbnail): the whole tile is one click target. The pencil
+//     icon stays visible at 70% opacity; tile hover brightens it to 100%.
+//     Clicking anywhere on the tile opens the Upload Image modal fresh.
+//   - Filled: clicking the image opens the lightbox. The pencil icon is
+//     hidden until the tile is hovered, when it fades in at 70%; hovering
+//     the pencil itself brightens it to 100% (signals it's the discrete
+//     click target). Clicking the pencil opens the Upload Image modal
+//     pre-loaded with the existing thumbnail.
 //
 // State for `title`, `type`, and `thumbnail` lives in the parent
 // (EditModal) because auto-save reads them. The Upload Image modal
 // handles its own upload progress and Storage writes.
 
 import { useEffect, useRef } from 'react'
-import { Swap } from '@phosphor-icons/react'
+import { Pencil } from '@phosphor-icons/react'
 import { useImageUrl } from '../lib/useImageUrl'
 import { cardImagePipeline } from '../lib/imageStorage'
 import { useLightbox } from './Lightbox'
@@ -99,11 +104,13 @@ export default function EditModalHeader({
                 draggable={false}
               />
               <button
-                className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-70 transition-opacity flex items-center justify-center"
+                onMouseEnter={(e) => { e.currentTarget.style.opacity = '1' }}
+                onMouseLeave={(e) => { e.currentTarget.style.opacity = '' }}
                 onClick={(e) => { e.stopPropagation(); openUploadReplace() }}
-                aria-label="Swap avatar"
+                aria-label="Edit avatar"
               >
-                <Swap size={11} weight="bold" />
+                <Pencil size={12} weight="fill" />
               </button>
             </>
           ) : (
@@ -116,6 +123,11 @@ export default function EditModalHeader({
                 {labelInitial(title || node.data.label)}
               </span>
               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
+              <span
+                className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/50 text-white flex items-center justify-center opacity-70 group-hover:opacity-100 transition-opacity z-10 pointer-events-none"
+              >
+                <Pencil size={12} weight="fill" />
+              </span>
             </button>
           )}
         </div>
