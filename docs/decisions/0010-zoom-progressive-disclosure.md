@@ -532,6 +532,67 @@ and down the rail every time the user crossed the morph boundary).
 Text nodes keep their measured dimensions since they're user-resizable
 and don't morph.
 
+## Addendum — 2026-05-22 (bead fallback: type icon → label initial)
+
+The original "Visual spec — circle state" section above settled the
+no-thumbnail bead fallback as **the card type's Phosphor icon**, with
+the initial-letter alternative deferred ("type icon was the call Erik
+confirmed; revisit if observation shows it's not discriminating enough
+at small sizes").
+
+### Decision
+
+The bead's no-thumbnail fallback is now **the card title's first
+initial**, in the type's contrast color (luminance-computed), centered
+in the bead. The type-colored border continues to carry the type
+signal; the interior now carries identity (thumbnail when present,
+title initial when not).
+
+### Why
+
+- **Identity-first reading.** In a knowledge graph, a card's identity
+  is its *name*, not its type. At altitude, the user is most often
+  scanning for "where's Strahd?" or "where's the Vistani plotline?" —
+  an "S" or "V" lands that recognition faster than a generic
+  character / faction icon shared with every other character or
+  faction.
+- **Type information is not lost.** The colored border already encodes
+  type. Replacing the interior icon with the initial removes a
+  redundant type signal in favor of an absent identity signal.
+- **Visual consistency with the card view.** The card-view avatar
+  empty state has always been a letter initial. The bead now matches,
+  so users see the same fallback at every altitude.
+
+### Sizing
+
+Letter font size is `BEAD_DIAMETER_PX * 0.45` = 72px in a 160px bead
+(an 8-grid multiple). This is the **same multiplier the card-view
+avatar empty state uses** (`avatarSize * 0.45`), so the two empty
+states share one sizing rule and reading the initial feels consistent
+whether the user is looking at a card or a bead.
+
+### Open question deferred to observation
+
+The original ADR deferred initial-letter overlay because of
+discrimination concerns at small sizes ("not discriminating enough at
+small sizes"). The risk: at the lower zoom range of bead view, a
+single letter occupies few screen pixels, and multiple cards starting
+with the same letter become indistinguishable.
+
+Mitigated, not eliminated:
+
+- The colored border still carries the type signal, so an "S" character
+  card and an "S" location card don't collide.
+- The dynamic minZoom (70% viewport fill — see addendum 2026-05-12
+  *Dynamic zoom-out limit*) prevents arbitrarily small renderings; the
+  bead has a practical minimum on-screen size.
+
+The trade-off is *recoverable* — if observation shows identity
+collision is a real problem (e.g., a campaign with several "S"-named
+characters becomes unreadable at altitude), revisiting this is a small
+code change: swap the JSX branch back to the icon, or pursue a hybrid
+(initial + small icon corner badge).
+
 ## References
 
 - BACKLOG entries: *Zoom-to-node-view v1* and *Zoom-to-node-view v2*

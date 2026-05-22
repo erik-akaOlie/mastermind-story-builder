@@ -341,10 +341,15 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
   const avatarUrl = useImageUrl(data.avatar, 'thumb')
   const lightbox = useLightbox()
 
-  // Bead's no-thumbnail fallback icon — per ADR-0010 the bead shows the
-  // card type's icon (NOT the labelInitial fallback used by the card header).
-  const BeadFallbackIcon = typeConfig.icon
-  const beadIconSize = Math.round(BEAD_DIAMETER_PX * 0.5) // 36px in a 72px bead
+  // Bead's no-thumbnail fallback — the card title's first initial in the
+  // type's contrast color. Matches the card-view avatar empty state, so a
+  // beadless card and a card-view card read the same identity cue at any
+  // altitude. Revises ADR-0010's original "type icon as fallback" call
+  // (see ADR-0010 addendum 2026-05-22).
+  // Letter sized at 45% of bead diameter — the same ratio the card-view
+  // avatar uses for its initial (avatarSize * 0.45), so card-view and
+  // bead-view empty states share one sizing rule.
+  const beadInitialSize = Math.round(BEAD_DIAMETER_PX * 0.45) // 72px in a 160px bead
 
   // Border width in CANVAS px — inverse-scaled by `compensation` in bead mode
   // so it renders at a constant ~BEAD_BORDER_SCREEN_PX on screen, zero in
@@ -846,8 +851,9 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
       </div>
       {/* Bead content layer — absolutely positioned, fills the clip wrapper.
           Cross-fades opposite to the card-content layer. Avatar (if any)
-          fills the circle via object-cover; otherwise the card's type icon
-          is centered as the fallback (NOT labelInitial — per ADR-0010). */}
+          fills the circle via object-cover; otherwise the card-title's
+          first initial is centered as the fallback (matches the card-view
+          empty state — see ADR-0010 addendum 2026-05-22). */}
       <div
         style={{
           position: 'absolute',
@@ -871,13 +877,14 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
             style={{ width: '100%', height: '100%', objectFit: 'cover' }}
             draggable={false}
           />
-        ) : BeadFallbackIcon ? (
-          <BeadFallbackIcon
-            size={beadIconSize}
-            color={hdrText}
-            weight="fill"
-          />
-        ) : null}
+        ) : (
+          <span
+            className="font-bold leading-none select-none"
+            style={{ fontSize: beadInitialSize, color: hdrText }}
+          >
+            {labelInitial(data.label)}
+          </span>
+        )}
       </div>
       </div>
     </div>

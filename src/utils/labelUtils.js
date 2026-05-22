@@ -13,9 +13,11 @@ export function sortKey(label = '') {
 }
 
 /**
- * Returns the single uppercase initial used in avatar fallbacks.
- * Strips a leading "The " before taking the first character.
+ * Returns the single-character initial used in avatar / bead fallbacks.
+ * Strips a leading "The " before taking the first character and preserves
+ * the title's original casing — "strahd" -> "s", "Strahd" -> "S",
+ * "STRAHD" -> "S" — so the fallback reads as the user typed it.
  */
 export function labelInitial(label = '') {
-  return sortKey(label).charAt(0).toUpperCase() || '?'
+  return sortKey(label).charAt(0) || '?'
 }
