@@ -60,7 +60,7 @@ export default function EditModal({
 }) {
   // ── Form state ────────────────────────────────────────────────────────────
   const [title,      setTitle]      = useState(node.data.label   || '')
-  const [type,       setType]       = useState(node.data.type    || 'character')
+  const [type,       setType]       = useState(node.data.type)
   const [summary,    setSummary]    = useState(node.data.summary || '')
   const [thumbnail,  setThumbnail]  = useState(node.data.avatar  || null)
   // Bullet sections arrive from dbNodeToReactFlow already normalized to

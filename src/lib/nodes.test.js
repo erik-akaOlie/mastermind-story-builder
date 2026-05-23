@@ -15,7 +15,7 @@
 // Run with: npm test
 // ============================================================================
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { dbNodeToReactFlow, normalizeBullets } from './nodes.js'
 
 const baseDbRow = {
@@ -108,10 +108,20 @@ describe('dbNodeToReactFlow', () => {
     expect(result.data.media).toEqual([])
   })
 
-  it("falls back to 'story' type when type_id isn't in the lookup map", () => {
+  it("returns a null type and logs an error when type_id can't be resolved", () => {
+    // Previously this case fell back to a hardcoded 'story' label, which
+    // silently relabeled a data-integrity problem as a real card type.
+    // Per ADR-0014 discipline #1 (no hardcoded type-name defaults), we now
+    // surface the corruption: type is null, and an error is logged so the
+    // condition is visible in dev.
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     const orphanedRow = { ...baseDbRow, type_id: 'unknown-type-id' }
     const result = dbNodeToReactFlow(orphanedRow, {}, nodeTypesById)
-    expect(result.data.type).toBe('story')
+    expect(result.data.type).toBeNull()
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('unresolved type_id=unknown-type-id'),
+    )
+    errorSpy.mockRestore()
   })
 
   it('coerces string-shaped numerics from Postgres into real numbers for position', () => {

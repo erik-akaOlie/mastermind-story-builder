@@ -284,6 +284,15 @@ async function writeSections(nodeId, { storyNotes = [], hiddenLore = [], dmNotes
 // uploaded entries; legacy strings still render via useImageUrl).
 export function dbNodeToReactFlow(n, sections, nodeTypesById) {
   const typeInfo = nodeTypesById?.[n.type_id]
+  // A missing typeInfo means n.type_id doesn't resolve to a known type —
+  // a data-integrity problem that the FK constraint on nodes.type_id is
+  // supposed to make impossible. If it ever happens, surface it (don't
+  // silently relabel the card to a built-in type) so the corruption is
+  // visible instead of papered over. The card renders with a gray
+  // fallback in CampaignNode (typeConfig fallback branch).
+  if (!typeInfo) {
+    console.error(`dbNodeToReactFlow: node ${n.id} has unresolved type_id=${n.type_id}`)
+  }
   return {
     id: n.id,
     type: 'campaignNode',
@@ -291,7 +300,7 @@ export function dbNodeToReactFlow(n, sections, nodeTypesById) {
     data: {
       id:          n.id,
       label:       n.label,
-      type:        typeInfo?.key ?? 'story',
+      type:        typeInfo?.key ?? null,
       avatar:      n.avatar_url,
       summary:     n.summary,
       storyNotes:  normalizeBullets(sections.narrative),

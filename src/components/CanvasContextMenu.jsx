@@ -95,7 +95,10 @@ export default function CanvasContextMenu({ x, y, onAddCard, onAddText, onClose 
           Add to canvas
         </p>
 
-        {/* Add card — click adds character; hover opens type submenu */}
+        {/* Add card — click adds the user's first available type; hover
+            opens the type submenu for a deliberate pick. If the user has
+            no types at all (shouldn't happen — ensureBuiltinTypes seeds
+            five on first sign-in), addCardNode logs an error and no-ops. */}
         <div
           className="relative"
           onMouseEnter={openSub}
@@ -103,7 +106,7 @@ export default function CanvasContextMenu({ x, y, onAddCard, onAddText, onClose 
         >
           <button
             className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-2.5"
-            onClick={() => { onAddCard(typeEntries[0]?.[0] ?? 'character'); onClose() }}
+            onClick={() => { onAddCard(typeEntries[0]?.[0]); onClose() }}
           >
             <span className="flex-1">Add card</span>
             <CaretRight size={12} className="text-gray-400" weight="bold" />
