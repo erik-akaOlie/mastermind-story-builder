@@ -15,6 +15,8 @@ import FeedbackChipBar from './components/FeedbackChipBar.jsx'
 import MigrateImages from './components/MigrateImages.jsx'
 import Profile from './components/Profile.jsx'
 import AnalyticsBootstrap from './components/AnalyticsBootstrap.jsx'
+import TermsOfServicePage from './components/TermsOfServicePage.jsx'
+import PrivacyPolicyPage from './components/PrivacyPolicyPage.jsx'
 
 // Tiny hash-based router. We don't need React Router for one ad-hoc page;
 // the `#migrate` route is temporary and gets removed once Phase 5 lands.
@@ -49,6 +51,10 @@ function Root() {
   useProbeLoop()
 
   if (loading) return null
+  // Pre-auth routes — accessible without signing in so a prospective user can
+  // read the legal documents before deciding to create an account.
+  if (hash === '#terms')   return <TermsOfServicePage />
+  if (hash === '#privacy') return <PrivacyPolicyPage />
   if (!session) return <Login />
   if (hash === '#migrate') return <MigrateImages />
   if (hash === '#profile') return <Profile />
