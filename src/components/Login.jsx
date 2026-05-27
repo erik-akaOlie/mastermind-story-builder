@@ -19,6 +19,7 @@ export default function Login() {
   const [mode, setMode] = useState('signin')   // 'signin' | 'signup'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [agreed, setAgreed] = useState(false)  // signup-only; ToS + PP acknowledgement
   const [error, setError] = useState(null)
   const [info, setInfo] = useState(null)
   const [submitting, setSubmitting] = useState(false)
@@ -27,10 +28,22 @@ export default function Login() {
     e.preventDefault()
     setError(null)
     setInfo(null)
+
+    // Defensive: the submit button is disabled when this is true, but a
+    // determined keyboard user can submit anyway. Don't let them past.
+    if (mode === 'signup' && !agreed) {
+      setError('Please agree to the Terms of Service and Privacy Policy to continue.')
+      return
+    }
+
     setSubmitting(true)
 
-    const action = mode === 'signin' ? signIn : signUp
-    const { data, error } = await action(email, password)
+    const { data, error } = mode === 'signin'
+      ? await signIn(email, password)
+      // Pass the agreement timestamp through to the handle_new_user trigger
+      // (see migration 008) so it lands in the same transaction as the
+      // auth.users row.
+      : await signUp(email, password, { data: { terms_accepted_at: new Date().toISOString() } })
 
     setSubmitting(false)
 
@@ -87,6 +100,41 @@ export default function Login() {
             />
           </div>
 
+          {/* Terms + Privacy Policy agreement — signup mode only. Links open
+              in a new tab so the user doesn't lose their typed credentials
+              when they go read either document. */}
+          {!isSignin && (
+            <label className="flex items-start gap-2 text-xs text-gray-700 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={agreed}
+                onChange={(e) => setAgreed(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-600 cursor-pointer"
+              />
+              <span className="leading-relaxed">
+                I agree to the{' '}
+                <a
+                  href="/#terms"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sky-700 hover:text-sky-900 underline"
+                >
+                  Terms of Service
+                </a>
+                {' '}and{' '}
+                <a
+                  href="/#privacy"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sky-700 hover:text-sky-900 underline"
+                >
+                  Privacy Policy
+                </a>
+                .
+              </span>
+            </label>
+          )}
+
           {error && (
             <div className="flex items-start gap-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
               <WarningCircle size={16} weight="fill" className="flex-shrink-0 mt-px" />
@@ -102,7 +150,7 @@ export default function Login() {
 
           <button
             type="submit"
-            disabled={submitting}
+            disabled={submitting || (!isSignin && !agreed)}
             className="w-full flex items-center justify-center gap-2 py-2 rounded-md text-sm font-medium text-white bg-sky-600 hover:bg-sky-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {isSignin ? (

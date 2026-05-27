@@ -40,8 +40,12 @@ export function AuthProvider({ children }) {
     session,
     user: session?.user ?? null,
     loading,
-    signUp: (email, password) =>
-      supabase.auth.signUp({ email, password }),
+    // `options` is forwarded to supabase.auth.signUp. The Login form passes
+    // { data: { terms_accepted_at: <ISO timestamp> } } so the handle_new_user
+    // trigger can record agreement in the same transaction as the
+    // auth.users INSERT (see migration 008).
+    signUp: (email, password, options) =>
+      supabase.auth.signUp({ email, password, options }),
     signIn: (email, password) =>
       supabase.auth.signInWithPassword({ email, password }),
     signOut: () => {
