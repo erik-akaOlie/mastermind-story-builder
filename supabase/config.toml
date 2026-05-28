@@ -1,0 +1,14 @@
+
+[functions.delete-account]
+enabled = true
+# Platform validates the caller's JWT at the edge before the function runs.
+# We still derive the user from the JWT inside the function to know whose
+# account to delete.
+verify_jwt = true
+import_map = "./functions/delete-account/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/delete-account/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/delete-account/*.html" ]

@@ -5,6 +5,10 @@ dist
 .DS_Store
 .claude/worktrees/
 
+# Supabase CLI local cache — not source. The functions/ folder, config.toml,
+# and migrations/ ARE committed; .temp/ is transient state.
+supabase/.temp/
+
 # Erik's personal asset library — images he uses while building his own
 # Curse of Strahd campaign in the live app. Kept colocated with the
 # project for workflow convenience but never committed and never
