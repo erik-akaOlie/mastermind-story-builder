@@ -1,7 +1,7 @@
 # Privacy Policy
 
 **Effective Date:** 2026-05-26
-**Last Updated:** 2026-05-26
+**Last Updated:** 2026-05-27
 
 This Privacy Policy describes what information MasterMind collects, why we collect it, who else handles it, how long we keep it, and the choices and rights you have.
 
@@ -195,11 +195,13 @@ Email **contact.mastermind.lab@gmail.com** with the request. We will respond wit
 
 ## 10. Account and Data Deletion
 
-You can delete your account at any time by emailing **contact.mastermind.lab@gmail.com**. When you delete your account:
+You can delete your account at any time directly in MasterMind: go to your **Profile** page (click your avatar in the top-right of the canvas, then "View profile") and use the **"Delete account"** button in the Danger Zone section. If you can't access the in-app option for any reason, email **contact.mastermind.lab@gmail.com** and we'll handle it.
+
+When you delete your account:
 
 - Your workspaces, cards, sections, uploaded images, connections, and text annotations are deleted from Supabase.
-- Your PostHog session recordings (if any) are deleted on request.
-- Some information may persist briefly in our sub-processors' backup systems (up to approximately 30 days) and in support email threads.
+- Your PostHog session recordings (if any) are deleted as part of the same flow — typically processed by PostHog within minutes.
+- Some information may persist briefly in our sub-processors' backup systems (up to approximately 30 days) and in support email threads if you contacted us by email.
 - We retain a minimal record (your email address and the date of deletion) for legal compliance and to prevent accidental re-creation of a deleted account.
 
 ---

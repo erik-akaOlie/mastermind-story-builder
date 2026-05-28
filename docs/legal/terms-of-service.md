@@ -1,7 +1,7 @@
 # Terms of Service
 
 **Effective Date:** 2026-05-26
-**Last Updated:** 2026-05-26
+**Last Updated:** 2026-05-27
 
 Welcome to MasterMind. These Terms of Service (the "**Terms**") explain the rules for using MasterMind, a beta web application for building tabletop role-playing game campaigns as a visual canvas of interconnected cards.
 
@@ -107,7 +107,7 @@ We will provide notice of material changes to these Terms through the email addr
 
 ## 9. Termination
 
-**By you:** You may delete your account at any time by emailing contact.mastermind.lab@gmail.com. When you delete your account, we will delete your content and account data as described in the [Privacy Policy](./privacy-policy.md).
+**By you:** You may delete your account at any time directly in MasterMind: go to your **Profile** page and use the **"Delete account"** button. If you can't access the in-app option, email contact.mastermind.lab@gmail.com instead. When you delete your account, we will delete your content and account data as described in the [Privacy Policy](./privacy-policy.md).
 
 **By us:** We may suspend or terminate your account if you materially breach these Terms or if continuing to provide the service to you poses a legal, security, or operational risk. We will try to give notice and an opportunity to cure when reasonable.
 
