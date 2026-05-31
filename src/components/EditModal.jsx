@@ -55,6 +55,10 @@ export default function EditModal({
   connectedNodes,
   allOtherNodes,
   originRect,
+  skipOpenMorph = false,
+  position = { x: 0, y: 0 },
+  onPositionChange,
+  commitApiRef,
   onUpdate,
   onClose,
 }) {
@@ -357,8 +361,18 @@ export default function EditModal({
     deps: [title, type, summary, storyNotes, hiddenLore, dmNotes, media, thumbnail, localConns],
   })
 
-  const animateClose = useMorphAnimation({ modalRef, backdropRef, originRect, onClose })
-  const handleClose = useCallback(() => {
+  const animateClose = useMorphAnimation({ modalRef, backdropRef, originRect, skipOpenMorph, onClose })
+
+  // Commit the editing session: flush the pending auto-save and emit this
+  // session's undo entries. Called on explicit close AND — via commitApiRef —
+  // by App right before a repoint swaps the inspector's topic node, so the
+  // outgoing node's edits are never lost. Guarded so it can't double-emit
+  // (e.g. App commits on repoint, or close commits, but never both for one
+  // mounted instance).
+  const committedRef = useRef(false)
+  const commitSession = useCallback(() => {
+    if (committedRef.current) return
+    committedRef.current = true
     flushSave()
 
     const start = sessionStartRef.current
@@ -473,8 +487,20 @@ export default function EditModal({
         }
       }
     }
+  }, [flushSave, activeWorkspaceId, node.id])
+
+  // Expose commitSession to App so a repoint can commit this session before
+  // remounting the inspector on the new topic node.
+  useEffect(() => {
+    if (!commitApiRef) return
+    commitApiRef.current = commitSession
+    return () => { if (commitApiRef.current === commitSession) commitApiRef.current = null }
+  }, [commitApiRef, commitSession])
+
+  const handleClose = useCallback(() => {
+    commitSession()
     animateClose()
-  }, [flushSave, animateClose, activeWorkspaceId, node.id])
+  }, [commitSession, animateClose])
 
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') handleClose() }
@@ -490,8 +516,14 @@ export default function EditModal({
   // from the header band, never from an interactive control inside it, and
   // the offset is clamped so the inspector stays within the viewport (8px
   // margin) and the header is always grabbable.
-  const [dragPos, setDragPos] = useState({ x: 0, y: 0 })
-  const dragPosRef = useRef({ x: 0, y: 0 })
+  // Drag offset is kept in local state during the drag (cheap — no App
+  // re-render per pointermove) and synced up to App on release via
+  // onPositionChange, so the position survives a repoint remount. It's
+  // seeded from the `position` prop, which App preserves across repoints.
+  const [dragPos, setDragPos] = useState(position)
+  const dragPosRef = useRef(position)
+  const onPositionChangeRef = useRef(onPositionChange)
+  onPositionChangeRef.current = onPositionChange
   const onHeaderPointerDown = useCallback((e) => {
     if (e.button !== 0) return
     if (e.target.closest('input, textarea, button, select, [contenteditable="true"]')) return
@@ -516,6 +548,7 @@ export default function EditModal({
     const onUp = () => {
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
+      onPositionChangeRef.current?.(dragPosRef.current)
     }
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)

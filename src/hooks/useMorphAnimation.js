@@ -20,8 +20,11 @@
 import { useLayoutEffect, useEffect, useCallback } from 'react'
 
 export const TRANSITION_MS = 260
+// A repoint keeps the inspector in place and just swaps its content, so the
+// entry is a quick opacity fade rather than the grow-from-card morph.
+export const REPOINT_FADE_MS = 130
 
-export function useMorphAnimation({ modalRef, backdropRef, originRect, onClose }) {
+export function useMorphAnimation({ modalRef, backdropRef, originRect, skipOpenMorph, onClose }) {
   // Phase 1: pre-paint setup
   useLayoutEffect(() => {
     const el = modalRef.current
@@ -29,7 +32,10 @@ export function useMorphAnimation({ modalRef, backdropRef, originRect, onClose }
     if (el) {
       el.style.opacity    = '0'
       el.style.transition = 'none'
-      if (originRect) {
+      if (skipOpenMorph) {
+        // Repoint: no geometric morph — the panel is already in place.
+        el.style.transform = 'none'
+      } else if (originRect) {
         const rect    = el.getBoundingClientRect()
         const modalCX = rect.left + rect.width  / 2
         const modalCY = rect.top  + rect.height / 2
@@ -49,9 +55,15 @@ export function useMorphAnimation({ modalRef, backdropRef, originRect, onClose }
     const bd = backdropRef.current
     const id = requestAnimationFrame(() => {
       if (el) {
-        el.style.transition = `transform ${TRANSITION_MS}ms cubic-bezier(0.2, 0, 0, 1), opacity ${TRANSITION_MS}ms ease`
-        el.style.transform  = 'none'
-        el.style.opacity    = '1'
+        if (skipOpenMorph) {
+          el.style.transition = `opacity ${REPOINT_FADE_MS}ms ease`
+          el.style.transform  = 'none'
+          el.style.opacity    = '1'
+        } else {
+          el.style.transition = `transform ${TRANSITION_MS}ms cubic-bezier(0.2, 0, 0, 1), opacity ${TRANSITION_MS}ms ease`
+          el.style.transform  = 'none'
+          el.style.opacity    = '1'
+        }
       }
       if (bd) {
         bd.style.transition = `opacity ${TRANSITION_MS}ms ease`

@@ -135,8 +135,17 @@ export default function App() {
     return () => setPanToTargetImpl(null)
   }, [])
 
-  // { node, connectedNodes, allOtherNodes, originRect }
+  // The open inspector instance, or null. Shape:
+  //   { node, connectedNodes, allOtherNodes, originRect,
+  //     topicNodeId, position, isRepoint }
+  // `topicNodeId` is the subject node; it's independent of canvas selection
+  // (a single-click sets it, but the inspector owns it) so that supporting
+  // multiple inspectors later is an array of these, not a rewrite.
   const [editingNode, setEditingNode] = useState(null)
+  // Lets App commit the open inspector's pending edits (flush save + undo)
+  // right before a repoint swaps its topic node. EditModal assigns its
+  // commitSession here while mounted.
+  const inspectorCommitRef = useRef(null)
 
   useEdgeGeometry({ nodes, edges, setNodes, setEdges })
 
@@ -595,6 +604,9 @@ export default function App() {
         connectedNodes: [],
         allOtherNodes: nodes.filter((n) => n.type === 'campaignNode'),
         originRect: null,
+        topicNodeId: newNode.id,
+        position: { x: 0, y: 0 },
+        isRepoint: false,
       })
     } catch (err) {
       console.error('Failed to create card:', err)
@@ -677,15 +689,55 @@ export default function App() {
     return { node, connectedNodes, allOtherNodes, originRect }
   }, [nodes, edges])
 
-  const openEdit = useCallback((nodeId) => {
+  // Mark exactly one node as the inspector's topic (clears the flag on any
+  // node that previously held it). Only touches nodes whose flag actually
+  // flips, so it doesn't churn the whole array.
+  const setInspectorEditingFlag = useCallback((nodeId) => {
+    setNodes(nds => nds.map(n => {
+      const shouldEdit = n.id === nodeId
+      if (!!n.data.isEditing === shouldEdit) return n
+      return { ...n, data: { ...n.data, isEditing: shouldEdit } }
+    }))
+  }, [setNodes])
+
+  // Open (or repoint) the inspector onto a node. `repoint` keeps the current
+  // inspector's position and suppresses the grow-from-card morph; a fresh
+  // open recenters and morphs.
+  const openInspector = useCallback((nodeId, { repoint = false } = {}) => {
     const state = buildEditingState(nodeId)
-    if (!state) return
-    setNodes(nds => nds.map(n =>
-      n.id === nodeId ? { ...n, data: { ...n.data, isEditing: true } } : n
-    ))
-    setEditingNode(state)
-    track('card_edit_opened', { source: 'context_menu', typeKey: state.node.data?.type })
-  }, [buildEditingState, setNodes])
+    if (!state) return false
+    setInspectorEditingFlag(nodeId)
+    setEditingNode(prev => ({
+      ...state,
+      topicNodeId: nodeId,
+      position: repoint && prev ? prev.position : { x: 0, y: 0 },
+      isRepoint: repoint,
+    }))
+    return true
+  }, [buildEditingState, setInspectorEditingFlag])
+
+  const openEdit = useCallback((nodeId) => {
+    if (openInspector(nodeId)) {
+      const node = nodes.find((n) => n.id === nodeId)
+      track('card_edit_opened', { source: 'context_menu', typeKey: node?.data?.type })
+    }
+  }, [openInspector, nodes])
+
+  // Single-click repoints the open inspector onto another card. A plain click
+  // only — additive multi-select gestures (Shift/Ctrl/Cmd-click) and marquee
+  // selection don't repoint, so assembling a group to drag doesn't yank the
+  // inspector around. Does nothing when the inspector is closed (then a click
+  // just selects, today's behavior).
+  const onNodeClick = useCallback((e, node) => {
+    if (!editingNode) return
+    if (node.type !== 'campaignNode') return
+    if (e.shiftKey || e.metaKey || e.ctrlKey) return
+    if (node.id === editingNode.topicNodeId) return
+    inspectorCommitRef.current?.()        // commit the outgoing node first
+    if (openInspector(node.id, { repoint: true })) {
+      track('card_edit_opened', { source: 'repoint', typeKey: node.data?.type })
+    }
+  }, [editingNode, openInspector])
 
   const onNodeDoubleClick = useCallback((_, node) => {
     if (node.type === 'textNode') {
@@ -694,14 +746,20 @@ export default function App() {
       ))
       return
     }
-    const state = buildEditingState(node.id)
-    if (!state) return
-    setNodes(nds => nds.map(n =>
-      n.id === node.id ? { ...n, data: { ...n.data, isEditing: true } } : n
-    ))
-    setEditingNode(state)
-    track('card_edit_opened', { source: 'double_click', typeKey: state.node.data?.type })
-  }, [buildEditingState, setNodes])
+    // When the inspector is already open, the preceding single-click already
+    // repointed it — don't re-open (which would morph + recenter). Only act
+    // if somehow targeting a different node.
+    if (editingNode) {
+      if (node.id !== editingNode.topicNodeId) {
+        inspectorCommitRef.current?.()
+        openInspector(node.id, { repoint: true })
+      }
+      return
+    }
+    if (openInspector(node.id)) {
+      track('card_edit_opened', { source: 'double_click', typeKey: node.data?.type })
+    }
+  }, [editingNode, openInspector, setNodes])
 
   // ── Update node (DB-backed) ─────────────────────────────────────────────
   //
@@ -1063,6 +1121,7 @@ export default function App() {
         onEdgeMouseEnter={onEdgeMouseEnter}
         onEdgeMouseLeave={onEdgeMouseLeave}
         onNodeContextMenu={onNodeContextMenu}
+        onNodeClick={onNodeClick}
         onNodeDoubleClick={onNodeDoubleClick}
         onPaneClick={() => { closeContextMenu(); setCanvasMenu(null) }}
         onPaneContextMenu={onPaneContextMenu}
@@ -1125,15 +1184,22 @@ export default function App() {
 
       {editingNode && (
         <EditModal
+          key={editingNode.topicNodeId}
           node={editingNode.node}
           connectedNodes={editingNode.connectedNodes}
           allOtherNodes={editingNode.allOtherNodes}
           originRect={editingNode.originRect}
+          skipOpenMorph={editingNode.isRepoint}
+          position={editingNode.position}
+          onPositionChange={(p) =>
+            setEditingNode((prev) => (prev ? { ...prev, position: p } : prev))
+          }
+          commitApiRef={inspectorCommitRef}
           onUpdate={onUpdateNode}
           onClose={() => {
             track('card_edit_closed', { typeKey: editingNode.node.data?.type })
             setNodes(nds => nds.map(n =>
-              n.id === editingNode.node.id
+              n.id === editingNode.topicNodeId
                 ? { ...n, data: { ...n.data, isEditing: false } }
                 : n
             ))

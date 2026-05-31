@@ -310,8 +310,11 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
 
   // Selected cards are always part of the user's active focus — never dimmed, always lifted.
   // Hover and edge-highlight also lift. Selection persists regardless of what else is hovered.
-  const isActive = hovered || isEdgeHighlighted || selected
-  const lifted   = hovered || isEdgeHighlighted || selected
+  // The inspector's topic node (data.isEditing) stays in this active/selected
+  // state too: it remains visible in the graph as the source of the open
+  // inspector rather than vanishing under it.
+  const isActive = hovered || isEdgeHighlighted || selected || data.isEditing
+  const lifted   = hovered || isEdgeHighlighted || selected || data.isEditing
 
   // Three resting states for the card's opacity:
   //   - active   (hovered / edge-highlighted / selected)        → full
@@ -322,9 +325,7 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
   const baseOpacity = data.locked ? 0.5 : 1
   const isResting = !isActive && !anythingActive && !anySelected && !data.isEditing
   let opacity
-  if (data.isEditing) {
-    opacity = 0
-  } else if (isActive) {
+  if (isActive) {
     opacity = baseOpacity
   } else if (anythingActive || anySelected) {
     opacity = baseOpacity * 0.15
