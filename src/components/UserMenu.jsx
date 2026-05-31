@@ -21,6 +21,7 @@ import { useAuth } from '../lib/AuthContext.jsx'
 import { useWorkspace } from '../lib/WorkspaceContext.jsx'
 import { listWorkspaces } from '../lib/workspaces.js'
 import UserAvatar from './UserAvatar.jsx'
+import HoverReveal from './HoverReveal.jsx'
 
 export default function UserMenu() {
   const { user } = useAuth()
@@ -86,40 +87,46 @@ export default function UserMenu() {
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
       >
-        <div className="flex items-center bg-white/90 backdrop-blur rounded-full shadow-sm border border-gray-200 text-xs overflow-hidden transition-all duration-150 ease-out">
-          {/* Always-visible house: clicking it goes back to the picker.
-              When collapsed the button is equal-padded so it forms a proper
-              circle centered on the icon. */}
+        <div className="flex items-center bg-white/90 backdrop-blur rounded-full shadow-sm border border-gray-200 text-xs overflow-hidden">
+          {/* Always-visible house: clicking it goes back to the picker. Equal
+              padding so it forms a proper circle centered on the icon; the
+              "Home" label reveals beside it on hover (its own left padding
+              supplies the gap, so a collapsed/zero-width reveal adds zero
+              width and the circle stays a circle). */}
           <button
             onClick={() => setActiveWorkspaceId(null)}
-            className={`flex items-center justify-center text-gray-500 hover:text-gray-900 transition-all duration-150 ease-out whitespace-nowrap ${
-              expanded ? 'px-3 py-1.5 gap-1' : 'p-1.5'
-            }`}
+            className="flex items-center justify-center text-gray-500 hover:text-gray-900 transition-colors whitespace-nowrap p-1.5"
             title="Home"
             aria-label="Go to home"
           >
             <House size={14} weight="bold" />
-            {expanded && <span>Home</span>}
+            <HoverReveal open={expanded}>
+              <span className="pl-1 whitespace-nowrap">Home</span>
+            </HoverReveal>
           </button>
 
-          {/* Slash + current name + chevron — only rendered when expanded
-              so the collapsed chip has no hidden children contributing width. */}
-          {expanded && activeWorkspace && (
-            <div className="flex items-center gap-1.5 pr-3 whitespace-nowrap">
-              <span className="text-gray-300" aria-hidden="true">/</span>
-              <span className="text-gray-900 font-medium truncate max-w-[16rem]">
-                {activeWorkspace.name}
-              </span>
-              <button
-                onClick={() => setMenuOpen((o) => !o)}
-                className="text-gray-400 hover:text-gray-900 transition-colors p-0.5"
-                aria-label="Switch workspace"
-                aria-haspopup="menu"
-                aria-expanded={menuOpen}
-              >
-                <CaretDown size={12} weight="bold" />
-              </button>
-            </div>
+          {/* Slash + current name + chevron. Stays mounted (so the hover morph
+              has something to interpolate) and clips to zero width when
+              collapsed via HoverReveal. */}
+          {activeWorkspace && (
+            <HoverReveal open={expanded}>
+              <div className="flex items-center gap-1.5 pl-1 pr-3 whitespace-nowrap">
+                <span className="text-gray-300" aria-hidden="true">/</span>
+                <span className="text-gray-900 font-medium truncate max-w-[16rem]">
+                  {activeWorkspace.name}
+                </span>
+                <button
+                  onClick={() => setMenuOpen((o) => !o)}
+                  className="text-gray-400 hover:text-gray-900 transition-colors p-0.5"
+                  aria-label="Switch workspace"
+                  aria-haspopup="menu"
+                  aria-expanded={menuOpen}
+                  tabIndex={expanded ? 0 : -1}
+                >
+                  <CaretDown size={12} weight="bold" />
+                </button>
+              </div>
+            </HoverReveal>
           )}
         </div>
 

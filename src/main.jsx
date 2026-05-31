@@ -10,6 +10,7 @@ import { useOnlineListener, useProbeLoop } from './lib/useSyncLifecycle.js'
 import Login from './components/Login.jsx'
 import CampaignPicker from './components/CampaignPicker.jsx'
 import UserMenu from './components/UserMenu.jsx'
+import SearchBar from './components/SearchBar.jsx'
 import LockOverlay from './components/LockOverlay.jsx'
 import FeedbackChipBar from './components/FeedbackChipBar.jsx'
 import MigrateImages from './components/MigrateImages.jsx'
@@ -64,6 +65,7 @@ function Root() {
     <>
       <App />
       <UserMenu />
+      <SearchBar />
       <FeedbackChipBar />
       <LockOverlay />
     </>
