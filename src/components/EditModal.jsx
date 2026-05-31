@@ -11,10 +11,16 @@ import MediaSection from './MediaSection'
 import ConnectionsSection from './ConnectionsSection'
 import EditModalHeader from './EditModalHeader'
 import { useAutoSave } from '../hooks/useAutoSave'
-import { useMorphAnimation } from '../hooks/useMorphAnimation'
+import { useMorphAnimation, TRANSITION_MS } from '../hooks/useMorphAnimation'
 import { UploadImageProvider } from './UploadImageProvider'
+import { SEARCH_BAND_REM } from './SearchBar'
 
 const MODAL_WIDTH = '41.25rem'
+// Docked geometry (per the mockup). 8-grid: 480/8=60, 16/8=2, 80/8=10.
+const DOCKED_WIDTH    = '30rem'   // 480px
+const DOCKED_RIGHT    = '1rem'    // 16px off the right edge
+const DOCK_SNAP_PX    = 96        // drag the right edge within this of the
+                                  // viewport edge to arm docking
 
 // Scalar card fields that emit `editCardField` undo entries on modal close.
 // Phase 7c removed the four list-shaped fields (storyNotes / hiddenLore /
@@ -56,12 +62,15 @@ export default function EditModal({
   allOtherNodes,
   originRect,
   skipOpenMorph = false,
+  mode = 'undocked',
   position = { x: 0, y: 0 },
   onPositionChange,
+  onDock,
   commitApiRef,
   onUpdate,
   onClose,
 }) {
+  const isDocked = mode === 'docked'
   // ── Form state ────────────────────────────────────────────────────────────
   const [title,      setTitle]      = useState(node.data.label   || '')
   const [type,       setType]       = useState(node.data.type)
@@ -363,6 +372,18 @@ export default function EditModal({
 
   const animateClose = useMorphAnimation({ modalRef, backdropRef, originRect, skipOpenMorph, onClose })
 
+  // Docked panel ref + its slide-down close (the undocked path uses the morph
+  // animation instead — see handleClose).
+  const dockedRef = useRef(null)
+  const animateDockedClose = useCallback(() => {
+    const el = dockedRef.current
+    if (!el) { onClose(); return }
+    el.style.transition = `transform ${TRANSITION_MS}ms ease, opacity ${TRANSITION_MS}ms ease`
+    el.style.transform  = 'translateY(100%)'
+    el.style.opacity    = '0'
+    setTimeout(onClose, TRANSITION_MS)
+  }, [onClose])
+
   // Commit the editing session: flush the pending auto-save and emit this
   // session's undo entries. Called on explicit close AND — via commitApiRef —
   // by App right before a repoint swaps the inspector's topic node, so the
@@ -499,8 +520,9 @@ export default function EditModal({
 
   const handleClose = useCallback(() => {
     commitSession()
-    animateClose()
-  }, [commitSession, animateClose])
+    if (isDocked) animateDockedClose()
+    else animateClose()
+  }, [commitSession, isDocked, animateDockedClose, animateClose])
 
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') handleClose() }
@@ -524,6 +546,12 @@ export default function EditModal({
   const dragPosRef = useRef(position)
   const onPositionChangeRef = useRef(onPositionChange)
   onPositionChangeRef.current = onPositionChange
+  const onDockRef = useRef(onDock)
+  onDockRef.current = onDock
+  // True while the drag has carried the inspector's right edge near the
+  // viewport's right edge — arms docking and shows the snap-zone affordance.
+  const [dockArmed, setDockArmed] = useState(false)
+  const dockArmedRef = useRef(false)
   const onHeaderPointerDown = useCallback((e) => {
     if (e.button !== 0) return
     if (e.target.closest('input, textarea, button, select, [contenteditable="true"]')) return
@@ -541,6 +569,13 @@ export default function EditModal({
         const m = 8
         nx = Math.min(Math.max(nx, m - baseLeft), window.innerWidth  - w - m - baseLeft)
         ny = Math.min(Math.max(ny, m - baseTop),  window.innerHeight - h - m - baseTop)
+        // Arm docking when the panel's right edge nears the viewport edge.
+        const rightEdge = baseLeft + nx + w
+        const armed = (window.innerWidth - rightEdge) < DOCK_SNAP_PX
+        if (armed !== dockArmedRef.current) {
+          dockArmedRef.current = armed
+          setDockArmed(armed)
+        }
       }
       dragPosRef.current = { x: nx, y: ny }
       setDragPos(dragPosRef.current)
@@ -548,7 +583,13 @@ export default function EditModal({
     const onUp = () => {
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
-      onPositionChangeRef.current?.(dragPosRef.current)
+      if (dockArmedRef.current) {
+        dockArmedRef.current = false
+        setDockArmed(false)
+        onDockRef.current?.()
+      } else {
+        onPositionChangeRef.current?.(dragPosRef.current)
+      }
     }
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
@@ -559,39 +600,14 @@ export default function EditModal({
   useEffect(() => { titleRef.current?.focus() }, [])
 
   // ── Render ────────────────────────────────────────────────────────────────
-  return (
-    <UploadImageProvider>
-      {showCreateTypeModal && (
-        <CreateTypeModal
-          onClose={() => setShowCreateTypeModal(false)}
-          onCreated={(key) => setType(key)}
-        />
-      )}
-      {/* No scrim — the canvas stays live behind the inspector. The outer
-          layer is pointer-events-none so only the inspector box captures
-          events (the rest passes through to the canvas). The middle wrapper
-          carries the undocked drag offset, kept separate from modalRef whose
-          transform the morph animation owns. */}
-      <div className="fixed inset-0 z-[9999] flex items-center justify-center pointer-events-none">
-        <div
-          className="pointer-events-auto"
-          style={{ transform: `translate(${dragPos.x}px, ${dragPos.y}px)` }}
-        >
-        <div
-          ref={modalRef}
-          className="rounded-[0.5rem] shadow-2xl flex flex-col overflow-hidden"
-          style={{
-            width: MODAL_WIDTH,
-            maxHeight: '90vh',
-            backgroundColor: `color-mix(in srgb, ${typeConfig.color} 5%, white)`,
-            '--modal-bg': `color-mix(in srgb, ${typeConfig.color} 5%, white)`,
-          }}
-        >
-
+  // Header + body, shared verbatim by both the docked and undocked containers.
+  const inner = (
+    <>
           {/* ── Header: avatar + title + type dropdown + close ── */}
           <EditModalHeader
             node={node}
-            onPointerDown={onHeaderPointerDown}
+            onPointerDown={isDocked ? undefined : onHeaderPointerDown}
+            docked={isDocked}
             title={title}
             setTitle={setTitle}
             type={type}
@@ -678,10 +694,67 @@ export default function EditModal({
             />
 
           </div>
+    </>
+  )
 
+  return (
+    <UploadImageProvider>
+      {showCreateTypeModal && (
+        <CreateTypeModal
+          onClose={() => setShowCreateTypeModal(false)}
+          onCreated={(key) => setType(key)}
+        />
+      )}
 
-        </div>
-        </div>
+      {/* Snap-zone affordance — shows where the inspector will dock while it's
+          dragged near the right edge. */}
+      {dockArmed && (
+        <div
+          className="fixed z-[9998] rounded-[0.5rem] border-2 border-dashed border-white/50 bg-white/10 pointer-events-none"
+          style={{ top: `${SEARCH_BAND_REM}rem`, right: DOCKED_RIGHT, bottom: 0, width: DOCKED_WIDTH }}
+        />
+      )}
+
+      {/* No scrim — the canvas stays live behind the inspector. Docked is a
+          bottom-right overlay (flush bottom, off the right edge, top at the
+          search band); undocked is a centered, draggable modal. */}
+      <div className={isDocked
+        ? 'fixed inset-0 z-[9999] pointer-events-none'
+        : 'fixed inset-0 z-[9999] flex items-center justify-center pointer-events-none'}>
+        {isDocked ? (
+          <div
+            ref={dockedRef}
+            className={`pointer-events-auto absolute rounded-[0.5rem] shadow-2xl flex flex-col overflow-hidden ${skipOpenMorph ? 'inspector-fade-in' : 'inspector-rise-in'}`}
+            style={{
+              top: `${SEARCH_BAND_REM}rem`,
+              right: DOCKED_RIGHT,
+              bottom: 0,
+              width: DOCKED_WIDTH,
+              backgroundColor: `color-mix(in srgb, ${typeConfig.color} 5%, white)`,
+              '--modal-bg': `color-mix(in srgb, ${typeConfig.color} 5%, white)`,
+            }}
+          >
+            {inner}
+          </div>
+        ) : (
+          <div
+            className="pointer-events-auto"
+            style={{ transform: `translate(${dragPos.x}px, ${dragPos.y}px)` }}
+          >
+            <div
+              ref={modalRef}
+              className="rounded-[0.5rem] shadow-2xl flex flex-col overflow-hidden"
+              style={{
+                width: MODAL_WIDTH,
+                maxHeight: '90vh',
+                backgroundColor: `color-mix(in srgb, ${typeConfig.color} 5%, white)`,
+                '--modal-bg': `color-mix(in srgb, ${typeConfig.color} 5%, white)`,
+              }}
+            >
+              {inner}
+            </div>
+          </div>
+        )}
       </div>
     </UploadImageProvider>
   )

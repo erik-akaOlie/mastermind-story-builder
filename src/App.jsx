@@ -606,6 +606,7 @@ export default function App() {
         originRect: null,
         topicNodeId: newNode.id,
         position: { x: 0, y: 0 },
+        mode: 'undocked',
         isRepoint: false,
       })
     } catch (err) {
@@ -711,10 +712,16 @@ export default function App() {
       ...state,
       topicNodeId: nodeId,
       position: repoint && prev ? prev.position : { x: 0, y: 0 },
+      mode: repoint && prev ? prev.mode : 'undocked',
       isRepoint: repoint,
     }))
     return true
   }, [buildEditingState, setInspectorEditingFlag])
+
+  // Dock the open inspector to the bottom-right edge.
+  const onDockInspector = useCallback(() => {
+    setEditingNode(prev => (prev ? { ...prev, mode: 'docked', isRepoint: false } : prev))
+  }, [])
 
   const openEdit = useCallback((nodeId) => {
     if (openInspector(nodeId)) {
@@ -1190,10 +1197,12 @@ export default function App() {
           allOtherNodes={editingNode.allOtherNodes}
           originRect={editingNode.originRect}
           skipOpenMorph={editingNode.isRepoint}
+          mode={editingNode.mode}
           position={editingNode.position}
           onPositionChange={(p) =>
             setEditingNode((prev) => (prev ? { ...prev, position: p } : prev))
           }
+          onDock={onDockInspector}
           commitApiRef={inspectorCommitRef}
           onUpdate={onUpdateNode}
           onClose={() => {

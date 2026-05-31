@@ -119,6 +119,25 @@ input[type="password"]::-ms-clear {
   opacity: 0.5;
 }
 
+/* Docked inspector entry animations.
+   - rise-in: slides up from below + fades in when the panel docks/opens.
+   - fade-in: quick opacity-only swap when the docked panel repoints to a new
+     node (the panel is already in place, so it must not slide again). */
+@keyframes inspector-rise-in {
+  from { transform: translateY(100%); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+@keyframes inspector-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.inspector-rise-in { animation: inspector-rise-in 260ms cubic-bezier(0.2, 0, 0, 1); }
+.inspector-fade-in { animation: inspector-fade-in 130ms ease; }
+
+@media (prefers-reduced-motion: reduce) {
+  .inspector-rise-in, .inspector-fade-in { animation: none; }
+}
+
 /* Post-selection bounding box — React Flow renders this around all selected
    nodes after release. We hide it entirely; our cards communicate selected
    state via scale, shadow, and opacity instead. The element stays in the DOM

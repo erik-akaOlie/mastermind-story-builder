@@ -23,7 +23,7 @@
 // handles its own upload progress and Storage writes.
 
 import { useEffect, useRef } from 'react'
-import { Pencil } from '@phosphor-icons/react'
+import { Pencil, CaretDown } from '@phosphor-icons/react'
 import { useImageUrl } from '../lib/useImageUrl'
 import { cardImagePipeline } from '../lib/imageStorage'
 import { useLightbox } from './Lightbox'
@@ -34,6 +34,7 @@ import TypePicker from './TypePicker'
 export default function EditModalHeader({
   node,
   onPointerDown,
+  docked = false,
   title,
   setTitle,
   type,
@@ -174,11 +175,17 @@ export default function EditModalHeader({
         onMouseEnter={(e) => { e.currentTarget.style.opacity = '1' }}
         onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.7' }}
         onClick={onClose}
-        aria-label="Close"
+        aria-label={docked ? 'Collapse to edge' : 'Close'}
       >
-        <svg className="w-6 h-6" viewBox="0 0 24 24" fill={hdrText}>
-          <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
-        </svg>
+        {docked ? (
+          // Docked: a down chevron matches the close motion (the panel slides
+          // down out of frame), vs. an X which reads as dismiss.
+          <CaretDown size={24} weight="bold" color={hdrText} />
+        ) : (
+          <svg className="w-6 h-6" viewBox="0 0 24 24" fill={hdrText}>
+            <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+          </svg>
+        )}
       </button>
     </div>
   )
