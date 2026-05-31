@@ -108,8 +108,9 @@ definitions themselves do not.
 
 **Avatar (`nodes.avatar_url` column):**
 
-Stays as a column on `nodes`. As of 2026-04-27, EditModal writes the
-Storage path directly; new avatars never land as base64 again. The
+Stays as a column on `nodes`. As of 2026-04-27, EditModal (renamed to the
+Inspector on 2026-05-30 when it gained a second, docked mode — see ADR-0015)
+writes the Storage path directly; new avatars never land as base64 again. The
 column still tolerates legacy base64 data URIs (so old data renders),
 and `useImageUrl` resolves either shape transparently.
 

@@ -164,7 +164,7 @@ the stored display columns directly.
    Any field that differs → insert into `card_type_overrides`. Identical → no override row.
 4. Drop / nullify the display columns on `node_types` rows where `is_builtin=true`. Rename `is_system` to `is_builtin` for clarity. Custom rows are untouched.
 5. Update `ensureBuiltinTypes()` to insert only stub rows on signup (no display data).
-6. Update `useNodeTypes()`, `CreateTypeModal`, `EditModalHeader`, `TypePicker`, and any other consumers to read through the new merge path.
+6. Update `useNodeTypes()`, `CreateTypeModal`, `EditModalHeader` (renamed `InspectorHeader` on 2026-05-30 when the editor gained a second, docked mode — see ADR-0015), `TypePicker`, and any other consumers to read through the new merge path.
 
 For Erik's current data (one user, no real customizations beyond the
 just-shipped Faction icon — which after the SQL update matches the new
