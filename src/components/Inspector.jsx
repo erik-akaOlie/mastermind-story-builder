@@ -9,7 +9,7 @@ import BulletSection from './BulletSection'
 import SectionLabel from './SectionLabel'
 import MediaSection from './MediaSection'
 import ConnectionsSection from './ConnectionsSection'
-import EditModalHeader from './EditModalHeader'
+import InspectorHeader from './InspectorHeader'
 import { useAutoSave } from '../hooks/useAutoSave'
 import { useMorphAnimation, TRANSITION_MS } from '../hooks/useMorphAnimation'
 import { UploadImageProvider } from './UploadImageProvider'
@@ -57,7 +57,7 @@ function textForHex(hex) {
   return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.5 ? '#1f2937' : '#ffffff'
 }
 
-export default function EditModal({
+export default function Inspector({
   node,
   connectedNodes,
   allOtherNodes,
@@ -110,7 +110,7 @@ export default function EditModal({
   // connection's UUID — the existing edge id for pre-existing connections,
   // or a client-side-generated UUID for newly-added ones (assigned in
   // ConnectionsSection at picker click). Carrying a stable id from click
-  // through to dbCreateConnection means EditModal can log addConnection
+  // through to dbCreateConnection means Inspector can log addConnection
   // events into the chronological action log immediately, without waiting
   // for the persist round-trip.
   const [localConns, setLocalConns] = useState(
@@ -651,7 +651,7 @@ export default function EditModal({
   const inner = (
     <>
           {/* ── Header: avatar + title + type dropdown + close ── */}
-          <EditModalHeader
+          <InspectorHeader
             node={node}
             onPointerDown={isDocked ? onDockedHeaderPointerDown : onHeaderPointerDown}
             docked={isDocked}

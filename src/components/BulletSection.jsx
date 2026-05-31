@@ -1,11 +1,11 @@
 // BulletSection — the reusable section type used by Story Notes, Hidden Lore,
-// and DM Notes inside EditModal. Owns:
+// and DM Notes inside Inspector. Owns:
 //   - dnd-kit setup for drag-to-reorder
 //   - the SortableBulletInput render (textarea + grip handle + remove button)
 //   - focus-on-new-bullet behavior
 //   - add / remove / update handlers
 //
-// State is held by the parent (EditModal) as `[{id, value}, ...]` so the auto-
+// State is held by the parent (Inspector) as `[{id, value}, ...]` so the auto-
 // save useEffect can keep reading from a single source of truth across all
 // three sections. The parent passes `items` and `onChange(nextItems)` props.
 
@@ -16,7 +16,7 @@ import { CSS } from '@dnd-kit/utilities'
 import { DotsSixVertical } from '@phosphor-icons/react'
 import SectionLabel from './SectionLabel'
 
-// Helper exported so EditModal can seed its initial state from the persisted
+// Helper exported so Inspector can seed its initial state from the persisted
 // string arrays in node.data without depending on this file's internals.
 export const newItem = (value = '') => ({ id: crypto.randomUUID(), value })
 
@@ -72,7 +72,7 @@ function SortableBulletInput({ id, value, onChange, onKeyDown, onRemove, onFocus
 }
 
 // Optional semantic callbacks for per-item undo logging (phase 7c). Each
-// fires once per user-visible action; the parent (EditModal) logs the
+// fires once per user-visible action; the parent (Inspector) logs the
 // event into its chronological action log and emits one recordAction per
 // log entry on modal close. Parents that don't need them can leave them
 // undefined — onChange still flows for state management.

@@ -1,8 +1,8 @@
-// TypePicker — the dropdown shown beneath the title input in EditModal's
+// TypePicker — the dropdown shown beneath the title input in Inspector's
 // header for choosing a card type. Owns the open/close state, hovered-row
 // highlighting, and the "Create new type…" affordance at the bottom.
 //
-// `type` + `setType` come from the parent (EditModal) so the auto-save
+// `type` + `setType` come from the parent (Inspector) so the auto-save
 // useEffect sees changes. `onCreateNewType` is called when the user picks
 // the bottom "Create new type…" row, letting the parent open its own
 // CreateTypeModal.
@@ -11,7 +11,7 @@ import { useState } from 'react'
 import { useNodeTypes } from '../store/useTypeStore'
 import { track } from '../lib/analytics.js'
 
-// Color helpers — duplicated from EditModal so this component is independent.
+// Color helpers — duplicated from Inspector so this component is independent.
 // If a fourth consumer appears, lift these into a shared `colorUtils` file.
 function tintHex(hex, opacity) {
   const r = parseInt(hex.slice(1, 3), 16)

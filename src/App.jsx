@@ -4,7 +4,7 @@ import { useTypeStore } from './store/useTypeStore'
 import FloatingEdge from './edges/FloatingEdge'
 import ContextMenu from './components/ContextMenu'
 import CanvasContextMenu from './components/CanvasContextMenu'
-import EditModal from './components/EditModal'
+import Inspector from './components/Inspector'
 import { LightboxProvider } from './components/Lightbox'
 import CampaignNode from './nodes/CampaignNode'
 import TextNode from './nodes/TextNode'
@@ -153,9 +153,9 @@ export default function App() {
   // `topicNodeId` is the subject node; it's independent of canvas selection
   // (a single-click sets it, but the inspector owns it) so that supporting
   // multiple inspectors later is an array of these, not a rewrite.
-  const [editingNode, setEditingNode] = useState(null)
+  const [inspectorNode, setInspectorNode] = useState(null)
   // Lets App commit the open inspector's pending edits (flush save + undo)
-  // right before a repoint swaps its topic node. EditModal assigns its
+  // right before a repoint swaps its topic node. Inspector assigns its
   // commitSession here while mounted.
   const inspectorCommitRef = useRef(null)
 
@@ -611,7 +611,7 @@ export default function App() {
 
       // Connections only apply to cards (campaignNode); filter out text nodes
       // so they don't surface as "Untitled" entries in the connections picker.
-      setEditingNode({
+      setInspectorNode({
         node: newNode,
         connectedNodes: [],
         allOtherNodes: nodes.filter((n) => n.type === 'campaignNode'),
@@ -720,7 +720,7 @@ export default function App() {
     const state = buildEditingState(nodeId)
     if (!state) return false
     setInspectorEditingFlag(nodeId)
-    setEditingNode(prev => ({
+    setInspectorNode(prev => ({
       ...state,
       topicNodeId: nodeId,
       position: repoint && prev ? prev.position : { x: 0, y: 0 },
@@ -733,14 +733,14 @@ export default function App() {
   // Dock the open inspector to the bottom-right edge.
   const onDockInspector = useCallback(() => {
     writeInspectorMode('docked')
-    setEditingNode(prev => (prev ? { ...prev, mode: 'docked', isRepoint: false } : prev))
+    setInspectorNode(prev => (prev ? { ...prev, mode: 'docked', isRepoint: false } : prev))
   }, [])
 
-  // Detach the docked inspector back to a floating modal (EditModal drives the
+  // Detach the docked inspector back to a floating modal (Inspector drives the
   // follow-the-cursor position from here and syncs it on release).
   const onUndockInspector = useCallback(() => {
     writeInspectorMode('undocked')
-    setEditingNode(prev => (prev ? { ...prev, mode: 'undocked', isRepoint: false } : prev))
+    setInspectorNode(prev => (prev ? { ...prev, mode: 'undocked', isRepoint: false } : prev))
   }, [])
 
   const openEdit = useCallback((nodeId) => {
@@ -756,15 +756,15 @@ export default function App() {
   // inspector around. Does nothing when the inspector is closed (then a click
   // just selects, today's behavior).
   const onNodeClick = useCallback((e, node) => {
-    if (!editingNode) return
+    if (!inspectorNode) return
     if (node.type !== 'campaignNode') return
     if (e.shiftKey || e.metaKey || e.ctrlKey) return
-    if (node.id === editingNode.topicNodeId) return
+    if (node.id === inspectorNode.topicNodeId) return
     inspectorCommitRef.current?.()        // commit the outgoing node first
     if (openInspector(node.id, { repoint: true })) {
       track('card_edit_opened', { source: 'repoint', typeKey: node.data?.type })
     }
-  }, [editingNode, openInspector])
+  }, [inspectorNode, openInspector])
 
   const onNodeDoubleClick = useCallback((_, node) => {
     if (node.type === 'textNode') {
@@ -776,8 +776,8 @@ export default function App() {
     // When the inspector is already open, the preceding single-click already
     // repointed it — don't re-open (which would morph + recenter). Only act
     // if somehow targeting a different node.
-    if (editingNode) {
-      if (node.id !== editingNode.topicNodeId) {
+    if (inspectorNode) {
+      if (node.id !== inspectorNode.topicNodeId) {
         inspectorCommitRef.current?.()
         openInspector(node.id, { repoint: true })
       }
@@ -786,17 +786,17 @@ export default function App() {
     if (openInspector(node.id)) {
       track('card_edit_opened', { source: 'double_click', typeKey: node.data?.type })
     }
-  }, [editingNode, openInspector, setNodes])
+  }, [inspectorNode, openInspector, setNodes])
 
   // ── Update node (DB-backed) ─────────────────────────────────────────────
   //
-  // Called from EditModal as the user edits. Applies the change optimistically
+  // Called from Inspector as the user edits. Applies the change optimistically
   // to React state, persists to Supabase in parallel, and handles connection
   // add/remove by updating the DB edges in the background.
   //
   // Connection payloads carry the connection's id (assigned client-side in
-  // ConnectionsSection at picker click). EditModal owns the `recordAction`
-  // calls for connections — App.jsx just persists. This lets EditModal
+  // ConnectionsSection at picker click). Inspector owns the `recordAction`
+  // calls for connections — App.jsx just persists. This lets Inspector
   // emit all undo entries for a session in chronological order at close,
   // mixing field edits and connection clicks correctly.
   //
@@ -841,7 +841,7 @@ export default function App() {
     }
 
     // --- Connection adds / removes -----------------------------------------
-    // EditModal owns the recordAction calls (chronological ordering across
+    // Inspector owns the recordAction calls (chronological ordering across
     // field edits and connection clicks). This block is purely persistence.
     if (addConnections.length === 0 && removeConnections.length === 0) return
 
@@ -1209,32 +1209,32 @@ export default function App() {
         />
       )}
 
-      {editingNode && (
-        <EditModal
-          key={editingNode.topicNodeId}
-          node={editingNode.node}
-          connectedNodes={editingNode.connectedNodes}
-          allOtherNodes={editingNode.allOtherNodes}
-          originRect={editingNode.originRect}
-          skipOpenMorph={editingNode.isRepoint}
-          mode={editingNode.mode}
-          position={editingNode.position}
+      {inspectorNode && (
+        <Inspector
+          key={inspectorNode.topicNodeId}
+          node={inspectorNode.node}
+          connectedNodes={inspectorNode.connectedNodes}
+          allOtherNodes={inspectorNode.allOtherNodes}
+          originRect={inspectorNode.originRect}
+          skipOpenMorph={inspectorNode.isRepoint}
+          mode={inspectorNode.mode}
+          position={inspectorNode.position}
           onPositionChange={(p) =>
-            setEditingNode((prev) => (prev ? { ...prev, position: p } : prev))
+            setInspectorNode((prev) => (prev ? { ...prev, position: p } : prev))
           }
           onDock={onDockInspector}
           onUndock={onUndockInspector}
-          getCloseRect={() => getNodeOriginRect(editingNode.topicNodeId)}
+          getCloseRect={() => getNodeOriginRect(inspectorNode.topicNodeId)}
           commitApiRef={inspectorCommitRef}
           onUpdate={onUpdateNode}
           onClose={() => {
-            track('card_edit_closed', { typeKey: editingNode.node.data?.type })
+            track('card_edit_closed', { typeKey: inspectorNode.node.data?.type })
             setNodes(nds => nds.map(n =>
-              n.id === editingNode.topicNodeId
+              n.id === inspectorNode.topicNodeId
                 ? { ...n, data: { ...n.data, isEditing: false } }
                 : n
             ))
-            setEditingNode(null)
+            setInspectorNode(null)
           }}
         />
       )}

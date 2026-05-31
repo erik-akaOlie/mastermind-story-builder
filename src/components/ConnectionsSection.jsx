@@ -1,11 +1,11 @@
-// ConnectionsSection — the chip list + picker shown at the bottom of EditModal.
+// ConnectionsSection — the chip list + picker shown at the bottom of Inspector.
 // Owns:
 //   - The picker dropdown's open/close state
 //   - Click-outside to dismiss
 //   - Add / remove handlers (which mutate the parent's localConns array)
 //   - Chip rendering with type-aware coloring
 //
-// State (`localConns`) lives in the parent so that EditModal's auto-save
+// State (`localConns`) lives in the parent so that Inspector's auto-save
 // useEffect can read it and emit { addNodeIds, removeNodeIds } to the canvas.
 // The parent passes `localConns` and `setLocalConns` props plus the list of
 // candidate target nodes (`allOtherNodes`).
@@ -18,7 +18,7 @@ import { track } from '../lib/analytics.js'
 
 // Same readability formula used elsewhere — chosen background determines
 // whether the chip's label/× text is dark or white. Inlined here to avoid
-// a dependency back into EditModal; consider extracting to a util if more
+// a dependency back into Inspector; consider extracting to a util if more
 // places start using it.
 function textForHex(hex) {
   const r = parseInt(hex.slice(1, 3), 16)
@@ -35,7 +35,7 @@ export default function ConnectionsSection({ localConns, setLocalConns, allOther
     .filter((n) => !localConns.find((c) => c.nodeId === n.id))
     .sort((a, b) => sortKey(a.data.label).localeCompare(sortKey(b.data.label)))
 
-  // We pre-assign the connection's id client-side at click time so EditModal
+  // We pre-assign the connection's id client-side at click time so Inspector
   // can log the action immediately for chronological undo ordering. The same
   // id flows through to dbCreateConnection via createConnection({ id, ... }),
   // ensuring DB and undo-stack agree on the connectionId.
@@ -52,7 +52,7 @@ export default function ConnectionsSection({ localConns, setLocalConns, allOther
     const removed = localConns.find((c) => c.nodeId === nodeId)
     setLocalConns((prev) => prev.filter((c) => c.nodeId !== nodeId))
     // Intent-level event: fires when the user clicks × on a chip. The actual
-    // DB delete happens later via EditModal flush — fine, we want intent.
+    // DB delete happens later via Inspector flush — fine, we want intent.
     track('connection_deleted', { targetType: removed?.type })
   }
 

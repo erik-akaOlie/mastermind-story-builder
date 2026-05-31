@@ -1,4 +1,4 @@
-// EditModalHeader — the type-colored band at the top of EditModal.
+// InspectorHeader — the type-colored band at the top of the Inspector.
 // Composes:
 //   - Avatar (with click-to-replace via Upload Image modal + lightbox on click)
 //   - Title input (focused on mount)
@@ -19,7 +19,7 @@
 //     pre-loaded with the existing thumbnail.
 //
 // State for `title`, `type`, and `thumbnail` lives in the parent
-// (EditModal) because auto-save reads them. The Upload Image modal
+// (Inspector) because auto-save reads them. The Upload Image modal
 // handles its own upload progress and Storage writes.
 
 import { useEffect, useRef } from 'react'
@@ -31,7 +31,7 @@ import { useUploadImage } from './UploadImageProvider'
 import { labelInitial } from '../utils/labelUtils'
 import TypePicker from './TypePicker'
 
-export default function EditModalHeader({
+export default function InspectorHeader({
   node,
   onPointerDown,
   docked = false,

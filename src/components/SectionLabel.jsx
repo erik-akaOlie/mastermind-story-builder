@@ -1,4 +1,4 @@
-// Small label component used at the top of every section in EditModal
+// Small label component used at the top of every section in Inspector
 // (Summary, Story Notes, Hidden Lore, DM Notes, Inspiration, Connections).
 export default function SectionLabel({ children }) {
   return (

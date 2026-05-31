@@ -19,7 +19,7 @@
 //
 // Also covers the chained-operation regression for the bug found during
 // phase-5 manual smoke: create → edit → delete → undo×3 → redo×3 must
-// replay the exact same field values, in order. (Earlier, EditModal's
+// replay the exact same field values, in order. (Earlier, Inspector's
 // persist-time `'' → 'Untitled'` fold corrupted the chain so redo-edit
 // silently no-op'd.)
 //
@@ -604,7 +604,7 @@ describe('chained operation through useUndoStore', () => {
       dbRow: { typeId: TYPE_ID, typeKey: TYPE_KEY, label: '', summary: '', avatarUrl: null, positionX: 0, positionY: 0 },
     })
 
-    // 2) Forward: edit title (empty → 'My Title'), matching the EditModal close-time diff.
+    // 2) Forward: edit title (empty → 'My Title'), matching the Inspector close-time diff.
     rs.setNodes((nds) => nds.map((n) =>
       n.id === 'new-card' ? { ...n, data: { ...n.data, label: 'My Title' } } : n
     ))
@@ -683,7 +683,7 @@ describe('round-trip — addConnection / removeConnection', () => {
 
     const before = snapshotState(rs)
 
-    // Forward: simulate the user adding a connection via EditModal +
+    // Forward: simulate the user adding a connection via Inspector +
     // App.jsx's onUpdateNode (DB-assigned id).
     const edge = { id: 'edge-1', source: 'card-a', target: 'card-b', type: 'floating' }
     rs.setEdges(() => [edge])

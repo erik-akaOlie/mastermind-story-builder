@@ -122,7 +122,7 @@ export default function UploadImageModal({
   }, [])
 
   // Esc closes — capture phase + stopImmediatePropagation so the
-  // EditModal's own window-level Esc handler doesn't also fire and close
+  // Inspector's own window-level Esc handler doesn't also fire and close
   // the parent modal underneath us.
   useEffect(() => {
     const onKey = (e) => {
@@ -230,7 +230,7 @@ export default function UploadImageModal({
 
   return (
     <>
-      {/* Backdrop — clicking dismisses, mirroring Lightbox / EditModal patterns */}
+      {/* Backdrop — clicking dismisses, mirroring Lightbox / Inspector patterns */}
       <div
         className="fixed inset-0 z-[10000] bg-black/50"
         onClick={onClose}

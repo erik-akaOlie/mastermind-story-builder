@@ -15,7 +15,7 @@ afterEach(() => {
 // Polyfills for jsdom — browser APIs that aren't implemented by default
 // but that components/libraries call into.
 
-// crypto.randomUUID — used by EditModal.newItem() to assign bullet ids.
+// crypto.randomUUID — used by Inspector.newItem() to assign bullet ids.
 if (!globalThis.crypto) globalThis.crypto = {}
 if (!globalThis.crypto.randomUUID) {
   let counter = 0

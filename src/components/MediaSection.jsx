@@ -1,11 +1,11 @@
-// MediaSection — the image grid inside EditModal (e.g. the "Inspiration"
+// MediaSection — the image grid inside Inspector (e.g. the "Inspiration"
 // section that ships with V1 sample data). Owns:
 //   - dnd-kit setup for drag-to-reorder image tiles
 //   - SortableImage tile (image + grip handle + remove button)
 //   - +Add button that opens the Upload Image modal via useUploadImage
 //
 // State (the array of `{id, src}` entries) is held by the parent so the
-// auto-save useEffect in EditModal can read it. The parent passes `items`
+// auto-save useEffect in Inspector can read it. The parent passes `items`
 // and `onChange(nextItems)` props plus the upload context (workspaceId,
 // cardId, slug) needed to compute Storage paths.
 //
