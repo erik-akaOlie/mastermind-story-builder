@@ -33,6 +33,7 @@ import TypePicker from './TypePicker'
 
 export default function EditModalHeader({
   node,
+  onPointerDown,
   title,
   setTitle,
   type,
@@ -85,7 +86,8 @@ export default function EditModalHeader({
 
   return (
     <div
-      className="flex items-center gap-4 p-2 flex-shrink-0 select-none"
+      onPointerDown={onPointerDown}
+      className="flex items-center gap-4 p-2 flex-shrink-0 select-none cursor-move touch-none"
       style={{ backgroundColor: typeConfig.color }}
     >
       {/* Avatar — click to lightbox; hover the Swap button to replace */}
@@ -137,8 +139,19 @@ export default function EditModalHeader({
       <div className="flex-1 min-w-0 flex flex-col">
         <input
           ref={titleRef}
-          className="modal-header-input bg-transparent font-semibold text-2xl leading-none outline-none w-full"
-          style={{ color: hdrText }}
+          className="modal-header-input self-start bg-transparent font-semibold text-2xl leading-none outline-none rounded-[0.25rem] px-2 py-1"
+          style={{
+            color: hdrText,
+            // Size the field to its content (px-2 supplies the 8px L/R
+            // padding), growing until it fills the available header width,
+            // then locking at max-width so the text scrolls inside like
+            // before. This leaves the space to the right of the title as
+            // grabbable header. `field-sizing: content` is Chromium/recent
+            // Safari; see the min-width fallback for non-supporting browsers.
+            fieldSizing: 'content',
+            maxWidth: '100%',
+            minWidth: '4rem',
+          }}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Untitled"

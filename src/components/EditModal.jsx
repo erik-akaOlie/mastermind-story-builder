@@ -482,6 +482,45 @@ export default function EditModal({
     return () => window.removeEventListener('keydown', onKey)
   }, [handleClose])
 
+  // ── Undocked drag (Chunk 1) ──────────────────────────────────────────────
+  // The inspector is flex-centered; dragging applies a translate offset to a
+  // wrapper element. That wrapper is deliberately separate from modalRef —
+  // the morph animation owns modalRef's transform, so keeping the two on
+  // different elements lets them compose without fighting. A drag begins only
+  // from the header band, never from an interactive control inside it, and
+  // the offset is clamped so the inspector stays within the viewport (8px
+  // margin) and the header is always grabbable.
+  const [dragPos, setDragPos] = useState({ x: 0, y: 0 })
+  const dragPosRef = useRef({ x: 0, y: 0 })
+  const onHeaderPointerDown = useCallback((e) => {
+    if (e.button !== 0) return
+    if (e.target.closest('input, textarea, button, select, [contenteditable="true"]')) return
+    e.preventDefault()
+    const startMX = e.clientX, startMY = e.clientY
+    const startPX = dragPosRef.current.x, startPY = dragPosRef.current.y
+    const onMove = (ev) => {
+      let nx = startPX + (ev.clientX - startMX)
+      let ny = startPY + (ev.clientY - startMY)
+      const el = modalRef.current
+      if (el) {
+        const w = el.offsetWidth, h = el.offsetHeight
+        const baseLeft = (window.innerWidth  - w) / 2
+        const baseTop  = (window.innerHeight - h) / 2
+        const m = 8
+        nx = Math.min(Math.max(nx, m - baseLeft), window.innerWidth  - w - m - baseLeft)
+        ny = Math.min(Math.max(ny, m - baseTop),  window.innerHeight - h - m - baseTop)
+      }
+      dragPosRef.current = { x: nx, y: ny }
+      setDragPos(dragPosRef.current)
+    }
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }, [])
+
   // ── Title focus on mount ─────────────────────────────────────────────────
   const titleRef = useRef(null)
   useEffect(() => { titleRef.current?.focus() }, [])
@@ -495,24 +534,31 @@ export default function EditModal({
           onCreated={(key) => setType(key)}
         />
       )}
-      <div ref={backdropRef} className="fixed inset-0 z-[9998] bg-black" onClick={handleClose} />
-
+      {/* No scrim — the canvas stays live behind the inspector. The outer
+          layer is pointer-events-none so only the inspector box captures
+          events (the rest passes through to the canvas). The middle wrapper
+          carries the undocked drag offset, kept separate from modalRef whose
+          transform the morph animation owns. */}
       <div className="fixed inset-0 z-[9999] flex items-center justify-center pointer-events-none">
         <div
+          className="pointer-events-auto"
+          style={{ transform: `translate(${dragPos.x}px, ${dragPos.y}px)` }}
+        >
+        <div
           ref={modalRef}
-          className="pointer-events-auto rounded-[0.5rem] shadow-2xl flex flex-col overflow-hidden"
+          className="rounded-[0.5rem] shadow-2xl flex flex-col overflow-hidden"
           style={{
             width: MODAL_WIDTH,
             maxHeight: '90vh',
             backgroundColor: `color-mix(in srgb, ${typeConfig.color} 5%, white)`,
             '--modal-bg': `color-mix(in srgb, ${typeConfig.color} 5%, white)`,
           }}
-          onClick={(e) => e.stopPropagation()}
         >
 
           {/* ── Header: avatar + title + type dropdown + close ── */}
           <EditModalHeader
             node={node}
+            onPointerDown={onHeaderPointerDown}
             title={title}
             setTitle={setTitle}
             type={type}
@@ -601,6 +647,7 @@ export default function EditModal({
           </div>
 
 
+        </div>
         </div>
       </div>
     </UploadImageProvider>
