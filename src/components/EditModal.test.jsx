@@ -698,3 +698,101 @@ describe('EditModal — per-item bullet undo (phase 7c)', () => {
     })
   })
 })
+
+describe('EditModal — repoint commit (Chunk 2)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    recordActionMock.mockClear()
+  })
+  afterEach(() => { vi.useRealTimers() })
+
+  it('exposes commitSession on commitApiRef so App can commit before a repoint', () => {
+    const commitApiRef = { current: null }
+    const { props } = renderModal({ commitApiRef })
+    flushSave()
+    props.onUpdate.mockClear()
+    recordActionMock.mockClear()
+
+    fireEvent.change(screen.getByDisplayValue('Strahd von Zarovich'), {
+      target: { value: 'Strahd the Damned' },
+    })
+
+    // App calls this synchronously right before swapping the topic node.
+    expect(typeof commitApiRef.current).toBe('function')
+    act(() => { commitApiRef.current() })
+
+    // Pending edit is flushed to onUpdate immediately (no debounce wait)...
+    expect(props.onUpdate).toHaveBeenCalledWith(
+      'node-strahd',
+      expect.objectContaining({ label: 'Strahd the Damned' }),
+      expect.any(Object),
+    )
+    // ...and the outgoing node's undo entry is emitted.
+    const labelEntry = recordActionMock.mock.calls
+      .map((c) => c[0])
+      .find((e) => e.type === 'editCardField' && e.field === 'label')
+    expect(labelEntry).toMatchObject({ before: 'Strahd von Zarovich', after: 'Strahd the Damned' })
+  })
+
+  it('commitSession is idempotent — calling it twice emits the undo entry once', () => {
+    const commitApiRef = { current: null }
+    renderModal({ commitApiRef })
+    flushSave()
+    recordActionMock.mockClear()
+
+    fireEvent.change(screen.getByDisplayValue('Strahd von Zarovich'), {
+      target: { value: 'Strahd v2' },
+    })
+
+    act(() => { commitApiRef.current() })
+    act(() => { commitApiRef.current() })
+
+    const labelEntries = recordActionMock.mock.calls
+      .map((c) => c[0])
+      .filter((e) => e.type === 'editCardField' && e.field === 'label')
+    expect(labelEntries).toHaveLength(1)
+  })
+})
+
+describe('EditModal — docked mode (Chunk 2c)', () => {
+  beforeEach(() => { vi.useFakeTimers() })
+  afterEach(() => { vi.useRealTimers() })
+
+  it('renders an edge-collapse close control instead of an X when docked', () => {
+    renderModal({ mode: 'docked' })
+    expect(screen.getByRole('button', { name: /collapse to edge/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^close$/i })).not.toBeInTheDocument()
+  })
+
+  it('docked close calls onClose after the slide-down animation', () => {
+    const { props } = renderModal({ mode: 'docked' })
+    flushSave()
+
+    fireEvent.click(screen.getByRole('button', { name: /collapse to edge/i }))
+    // onClose is deferred until the slide-down finishes.
+    expect(props.onClose).not.toHaveBeenCalled()
+    act(() => { vi.advanceTimersByTime(260) })
+    expect(props.onClose).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('EditModal — directional close (Chunk 3)', () => {
+  beforeEach(() => { vi.useFakeTimers() })
+  afterEach(() => { vi.useRealTimers() })
+
+  it('consults getCloseRect on close so the morph targets the node’s current position', () => {
+    const getCloseRect = vi.fn(() => ({ left: 200, top: 120, width: 256, height: 180 }))
+    const { props } = renderModal({
+      getCloseRect,
+      originRect: { left: 0, top: 0, width: 256, height: 180 },
+    })
+    flushSave()
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+
+    // The exit morph recomputes the live rect rather than reusing originRect.
+    expect(getCloseRect).toHaveBeenCalled()
+    act(() => { vi.advanceTimersByTime(260) })
+    expect(props.onClose).toHaveBeenCalledTimes(1)
+  })
+})
