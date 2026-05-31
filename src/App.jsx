@@ -61,6 +61,18 @@ const edgeTypes = {
   floating: FloatingEdge,
 }
 
+// Inspector mode memory: the next fresh open reuses the last-used mode
+// (docked reopens docked; undocked reopens as today's centered modal). Only
+// the mode persists — undocked always recenters, per the agreed behavior.
+const INSPECTOR_MODE_KEY = 'mastermind:inspector-mode'
+function readInspectorMode() {
+  try { return localStorage.getItem(INSPECTOR_MODE_KEY) === 'docked' ? 'docked' : 'undocked' }
+  catch { return 'undocked' }
+}
+function writeInspectorMode(mode) {
+  try { localStorage.setItem(INSPECTOR_MODE_KEY, mode) } catch { /* private mode / quota */ }
+}
+
 export default function App() {
   const { activeWorkspaceId } = useWorkspace()
 
@@ -606,7 +618,7 @@ export default function App() {
         originRect: null,
         topicNodeId: newNode.id,
         position: { x: 0, y: 0 },
-        mode: 'undocked',
+        mode: readInspectorMode(),
         isRepoint: false,
       })
     } catch (err) {
@@ -712,7 +724,7 @@ export default function App() {
       ...state,
       topicNodeId: nodeId,
       position: repoint && prev ? prev.position : { x: 0, y: 0 },
-      mode: repoint && prev ? prev.mode : 'undocked',
+      mode: repoint && prev ? prev.mode : readInspectorMode(),
       isRepoint: repoint,
     }))
     return true
@@ -720,7 +732,15 @@ export default function App() {
 
   // Dock the open inspector to the bottom-right edge.
   const onDockInspector = useCallback(() => {
+    writeInspectorMode('docked')
     setEditingNode(prev => (prev ? { ...prev, mode: 'docked', isRepoint: false } : prev))
+  }, [])
+
+  // Detach the docked inspector back to a floating modal (EditModal drives the
+  // follow-the-cursor position from here and syncs it on release).
+  const onUndockInspector = useCallback(() => {
+    writeInspectorMode('undocked')
+    setEditingNode(prev => (prev ? { ...prev, mode: 'undocked', isRepoint: false } : prev))
   }, [])
 
   const openEdit = useCallback((nodeId) => {
@@ -1203,6 +1223,8 @@ export default function App() {
             setEditingNode((prev) => (prev ? { ...prev, position: p } : prev))
           }
           onDock={onDockInspector}
+          onUndock={onUndockInspector}
+          getCloseRect={() => getNodeOriginRect(editingNode.topicNodeId)}
           commitApiRef={inspectorCommitRef}
           onUpdate={onUpdateNode}
           onClose={() => {

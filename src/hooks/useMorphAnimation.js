@@ -17,14 +17,19 @@
 //      unmounts only after the animation finishes.
 // ============================================================================
 
-import { useLayoutEffect, useEffect, useCallback } from 'react'
+import { useLayoutEffect, useEffect, useCallback, useRef } from 'react'
 
 export const TRANSITION_MS = 260
 // A repoint keeps the inspector in place and just swaps its content, so the
 // entry is a quick opacity fade rather than the grow-from-card morph.
 export const REPOINT_FADE_MS = 130
 
-export function useMorphAnimation({ modalRef, backdropRef, originRect, skipOpenMorph, onClose }) {
+export function useMorphAnimation({ modalRef, backdropRef, originRect, skipOpenMorph, getCloseRect, onClose }) {
+  // Read the node's CURRENT screen rect at close time (kept in a ref so the
+  // exit callback's identity doesn't churn each render). Lets the close morph
+  // aim at where the node actually is now, not where it was when opened.
+  const getCloseRectRef = useRef(getCloseRect)
+  getCloseRectRef.current = getCloseRect
   // Phase 1: pre-paint setup
   useLayoutEffect(() => {
     const el = modalRef.current
@@ -78,14 +83,16 @@ export function useMorphAnimation({ modalRef, backdropRef, originRect, skipOpenM
     const el = modalRef.current
     const bd = backdropRef.current
     if (!el) { onClose(); return }
-    if (originRect) {
+    // Aim at the node's current rect; fall back to the open-time rect.
+    const targetRect = (getCloseRectRef.current && getCloseRectRef.current()) || originRect
+    if (targetRect) {
       const rect    = el.getBoundingClientRect()
       const modalCX = rect.left + rect.width  / 2
       const modalCY = rect.top  + rect.height / 2
-      const cardCX  = originRect.left + originRect.width  / 2
-      const cardCY  = originRect.top  + originRect.height / 2
+      const cardCX  = targetRect.left + targetRect.width  / 2
+      const cardCY  = targetRect.top  + targetRect.height / 2
       el.style.transition = `transform ${TRANSITION_MS}ms cubic-bezier(0.4, 0, 1, 1), opacity ${TRANSITION_MS}ms ease`
-      el.style.transform  = `translate(${cardCX - modalCX}px, ${cardCY - modalCY}px) scale(${originRect.width / rect.width})`
+      el.style.transform  = `translate(${cardCX - modalCX}px, ${cardCY - modalCY}px) scale(${targetRect.width / rect.width})`
     } else {
       el.style.transition = `transform ${TRANSITION_MS}ms ease, opacity ${TRANSITION_MS}ms ease`
       el.style.transform  = 'scale(0.92)'

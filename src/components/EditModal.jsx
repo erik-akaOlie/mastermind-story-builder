@@ -21,6 +21,7 @@ const DOCKED_WIDTH    = '30rem'   // 480px
 const DOCKED_RIGHT    = '1rem'    // 16px off the right edge
 const DOCK_SNAP_PX    = 96        // drag the right edge within this of the
                                   // viewport edge to arm docking
+const DETACH_PX       = 24        // drag the docked header this far to detach
 
 // Scalar card fields that emit `editCardField` undo entries on modal close.
 // Phase 7c removed the four list-shaped fields (storyNotes / hiddenLore /
@@ -66,6 +67,8 @@ export default function EditModal({
   position = { x: 0, y: 0 },
   onPositionChange,
   onDock,
+  onUndock,
+  getCloseRect,
   commitApiRef,
   onUpdate,
   onClose,
@@ -370,7 +373,7 @@ export default function EditModal({
     deps: [title, type, summary, storyNotes, hiddenLore, dmNotes, media, thumbnail, localConns],
   })
 
-  const animateClose = useMorphAnimation({ modalRef, backdropRef, originRect, skipOpenMorph, onClose })
+  const animateClose = useMorphAnimation({ modalRef, backdropRef, originRect, skipOpenMorph, getCloseRect, onClose })
 
   // Docked panel ref + its slide-down close (the undocked path uses the morph
   // animation instead — see handleClose).
@@ -595,6 +598,50 @@ export default function EditModal({
     window.addEventListener('pointerup', onUp)
   }, [])
 
+  // ── Detach from docked (Chunk 3) ─────────────────────────────────────────
+  // Dragging the docked panel's header past a small threshold undocks it into
+  // a floating modal that follows the cursor (header tracked under the
+  // pointer), then behaves like a normal drag. One continuous gesture: the
+  // window listeners stay attached across the mode flip.
+  const onUndockRef = useRef(onUndock)
+  onUndockRef.current = onUndock
+  const onDockedHeaderPointerDown = useCallback((e) => {
+    if (e.button !== 0) return
+    if (e.target.closest('input, textarea, button, select, [contenteditable="true"]')) return
+    e.preventDefault()
+    const startMX = e.clientX, startMY = e.clientY
+    let detached = false
+    const place = (cx, cy) => {
+      const el = modalRef.current
+      const w = el?.offsetWidth  || 660
+      const h = el?.offsetHeight || 520
+      const baseLeft = (window.innerWidth  - w) / 2
+      const baseTop  = (window.innerHeight - h) / 2
+      const m = 8
+      let nx = cx - window.innerWidth / 2      // modal center-x under cursor
+      let ny = (cy - 24) - baseTop             // header just under the cursor
+      nx = Math.min(Math.max(nx, m - baseLeft), window.innerWidth  - w - m - baseLeft)
+      ny = Math.min(Math.max(ny, m - baseTop),  window.innerHeight - h - m - baseTop)
+      dragPosRef.current = { x: nx, y: ny }
+      setDragPos(dragPosRef.current)
+    }
+    const onMove = (ev) => {
+      if (!detached) {
+        if (Math.hypot(ev.clientX - startMX, ev.clientY - startMY) < DETACH_PX) return
+        detached = true
+        onUndockRef.current?.()
+      }
+      place(ev.clientX, ev.clientY)
+    }
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      if (detached) onPositionChangeRef.current?.(dragPosRef.current)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }, [])
+
   // ── Title focus on mount ─────────────────────────────────────────────────
   const titleRef = useRef(null)
   useEffect(() => { titleRef.current?.focus() }, [])
@@ -606,7 +653,7 @@ export default function EditModal({
           {/* ── Header: avatar + title + type dropdown + close ── */}
           <EditModalHeader
             node={node}
-            onPointerDown={isDocked ? undefined : onHeaderPointerDown}
+            onPointerDown={isDocked ? onDockedHeaderPointerDown : onHeaderPointerDown}
             docked={isDocked}
             title={title}
             setTitle={setTitle}
