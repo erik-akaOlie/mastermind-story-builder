@@ -81,7 +81,7 @@ lands.
 **Usability quick wins landed alongside this planning**
 (see [`docs/research/usability-findings.md`](./docs/research/usability-findings.md)):
 trackpad two-finger pan + arrow-key navigation (FigJam-style) and the
-EditModal thumbnail edit affordance (always-visible pencil icon when
+Inspector thumbnail edit affordance (always-visible pencil icon when
 the card has no thumbnail). The remaining design question — *how to
 signal that spacebar+drag pans the canvas* — is logged as Open.
 
@@ -507,8 +507,11 @@ They reorder relative to each other based on what #1 + #2 reveal.
   focus card on canvas.
 - **Notes.** Could ship a simpler client-side search first against
   already-loaded state. Postgres full-text search is straightforward
-  later if scale demands it.
-- **Size:** M
+  later if scale demands it. **Partially shipped:** the UI placeholder
+  (top-right circle→pill in [`SearchBar.jsx`](./src/components/SearchBar.jsx),
+  which also reserves the 80px top band the docked Inspector respects) is
+  in place — only the query logic and results panel remain.
+- **Size:** M (reduced — UI scaffolding done)
 
 ### Background images V1
 - **Problem.** The canvas is a flat color today. Campaigns set in a
@@ -688,7 +691,7 @@ They reorder relative to each other based on what #1 + #2 reveal.
   (captured as a starting list, not a prescription):
   - `src/components/Login.jsx` and `src/components/Profile.jsx` tagline
     "Sign in to your story builder." / "Your story builder."
-  - `src/components/EditModal.jsx` section labels "Story Notes,"
+  - `src/components/Inspector.jsx` section labels "Story Notes,"
     "Hidden Lore," "DM Notes" — story-genre framing baked into the
     card schema.
   - `src/components/CampaignPicker.jsx` placeholder examples (`e.g.

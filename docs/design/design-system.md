@@ -63,8 +63,8 @@ Each state has exactly one visual treatment. Treatments are never shared across 
 | Default | Normal appearance, light drop shadow |
 | Hovered | scale(1.03) + deep drop shadow |
 | Selected | scale(1.03) + deep drop shadow; persists while anything else is hovered |
-| Dimmed | 50% opacity — any card that is not active when something else is hovered/selected |
-| Is-editing | opacity 0 (card disappears; modal animates from its position) |
+| Dimmed | 45% opacity — any card that is not active when something else is hovered/selected. (Was 15% during build; testers found that too aggressive — selecting one card nearly erased the rest of the web. Softened to 45% so unselected cards recede but stay legible.) |
+| Is-editing | No opacity change — the card whose contents the Inspector is showing stays visible. (Earlier builds set it to opacity 0; since the Inspector floats or docks rather than covering the canvas, the origin card now remains in view alongside its neighbors.) |
 
 *(The original design included a "Locked" state — an explicit user toggle that dimmed the card to 50% opacity. The lock feature was cut from V1; the `locked` flag remains in-memory only and the state treatment is no longer active.)*
 
@@ -96,11 +96,12 @@ Cursor states on the canvas:
 ### 1.7 Card Actions
 
 **Right-clicking anywhere on a card** opens a context menu with all available actions:
-- Edit (opens edit modal)
+- Edit (opens the Inspector)
 - Duplicate (without connections — "with connections" variant is cut from V1)
 - Delete
 
-**Double-clicking a card** also opens the edit modal.
+**Double-clicking a card** opens the Inspector. (A single click selects; a single
+click while the Inspector is already open repoints it to the clicked card — see §6.)
 
 There is no persistent edit icon on the card surface.
 
@@ -138,15 +139,16 @@ Persistent fields (stored in Supabase; see `CLAUDE.md` for the full DB schema):
 (`storyNotes`, `hiddenLore`, `dmNotes`, and `media` are each stored as a row in `node_sections` keyed by `kind`; the schema supports future modular sections.)
 
 UI-computed fields (not persisted):
-- `isEditing` — hides the card while the edit modal is open
+- `isEditing` — flags the card whose contents the Inspector is showing (the card stays visible; the Inspector floats or docks rather than covering it)
 - `connectionDots` — array of `{x, y, color}` for the border dot indicators
 - `locked` — in-memory only; lock feature was cut from V1
 
 Hover/select flags (`anySelected`, `anyHovered`, `hoveredEdgeNodeIds`) are not on `data` — they live in `useCanvasUiStore` and cards subscribe to them via narrow Zustand selectors so a hover event doesn't force every card to re-render.
 
-### 2.4 Edit Modal Content (implemented)
+### 2.4 Inspector Content (implemented)
 
-The edit modal (`EditModal.jsx`) is a centered overlay with:
+The Inspector (`Inspector.jsx`) is the card-editing surface (§6 covers its
+float-or-dock behavior). Its content, in both modes, is:
 1. **Header** — type-color background; title input (inline, borderless); close button
 2. **Type selector** — pill buttons for all types; clicking changes card color immediately
 3. **Thumbnail** — clicking the avatar opens it in the lightbox; a small pencil button appears in the top-right on hover and triggers the file picker. When no avatar is set, clicking the initial-letter placeholder opens the file picker. Uploads transcode to two WebP variants (thumb + full) and write to Supabase Storage.
@@ -292,9 +294,9 @@ Edges connect to precise border intersection points, not fixed handle positions.
 - `getSpreadBorderPoints()` — handles multi-connection spreading on a single side
 - React Flow handles are invisible; border points are computed by the App and passed to `FloatingEdge` via `edge.data.sourcePoint` / `edge.data.targetPoint`
 
-### 5.3 Creating Connections — Method 1: Edit Modal
+### 5.3 Creating Connections — Method 1: Inspector
 
-Inside the Connections section of the edit modal:
+Inside the Connections section of the Inspector:
 1. Click "+ Add connection"
 2. A dropdown picker lists all other nodes alphabetically (strips "The " prefix for sort order)
 3. Selecting a node creates the connection immediately
@@ -325,32 +327,77 @@ Appears immediately after a connection is created via either method.
 
 ---
 
-## 6. Edit Modal
+## 6. Inspector
 
-### 6.1 Appearance
+The Inspector is the surface for editing one card. It is no longer a fixed centered
+modal — it lives in one of two modes the user moves between freely. See
+[ADR-0015](../decisions/0015-float-or-dock-inspector.md) for the decision rationale.
 
-- **Centered modal** overlay with a semi-transparent black backdrop
-- Width: `41.25rem` (660px at default browser font size); max-height: 90vh; scrollable body
-- Opens with a morph animation: the card disappears and the modal expands from the card's screen position to center. Closes with the reverse animation.
-- **Not draggable** in the current implementation (draggable header is in the design spec but not yet built)
-- Escape key closes the modal; clicking the backdrop closes the modal
+### 6.1 Two modes
 
-### 6.2 Layout (implemented)
+**Undocked (floating modal).**
+- Draggable overlay, `41.25rem` wide (660px at default font size); max-height
+  constrained to the viewport; scrollable body.
+- Opens with a morph animation: it grows out of the clicked card's screen position.
+  The whole type-colored header is the drag handle (`cursor-move`).
+- Recenters on each open (position is not remembered — see §6.4).
 
-Single **scrolling panel**. Sections in order:
+**Docked (bottom-right panel).**
+- Fixed-width panel pinned to the bottom-right: `30rem` (480px) wide, `1rem` (16px)
+  right margin, flush to the bottom edge, top at the `5rem` (80px) band reserved for
+  search (§8). All values follow the 8px grid.
+- Rises in from the bottom edge (CSS `@keyframes`), LinkedIn-messaging style.
+- Sits **over** the canvas — the canvas does not reflow to make room (overlay, not
+  squeeze; see ADR-0015 §3).
 
-1. Title (inline input in the colored header bar)
+**Moving between modes.** Drag an undocked modal's right edge within ~96px of the
+viewport edge to arm docking; release to dock. Drag a docked panel's header ~24px to
+detach it back to a floating modal — one continuous gesture (the pointer is never
+released across the flip).
+
+### 6.2 Open, repoint, close
+
+- **Open.** Inspector closed: single-click selects the card, double-click opens it.
+- **Repoint.** Inspector open: a single plain click on a *different* card swaps its
+  contents to that card in place — no close/reopen. Outgoing edits commit first
+  (flush save + undo entries), then content remounts with a quick opacity fade;
+  position is preserved. Multi-select gestures (shift/ctrl/cmd-click, marquee) never
+  repoint.
+- **Close is control-only.** There is **no backdrop/scrim** — clicking the canvas does
+  not close the Inspector. Close via the header control (an X when undocked; a
+  down-chevron "collapse to edge" when docked), Esc, or by deleting the edited card.
+- **Directional close.** Undocked: morphs back toward the node's *current* on-screen
+  position (recomputed at close, so it aims correctly even after pan/reposition).
+  Docked: slides down off the bottom edge.
+
+### 6.3 Layout (implemented)
+
+Single **scrolling panel**, identical content in both modes (see §2.4 for the full
+section list). Sections in order:
+
+1. Title (content-sized inline input in the colored header bar)
 2. Type selector (pill buttons)
 3. Thumbnail (image upload)
 4. Summary (textarea)
-5. Notes (bullet list with keyboard navigation)
-6. Connections (list + add picker)
+5. Story Notes / Hidden Lore / DM Notes (bullet lists with keyboard navigation)
+6. Inspiration images (media grid)
+7. Connections (list + add picker)
 
-### 6.3 Animation Detail
+### 6.4 Mode memory + animation detail
 
-- `useLayoutEffect` runs before first paint, reads the modal's actual centered rect, and applies a `translate + scale` transform placing the modal exactly over the source card — invisible (`opacity: 0`), no transition
-- `useEffect` fires after first paint, schedules a `requestAnimationFrame` to set `transform: none` and `opacity: 1` with a CSS transition, so the browser interpolates card → center
-- Close reverses the process: animates to card position, then `setTimeout(onClose, 260)` so React unmounts after the animation completes
+- **Mode memory.** The last-used mode (docked vs. undocked) persists to
+  `localStorage` (`mastermind:inspector-mode`). Mode only — position/size are not
+  remembered; an undocked Inspector always recenters.
+- **Open morph (undocked).** `useLayoutEffect` runs before first paint, reads the
+  modal's actual centered rect, and applies a `translate + scale` transform placing
+  it exactly over the source card — invisible (`opacity: 0`), no transition.
+  `useEffect` then schedules a `requestAnimationFrame` to set `transform: none` +
+  `opacity: 1` with a CSS transition, so the browser interpolates card → center.
+- **Repoint entry** skips the geometric morph (`skipOpenMorph`) — just a quick
+  opacity fade, since the surface is already in place.
+- **Close** animates toward the node's current rect (read via `getCloseRect` at close
+  time), then `setTimeout(onClose, 260)` so React unmounts after the animation. Docked
+  close runs its own slide-down keyframes instead.
 
 ---
 
@@ -366,7 +413,7 @@ Single **scrolling panel**. Sections in order:
 | Spacebar + drag | Pan (Figma model) |
 | Drag on empty canvas | Marquee selection (indigo rectangle, partial intersection selects) |
 | Shift + click | Add to / remove from selection |
-| Double-click on card | Open edit modal |
+| Double-click on card | Open the Inspector (single-click while it's open repoints it — see §6.2) |
 | Right-click on card | Context menu (Edit, Duplicate, Delete) |
 | Right-click on empty canvas | Context menu (Add card / Add text) |
 
@@ -482,7 +529,14 @@ While locked, the app runs a lightweight read against Supabase every 3 seconds. 
 
 ---
 
-## 8. Search *(designed, not yet built)*
+## 8. Search *(placeholder shipped; search logic not yet built)*
+
+The **visual placeholder ships** ([`SearchBar.jsx`](../../src/components/SearchBar.jsx)):
+a search icon in a circle in the upper-right corner that expands left into a pill
+input on hover (via `HoverReveal`, the same circle→pill morph the UserMenu breadcrumb
+uses). It reserves an 80px top band (`SEARCH_BAND_REM = 5`) that the docked Inspector
+(§6) leaves clear. **No query logic is wired yet** — typing does nothing. The
+invocation, results panel, and result interaction below remain designed-not-built.
 
 ### 8.1 Invocation
 

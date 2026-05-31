@@ -51,7 +51,7 @@ Do not confuse visible salience with structural invariance. Recommendations shou
 | Canvas | React Flow v11.11.4 | both `reactflow` and `@reactflow/core` are installed; use `reactflow` |
 | Styling | Tailwind CSS v3 | rem units throughout; `html { font-size: 100% }` |
 | Icons | **Phosphor Icons** (`@phosphor-icons/react`) | design doc says Lucide — **ignore that, we use Phosphor** |
-| Drag-to-reorder | `@dnd-kit/core`, `@dnd-kit/sortable`, `@dnd-kit/utilities` | used in EditModal for bullets and images |
+| Drag-to-reorder | `@dnd-kit/core`, `@dnd-kit/sortable`, `@dnd-kit/utilities` | used in the Inspector for bullets and images |
 | State management | Zustand v5 | Several focused in-memory stores under `src/store/` — see the File Map. All are caches over Supabase, not persistence layers. Workspace data lives in React state hydrated from Supabase. |
 | Auth + Database | **Supabase** (Postgres + Auth + RLS) | `@supabase/supabase-js` client; schema in `supabase/schema.sql` |
 | Image storage | **Supabase Storage** (`workspace-media` + `profile-media` buckets) | both private; clients request signed URLs per render. workspace-media holds card avatars + inspiration images (two variants per upload). profile-media holds user profile avatars (single 256×256 variant). See ADR-0005 (workspace-media) and migration 003 (profile-media). |
@@ -154,7 +154,7 @@ src/
                                    one file per action type, each exporting
                                    { canApplyInverse, canApplyForward, applyInverse, applyForward }
 
-  hooks/                           reusable hooks extracted from App.jsx and EditModal
+  hooks/                           reusable hooks extracted from App.jsx and the Inspector
     useSpacebarPan.js              spacebar-held-down panning state
     useWorkspaceData.js             load lifecycle for the active workspace (types + nodes + edges + text)
                                    AND Supabase Realtime subscriptions that mirror remote INSERT/UPDATE/DELETE
@@ -162,9 +162,12 @@ src/
                                    on F5 and re-scopes when the active workspace switches.
     useEdgeGeometry.js             recomputes spread border points + connection-dot positions when nodes move
     useNodeHoverSelection.js       returns the four ReactFlow hover/select handlers, all backed by useCanvasUiStore
-    useAutoSave.js                 debounced save with explicit flush; used by EditModal
+    useAutoSave.js                 debounced save with explicit flush; used by the Inspector
     useMorphAnimation.js           modal-from-card morph in/out (useLayoutEffect setup, RAF animate-in,
-                                   returned animateClose for exit); used by EditModal
+                                   returned animateClose for exit); used by the Inspector. Also supports
+                                   `skipOpenMorph` (quick opacity fade for a repoint, no grow-from-card)
+                                   and `getCloseRect` (reads the node's CURRENT screen rect at close so the
+                                   exit morph flies toward where the node is now, post-pan/reposition)
     useUndoShortcuts.js            global Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y listener with the Word-style typing
                                    exemption (Ctrl+Z inside an input/textarea/contenteditable is left to the
                                    browser; outside it reverses the last workspace action)
@@ -182,18 +185,31 @@ src/
     Login.jsx                      email+password auth form
     CampaignPicker.jsx             post-login landing; list/create/rename/delete workspaces
     UserAvatar.jsx                 circular profile button with dropdown (sign-out, etc.)
-    UserMenu.jsx                   top-left breadcrumb chip + UserAvatar overlay on the canvas
-    EditModal.jsx                  orchestration shell: form state + auto-save trigger + composes the
-                                   pieces below. Was 792 lines before Sprint 1.6 — now 228 (state +
-                                   composition only)
-    EditModalHeader.jsx            avatar + title + TypePicker + close button (the type-colored band)
+    UserMenu.jsx                   top-left breadcrumb chip + UserAvatar overlay on the canvas; the
+                                   breadcrumb home button uses HoverReveal to expand circle→pill on hover
+    SearchBar.jsx                  top-right non-functional search placeholder (circle → pill on hover via
+                                   HoverReveal). Search logic is NOT built yet. Exports `SEARCH_BAND_REM = 5`
+                                   (the 80px top band the docked Inspector leaves clear)
+    HoverReveal.jsx                shared circle→pill hover-morph wrapper (CSS grid 0fr↔1fr, 200ms,
+                                   interruptible — reverses from the current frame). Used by SearchBar +
+                                   the UserMenu breadcrumb
+    Inspector.jsx                  the card-editing surface (formerly EditModal). Orchestration shell:
+                                   form state + auto-save trigger + composes the section pieces below.
+                                   Renders in two modes — undocked (draggable floating modal that morphs
+                                   from the card) and docked (bottom-right overlay panel). Owns drag/dock/
+                                   detach gestures, repoint commit, and directional close. See the
+                                   "Inspector" section below + ADR-0015
+    InspectorHeader.jsx            avatar + title + TypePicker + close/collapse button (the type-colored
+                                   band). The band is the drag handle; title input is content-sized via
+                                   CSS `field-sizing`. Docked close is a down-chevron (collapse), undocked
+                                   is an X
     BulletSection.jsx              reusable section: DnD-reorder bullets + focus-on-new + add/remove.
-                                   Used three times by EditModal (Story Notes, Hidden Lore, DM Notes).
+                                   Used three times by the Inspector (Story Notes, Hidden Lore, DM Notes).
                                    Exports `newItem` for parents seeding initial state
     MediaSection.jsx               Inspiration grid: DnD-reorder image tiles + parallel-safe upload
                                    (uses a ref to track latest items so concurrent uploads don't clobber)
     ConnectionsSection.jsx         chip list + node picker with click-outside-to-dismiss
-    TypePicker.jsx                 type dropdown (used inside EditModalHeader) + "Create new type…" row
+    TypePicker.jsx                 type dropdown (used inside InspectorHeader) + "Create new type…" row
     SectionLabel.jsx               tiny uppercase-tracked label utility used across sections
     ContextMenu.jsx                right-click menu on canvas card nodes (Edit/Duplicate/Delete)
     CanvasContextMenu.jsx          right-click menu on empty canvas (Add card / Add text). Submenu uses
@@ -211,8 +227,9 @@ src/
                                    overflow:hidden mask makes the slot the slide-in surface
     FeedbackChip.jsx               pill-shaped toast body (dark gray-900 + white text + optional Phosphor icon)
     ChipToast.jsx                  single chip-toast w/ CSS @keyframes slide-in, opacity fadeout, hover-pause
-    EditModal.test.jsx             10 happy-path tests pinning down EditModal behavior (open/populate,
-                                   debounced auto-save, connection add/remove, Esc to close, avatar upload)
+    Inspector.test.jsx             tests pinning down Inspector behavior (open/populate, debounced
+                                   auto-save, connection add/remove, Esc to close, avatar upload, per-item
+                                   bullet undo, repoint commit, docked-mode close, directional close)
 
   store/
     useTypeStore.js                Zustand store for node types — in-memory cache hydrated from the `node_types`
@@ -361,7 +378,7 @@ function textForHex(hex) {
 }
 ```
 
-Used in: EditModal header, type selector chips, connection chips, CampaignNode header, UserAvatar.
+Used in: Inspector header, type selector chips, connection chips, CampaignNode header, UserAvatar.
 
 ### Icons — always Phosphor, always `weight="fill"` for content icons
 
@@ -431,7 +448,7 @@ Card avatars and inspiration images live in the **`workspace-media` Supabase Sto
 
 - `src/lib/imageStorage.js` owns transcode + upload + delete. Exports `BUCKET_WORKSPACE` and `BUCKET_PROFILE` as the single source of truth for bucket names.
 - `src/lib/useImageUrl.js` is the hook every renderer uses; it accepts a value of any shape and returns either a signed URL, a base64 string passthrough, or null. Defaults to `BUCKET_WORKSPACE`.
-- `src/components/Lightbox.jsx` is the single shared lightbox (provider + hook); CampaignNode and EditModal both call `useLightbox().open(value)`.
+- `src/components/Lightbox.jsx` is the single shared lightbox (provider + hook); CampaignNode and the Inspector both call `useLightbox().open(value)`.
 - **Bucket RLS uses a SECURITY DEFINER helper** (`public.user_owns_workspace_media_path`) instead of inlining the workspace-ownership lookup inside each policy. The inlined version silently fails — the cross-schema query from `storage.objects` to `public.workspaces` returns no rows even when the user owns the workspace, and every upload errors with "new row violates row-level security policy". The helper bypasses RLS on `public.workspaces` while still pinning the check to `auth.uid()`. See [supabase/migrations/002_card_media_bucket.sql](./supabase/migrations/002_card_media_bucket.sql) (original) and [supabase/migrations/007_rename_card_media_bucket.sql](./supabase/migrations/007_rename_card_media_bucket.sql) (renamed in place). **Apply this pattern to any future Storage bucket that needs cross-schema ownership checks.**
 - `#migrate` is a temporary hash route to the migration tool ([src/components/MigrateImages.jsx](src/components/MigrateImages.jsx)) for backfilling any base64 entries; once a workspace has zero base64 entries the page reports "Nothing to migrate" and the route can be removed.
 
@@ -495,29 +512,73 @@ When the user hovers in/out while in Bead View, the highlight top animates by on
 - `getSpreadBorderPoints()` computes where dots appear on each card border
 - `getBorderIntersection()` computes the edge endpoints
 - Edges carry `data.sourcePoint` / `data.targetPoint` (screen-space `{x, y}`) which `FloatingEdge` reads directly
-- `syncedNodeIds` ref in EditModal tracks which connections have been created as RF edges, preventing duplicates
+- `syncedNodeIds` ref in the Inspector tracks which connections have been created as RF edges, preventing duplicates
 
-### EditModal decomposition (Sprint 1.6)
+### Inspector — the card-editing surface (float-or-dock, per ADR-0015)
 
-EditModal is the orchestration shell — it owns form state and composes sub-components. State (title, type, summary, bullet sections, media, thumbnail, localConns) lives in EditModal because the auto-save reads from all of them via one `useAutoSave` call. Sub-components are controlled (take `value` + `setter` props):
+The Inspector (component file `Inspector.jsx`; formerly `EditModal.jsx` — renamed
+2026-05-30) is the surface for editing one card. It opens in one of two modes and
+the user can move between them at will:
 
-| Piece | Owns | Receives from EditModal |
+- **Undocked** — a draggable floating modal that morphs in from the clicked card
+  (grow-from-card). The whole type-colored header band is the drag handle. Drag the
+  right edge within `DOCK_SNAP_PX` (96px) of the viewport edge to arm docking;
+  release to dock.
+- **Docked** — a fixed-width overlay panel pinned bottom-right (`DOCKED_WIDTH` 30rem,
+  `DOCKED_RIGHT` 1rem margin, flush to the bottom, top at the `SEARCH_BAND_REM` 80px
+  search band). Rises in from the bottom via CSS `@keyframes`. Drag the header
+  `DETACH_PX` (24px) to detach back to a floating modal — the gesture is continuous
+  (window listeners persist across the mode flip; the modal repositions under the
+  cursor).
+
+**Key behaviors:**
+- **Repoint.** While the Inspector is open, a single plain click on another card
+  swaps its contents to that card in place (position preserved, quick opacity fade
+  via `skipOpenMorph` rather than a re-morph). Outgoing edits are committed first
+  (flush save + undo) via `commitSession`, exposed to App through `commitApiRef` and
+  guarded by `committedRef` for idempotency. Content is keyed by `topicNodeId` so
+  React remounts cleanly on swap. Multi-select gestures (shift/ctrl/cmd-click,
+  marquee) do NOT repoint.
+- **Open vs select.** When the Inspector is closed, a single click just selects the
+  card; double-click opens it. When open, single-click repoints (above).
+- **Close is control-only.** Clicking the canvas does NOT close the Inspector — there
+  is no backdrop/scrim. Close via the header control (an X when undocked; a
+  down-chevron "collapse to edge" when docked) or Esc. Deleting the card whose
+  contents are shown also closes it.
+- **Directional close.** The close morph reads the node's CURRENT screen rect
+  (`getCloseRect` → `useMorphAnimation`) so the modal flies toward where the node is
+  now, even after panning or repositioning — not where it was when opened.
+- **Mode memory.** The chosen mode persists to localStorage (`mastermind:inspector-mode`,
+  via `readInspectorMode`/`writeInspectorMode` in App.jsx). Mode only — an undocked
+  Inspector always recenters on open.
+- **Inspector-instance state** lives in App as `inspectorNode`
+  `{ topicNodeId, node, position, mode, isRepoint, ... }`, with `topicNodeId`
+  independent of canvas selection so a future multi-inspector world is an array of
+  these rather than a rewrite.
+
+It remains an orchestration shell: form state (title, type, summary, bullet sections,
+media, thumbnail, localConns) lives in the Inspector because one `useAutoSave` call
+reads from all of them. Sub-components are controlled (take `value` + `setter` props):
+
+| Piece | Owns | Receives from the Inspector |
 |---|---|---|
-| `<EditModalHeader>` | uploading-avatar state, file-picker ref, `titleRef` (focus on mount) | title/setTitle, type/setType, typeConfig, hdrText, TypeIcon, thumbnail/setThumbnail, workspaceId, onClose, onCreateNewType |
+| `<InspectorHeader>` | uploading-avatar state, file-picker ref, `titleRef` (focus on mount), `onPointerDown` drag handle | title/setTitle, type/setType, typeConfig, hdrText, TypeIcon, thumbnail/setThumbnail, workspaceId, docked, onClose, onCreateNewType |
 | `<BulletSection>` | DnD context, sensors, refs for focus-on-new, add/remove/update logic | items, onChange, label, placeholder, dotColor, addLabel |
 | `<MediaSection>` | DnD context, file-picker ref, `uploadingCount`, `currentItemsRef` (parallel-upload safety) | items, onChange, cardId, workspaceId, slug |
 | `<ConnectionsSection>` | picker open/close, click-outside dismissal, available-nodes filtering + sort | localConns, setLocalConns, allOtherNodes |
 | `<TypePicker>` | dropdown open/close, hover state | type, setType, hdrText, onCreateNewType |
 | `useAutoSave` | doSaveRef pattern, debounce timer | doSave callback, deps array, optional delay |
-| `useMorphAnimation` | useLayoutEffect setup, RAF animate-in, animateClose | modalRef, backdropRef, originRect, onClose |
+| `useMorphAnimation` | useLayoutEffect setup, RAF animate-in, animateClose, skipOpenMorph, getCloseRect | modalRef, backdropRef, originRect, skipOpenMorph, getCloseRect, onClose |
 
-10 happy-path tests in `EditModal.test.jsx` pin behavior down. Run with `npm test`.
+`Inspector.test.jsx` pins behavior down across both modes (open/populate, auto-save,
+connections, close, avatar upload, per-item bullet undo, repoint commit, docked close,
+directional close). Run with `npm test`.
 
-### How auto-save works (EditModal)
+### How auto-save works (Inspector)
 
 - `useAutoSave({ doSave, deps, delay })` debounces a save 400ms after any dep changes
 - The hook stores `doSave` in a ref so the timer always calls the latest closure (with the latest state)
-- Returns `flushSave()` for synchronous saves on close (Esc, click-backdrop)
+- Returns `flushSave()` for synchronous saves on close (Esc / close control) and on repoint (before the topic node swaps)
 - No Save / Cancel buttons — they were removed long ago
 
 ### React Flow v11 gotchas (real footguns we've hit)
@@ -580,7 +641,7 @@ Custom user-created types are persisted per-user as rows in the `node_types` tab
 - [x] RLS policies on every table
 - [x] 5 built-in node types seeded per user on first sign-in
 - [x] Canvas cards with header, avatar, summary, bullet body, connection dots
-- [x] Edit modal: title, type, avatar/thumbnail, summary, story notes, hidden lore, DM notes, media, connections
+- [x] Inspector (card editor): title, type, avatar/thumbnail, summary, story notes, hidden lore, DM notes, media, connections
 - [x] Auto-save (400ms debounce, flush on close) — writes to Supabase
 - [x] Drag-to-reorder bullets and images in edit modal
 - [x] Image lightbox in edit modal
@@ -594,13 +655,14 @@ Custom user-created types are persisted per-user as rows in the `node_types` tab
 - [x] Dynamic icon visibility at extreme zoom-out (no feedback-loop flicker)
 - [x] Icon registry with keyword-based recommendations
 - [x] Position persistence on node drag-stop; text node resize persistence on mouseup
-- [x] **Image storage** in Supabase Storage with thumb + full WebP variants; client-side transcode at upload; signed-URL rendering. EditModal's avatar + inspiration uploads write straight to Storage.
+- [x] **Image storage** in Supabase Storage with thumb + full WebP variants; client-side transcode at upload; signed-URL rendering. The Inspector's avatar + inspiration uploads write straight to Storage.
 - [x] **Shared lightbox** — clicking a card avatar (canvas or modal) or any inspiration tile opens the same overlay.
 - [x] **App.jsx refactor** — load lifecycle, edge geometry, hover/select, and spacebar pan all extracted into focused hooks under `src/hooks/`. Hover/select state moved into `useCanvasUiStore` so a hover event no longer re-renders every card.
 - [x] Z-index lift — hovered/selected cards rise above their neighbors via a `:has(.is-lifted)` rule.
 - [x] **Realtime sync** — Supabase Realtime channel in `useWorkspaceData` mirrors remote `nodes` / `node_sections` / `connections` / `text_nodes` INSERT/UPDATE/DELETE into local state. No echo filter in V1; self-writes round-trip harmlessly. Requires `REPLICA IDENTITY FULL` on each table for DELETE events to pass RLS + filter checks.
-- [x] **EditModal decomposition** — 792-line component split into `<EditModalHeader>`, `<BulletSection>` (×3), `<MediaSection>`, `<ConnectionsSection>`, `<TypePicker>` + `useAutoSave` and `useMorphAnimation` hooks. EditModal itself is now 228 lines of orchestration.
-- [x] **Component tests** — Vitest + React Testing Library + jsdom; `EditModal.test.jsx` covers 10 happy-path scenarios. Run with `npm test`.
+- [x] **Inspector decomposition** — the card editor is an orchestration shell composing `<InspectorHeader>`, `<BulletSection>` (×3), `<MediaSection>`, `<ConnectionsSection>`, `<TypePicker>` + `useAutoSave` and `useMorphAnimation` hooks.
+- [x] **Float-or-dock Inspector** — the card editor (renamed from EditModal → Inspector, 2026-05-30) opens as a draggable floating modal or a docked bottom-right panel; single-click repoints it to another card, the header drag-detaches between modes, mode persists to localStorage, and the close morph flies toward the node's live position. Non-functional top-right search placeholder reserves the 80px band the docked panel respects. Node-selection dimming softened 0.15→0.45. See [ADR-0015](./docs/decisions/0015-float-or-dock-inspector.md).
+- [x] **Component tests** — Vitest + React Testing Library + jsdom; `Inspector.test.jsx` covers open/populate, auto-save, connections, close, avatar upload, per-item bullet undo, repoint commit, docked close, and directional close. Run with `npm test`.
 - [x] **Undo / redo** — Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y reverses recent workspace actions. Per-tab, per-(user × workspace), capped at 75. Conflict-aware in both directions (refuses + toasts when state has drifted from another tab's Realtime updates). 14 action types covered; sessionStorage-backed for F5 protection. Word-style typing exemption: `Ctrl+Z` inside an input/textarea/contenteditable is left to the browser. See [ADR-0006](./docs/decisions/0006-undo-redo.md).
 - [x] **Bottom-left feedback strip** — `FeedbackChipBar` composes the existing `SyncIndicator` (light, ambient "Edited Nm ago") with a chip-toast slot (dark, transient action feedback). Toasts slide in from behind the chip via CSS @keyframes (no JS state ping-pong, no entry delay), masked by an `overflow:hidden` container so no toast pixels are visible left of the chip's left edge. Undo/redo toasts lead with a Phosphor curved-arrow icon (`ArrowUUpLeft` / `ArrowUUpRight`) followed by the entry's label. 2s visible, 300ms fadeout, hover pauses both phases (including freezing the visual opacity transition mid-fadeout). Replaces Sonner for these toasts; persist-fail uses the same chip family with a sticky id.
 - [x] **Sign-out cleanup** — `AuthContext.signOut` calls `useUndoStore.clearAllForUser(userId)` before Supabase clears the session, wiping the in-memory undo stack AND every `mastermind:undo:${userId}:*` sessionStorage entry across any workspaces the user touched in this tab.
@@ -633,7 +695,7 @@ native mobile apps) is captured in `roadmap.md` with rationale.
 
 **"Locked" state is in-memory only.** The Supabase schema has no `locked` column on `nodes`. If we reinstate the lock feature later, add a column and a migration. Until then, do not persist `data.locked`.
 
-**Legacy base64 image entries are read-only.** `useImageUrl` still resolves base64 data URIs (so any old data renders), but EditModal no longer writes new base64 — uploads go to Storage. Once every workspace has zero base64 entries, the legacy branch in `useImageUrl` and the `MigrateImages` component can both be deleted in the same PR.
+**Legacy base64 image entries are read-only.** `useImageUrl` still resolves base64 data URIs (so any old data renders), but the Inspector no longer writes new base64 — uploads go to Storage. Once every workspace has zero base64 entries, the legacy branch in `useImageUrl` and the `MigrateImages` component can both be deleted in the same PR.
 
 ---
 

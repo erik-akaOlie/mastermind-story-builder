@@ -714,3 +714,21 @@ auto-updated timestamps).
 - Sprint 1.5 / 1.5b (Realtime) — the cross-tab sync that interacts with
   undo's DB writes. Each undo round-trips harmlessly through the channel
   because the handlers are idempotent.
+
+## Addendum (2026-05-30, see ADR-0015)
+
+Two references in the body above describe how the card editor closed at the time
+this ADR was written. ADR-0015 changed both:
+
+- **The "EditModal" is now the Inspector** (`src/components/Inspector.jsx`,
+  `src/components/InspectorHeader.jsx`). Wherever this ADR says EditModal, read
+  Inspector. The session-capture model is unchanged — a snapshot is taken on mount
+  and per-changed-field `editCardField` actions are emitted on close.
+- **The session-end triggers changed.** The body lists "(Esc, click-backdrop, X
+  button)". The Inspector has no backdrop/scrim, so click-backdrop no longer exists.
+  The session now flushes and emits its undo entries on: Esc, the header
+  close/collapse control, deletion of the edited card, **and on repoint** — when the
+  user single-clicks a different card while the Inspector is open, the outgoing
+  card's session is committed (flush save + emit undo entries) before the surface
+  re-binds to the new card. Repoint is therefore an additional session boundary that
+  did not exist when this ADR was written.

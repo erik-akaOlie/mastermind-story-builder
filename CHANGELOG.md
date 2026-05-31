@@ -4,6 +4,267 @@ A running log of meaningful changes to MasterMind: Story Builder. Append-only. N
 
 ## [Unreleased]
 
+### Inspector — float-or-dock card editing surface (2026-05-30)
+
+The card-editing surface (formerly "EditModal") is now the **Inspector**,
+and it can live in two places: an undocked floating modal that morphs out
+of the clicked card (the previous behavior), or a docked panel pinned to
+the bottom-right of the canvas. A single click on another card while the
+Inspector is open **repoints** it at the new card instead of closing and
+reopening — the same surface re-binds to a new card via an inspector-
+instance model rather than a teardown/rebuild cycle. A detach gesture pops
+a docked Inspector back into a floating modal, and the Inspector remembers
+which mode it was last in so the next open honors the user's preference.
+Close is directional: a docked Inspector slides down off the bottom edge,
+a floating Inspector morphs back into its origin card.
+
+Alongside the Inspector work, a non-functional **search bar placeholder**
+landed in the top-right (visual scaffolding for the real search feature),
+and the node-selection dimming was softened so unselected cards recede but
+stay readable.
+
+**Added**
+- Undocked draggable Inspector — the floating modal can be grabbed and
+  repositioned (Chunk 1).
+- Single-click repoint + inspector-instance model — clicking a different
+  card while the Inspector is open re-binds the existing surface to the new
+  card instead of closing and reopening
+  ([`src/App.jsx`](./src/App.jsx),
+  [`src/components/Inspector.jsx`](./src/components/Inspector.jsx),
+  [`src/hooks/useMorphAnimation.js`](./src/hooks/useMorphAnimation.js),
+  [`src/nodes/CampaignNode.jsx`](./src/nodes/CampaignNode.jsx)).
+- Docked mode — Inspector can dock as a bottom-right overlay panel
+  ([`src/components/Inspector.jsx`](./src/components/Inspector.jsx),
+  [`src/components/InspectorHeader.jsx`](./src/components/InspectorHeader.jsx),
+  [`src/index.css`](./src/index.css)).
+- Detach gesture, mode memory, and directional close — docked detaches to
+  floating; the last-used mode is remembered across opens; close animation
+  matches the current mode (slide-down docked, morph-to-card floating).
+- Top-right search bar placeholder + smoother hover morph
+  ([`src/components/SearchBar.jsx`](./src/components/SearchBar.jsx),
+  [`src/components/HoverReveal.jsx`](./src/components/HoverReveal.jsx),
+  [`src/components/UserMenu.jsx`](./src/components/UserMenu.jsx)). The
+  search bar is visual-only — no query logic yet.
+- 3 Inspector tests covering repoint commit, docked close, and directional
+  close ([`src/components/Inspector.test.jsx`](./src/components/Inspector.test.jsx)).
+
+**Changed**
+- Node-selection dimming softened from `0.15` to `0.45` opacity in
+  [`src/nodes/CampaignNode.jsx`](./src/nodes/CampaignNode.jsx) — testers
+  found the original dim too aggressive; unselected cards now recede but
+  stay legible.
+
+**Renamed**
+- `EditModal.jsx` → `Inspector.jsx`, `EditModalHeader.jsx` →
+  `InspectorHeader.jsx`, `EditModal.test.jsx` → `Inspector.test.jsx`
+  (components `EditModal` → `Inspector`, `EditModalHeader` →
+  `InspectorHeader`); App state `editingNode` → `inspectorNode`. The "edit
+  modal" terminology is retired in favor of "the Inspector" throughout code
+  comments and docs.
+
+### Legal — agreements, in-app policy pages, and self-serve account deletion (2026-05-26 – 2026-05-27)
+
+Pre-tester-invite legal groundwork. New users now agree to the Terms of
+Service and Privacy Policy at signup, both documents are readable in-app at
+`/#terms` and `/#privacy`, and users can delete their own account end-to-end
+without contacting anyone.
+
+**Added**
+- Terms of Service + Privacy Policy drafts under
+  [`docs/legal/`](./docs/legal/).
+- In-app `/#terms` and `/#privacy` hash routes
+  ([`src/components/LegalDocPage.jsx`](./src/components/LegalDocPage.jsx),
+  [`src/components/TermsOfServicePage.jsx`](./src/components/TermsOfServicePage.jsx),
+  [`src/components/PrivacyPolicyPage.jsx`](./src/components/PrivacyPolicyPage.jsx),
+  wired in [`src/main.jsx`](./src/main.jsx)).
+- Signup-time agreement to ToS + Privacy Policy
+  ([`src/components/Login.jsx`](./src/components/Login.jsx),
+  [`src/lib/AuthContext.jsx`](./src/lib/AuthContext.jsx)); acceptance
+  recorded on the profile row.
+- Self-serve account deletion — a Supabase Edge Function
+  ([`supabase/functions/delete-account/index.ts`](./supabase/functions/delete-account/index.ts))
+  that tears down the user's data and auth record, fronted by a "Delete
+  account" button with an email-confirmation modal in
+  [`src/components/Profile.jsx`](./src/components/Profile.jsx).
+
+**Changed**
+- The in-app delete flow is now the **primary** account-deletion path in the
+  policy docs ([`docs/legal/privacy-policy.md`](./docs/legal/privacy-policy.md),
+  [`docs/legal/terms-of-service.md`](./docs/legal/terms-of-service.md)).
+
+**Migration/SQL**
+- [`supabase/migrations/008_profiles_terms_acceptance.sql`](./supabase/migrations/008_profiles_terms_acceptance.sql)
+  — adds terms-acceptance tracking to `public.profiles`.
+
+### campaign → workspace rename (2026-05-18 – 2026-05-19)
+
+Closes [ADR-0012](./docs/decisions/0012-rename-campaign-to-workspace.md). The
+architectural object previously called "campaign" is now "workspace"
+throughout the data-access layer, contexts, hooks, DB queries, Realtime
+subscriptions, persistence keys, tests, and user-facing copy. Representation-
+level holdouts (`CampaignNode.jsx`, the `'campaignNode'` RF type id,
+`CampaignPicker.jsx`) are deliberately retained per ADR-0012's entity-vs-
+representation principle and logged as Known Divergences.
+
+The Storage bucket was renamed in the same pass: `card-media` →
+`workspace-media`. A render regression on 2026-05-18 — hardcoded bucket-name
+string literals left pointing at the old name — was fixed by routing every
+consumer through the `BUCKET_WORKSPACE` constant in
+[`src/lib/imageStorage.js`](./src/lib/imageStorage.js).
+
+**Changed**
+- `lib/campaigns.js` → [`src/lib/workspaces.js`](./src/lib/workspaces.js);
+  `CampaignContext` / `useCampaignData` → `WorkspaceContext` /
+  `useWorkspaceData`.
+- DB queries, Realtime filters, props, and user-facing copy updated to
+  workspace terminology.
+- Persistence keys migrated (`mastermind:activeWorkspaceId`) with a
+  backwards-compat shim for the old localStorage key.
+- Tests updated to the new names.
+
+**Fixed**
+- Image-render regression from hardcoded bucket strings — all bucket-name
+  references now flow through `BUCKET_WORKSPACE` / `BUCKET_PROFILE`; no
+  hardcoded literals remain.
+
+**Migration/SQL**
+- [`supabase/migrations/006_rename_campaigns_to_workspaces.sql`](./supabase/migrations/006_rename_campaigns_to_workspaces.sql)
+  — renames the `campaigns` table → `workspaces` and dependent columns.
+- [`supabase/migrations/007_rename_card_media_bucket.sql`](./supabase/migrations/007_rename_card_media_bucket.sql)
+  — renames the bucket to `workspace-media` and its RLS policies/helper in
+  place; drops the deprecated `card-media` policies (the bucket itself is
+  retained briefly as a rollback artifact, scheduled for deletion).
+
+**Note**
+- `card-media` is deprecated, not deleted — clients can no longer read or
+  write it. Permanent deletion is a deferred Stage 5 cleanup task.
+
+### Zoom progressive disclosure — Bead View + Altitude Rail (2026-05-12 – 2026-05-15)
+
+Implements [ADR-0010](./docs/decisions/0010-zoom-progressive-disclosure.md)
+and its 2026-05-15 addendum. The canvas zoom-out limit no longer caps below
+the threshold needed to see a meaningful slice of a campaign at once. As the
+user zooms past a tuned altitude, every card morphs from its full rectangular
+form into a compact circular **bead**; zooming back in morphs it home. A
+left-edge **Altitude Rail** visualizes navigation state and lets the user
+retune the morph threshold by dragging.
+
+**Added**
+- Altitude state + zoom-threshold trigger driving the Card↔Bead morph; a
+  production threshold, dynamic minZoom, and reduced-motion handling
+  (Bead View Chunks A–F).
+- Card↔bead morph visual: a card collapses to a circular bead with a label
+  initial as the no-thumbnail fallback (revises ADR-0010 in commit 401303a).
+- Circular connection-point routing for beads;
+  [`src/utils/edgeRouting.js`](./src/utils/edgeRouting.js) refactored to take
+  rect params so card and bead geometry share one routing path. Crowded-bead
+  dot distribution sorts by natural angle and anchors to the natural
+  midpoint.
+- Hover-expand: hovering a bead temporarily expands it to card form, with
+  edges re-routing to the expanded card's visible edges and a per-node morph
+  signal; drag-with-frozen-clamp + drop-drift handling so a bead can be
+  repositioned while expanded.
+- [`src/components/AltitudeRail.jsx`](./src/components/AltitudeRail.jsx) —
+  left-edge instrument that reads navigation state (current zoom, threshold,
+  dynamic minZoom, altitude) and writes back exactly one value
+  (`thresholdGridGapMm`). Two visual states (ambient line at rest, expanded
+  controls on hover); the draggable thumb's vertical extent IS the hysteresis
+  dead-band, and dragging it retunes the threshold and morphs the canvas in
+  real time. Includes click-to-zoom, log-normalized scale, hue-matched scrim,
+  and a11y.
+
+**Changed**
+- Bbox stability: `computeMinZoom` uses canonical card dimensions
+  (256 × 180) for every card-type node regardless of measured size, so a
+  card↔bead morph doesn't shift the bounding box and scoot the threshold
+  thumb up and down the rail.
+
+**Trade-offs accepted**
+- The 64px rail container is `pointer-events: auto`, so marquee-select can't
+  be initiated from the leftmost 64px of the canvas — acceptable for an
+  edge-mounted nav tool that slides out of the way on mouse-leave.
+
+### Behavioral analytics + session replay — PostHog Cloud, tester-gated (2026-05-11)
+
+Implements [ADR-0009](./docs/decisions/0009-behavioral-analytics-session-replay.md).
+Session replay plus ~16 named events via PostHog Cloud, restricted to invited
+testers. The whole subsystem revolves around an `is_test_user` boolean on
+`public.profiles` — false for everyone by default. Non-testers download zero
+bytes of `posthog-js`.
+
+**Added**
+- [`src/lib/analytics.js`](./src/lib/analytics.js) — all PostHog
+  interaction. `posthog-js` is fetched via dynamic `import()` (its own Vite
+  chunk, ~64 KB gzipped) only after `profile.is_test_user === true` is
+  confirmed. Three safety guards: conditional load, try/catch on every public
+  function, and early-bail on `track()`/`resetAnalytics()` when init never
+  ran.
+- [`src/components/AnalyticsBootstrap.jsx`](./src/components/AnalyticsBootstrap.jsx)
+  — mounted inside `<ProfileProvider>`; watches the profile and fires the
+  idempotent `initAnalytics(profile)` on load.
+- ~16 named events wired at action sites across
+  [`src/App.jsx`](./src/App.jsx), `ConnectionsSection`, `TypePicker`, and
+  [`src/hooks/useUndoShortcuts.js`](./src/hooks/useUndoShortcuts.js). Three
+  events use windowing/timer logic (`zoom_changed`, `pan_burst`,
+  `card_repositioned_quickly`).
+- Password protection layered, not selector-based: the login screen renders
+  pre-init, PostHog's default `type=password` masking, and a `.ph-mask`
+  class honored by `maskInputFn`/`maskTextFn` even when the user toggles the
+  show-password eye.
+
+**Changed**
+- `AuthContext.signOut` now also calls `resetAnalytics()` so a tester's
+  PostHog session/identity can't bleed across users on the same browser.
+- Per the ADR revision (commit cb85d5d): **no content masking** in the
+  canvas — the words testers type are themselves research signal.
+
+**Migration/SQL**
+- [`supabase/migrations/004_is_test_user_flag.sql`](./supabase/migrations/004_is_test_user_flag.sql)
+  — adds the `is_test_user` boolean to `public.profiles` (default false).
+- [`supabase/migrations/005_default_test_user_true.sql`](./supabase/migrations/005_default_test_user_true.sql)
+  — flips the default to true for the invite-only stage. **Revert before
+  public launch.**
+
+**Note**
+- `VITE_POSTHOG_KEY` must be set at **build time** — Vite substitutes the
+  literal at build, and an empty value lets Rollup dead-code-eliminate the
+  dynamic `posthog-js` import entirely.
+
+### Profile avatars + `public.profiles` table (2026-05-09)
+
+Users can now upload, replace, and remove a profile photo from a Profile
+page. Profile avatars get a 1:1 crop, a single 256×256 WebP variant, and live
+in a dedicated `profile-media` Storage bucket distinct from card media.
+Introduces `public.profiles` as the canonical home for app-level user
+metadata, auto-created per user by an `auth.users` INSERT trigger.
+
+**Added**
+- [`public.profiles`](./supabase/migrations/003_profiles_and_profile_media.sql)
+  — one row per user (`avatar_path`, `display_name` — no UI yet —
+  timestamps), linked 1:1 to `auth.users`, with an `on_auth_user_created`
+  trigger plus a backfill for pre-existing users.
+- [`src/lib/profile.js`](./src/lib/profile.js) — data-access layer
+  (`getProfile`, `setAvatarPath`, `clearAvatar`, `setDisplayName`).
+  `clearAvatar` nulls the DB column first, then best-effort deletes the
+  Storage object.
+- [`src/lib/ProfileContext.jsx`](./src/lib/ProfileContext.jsx) — shared store
+  (`useProfile() → { profile, loading, error, updateProfile, refresh }`) so
+  the Profile page header and the top-left UserAvatar chip share one source
+  of truth; an avatar change propagates without a reload.
+- Profile page UI ([`src/components/Profile.jsx`](./src/components/Profile.jsx))
+  and UserAvatar integration ([`src/components/UserAvatar.jsx`](./src/components/UserAvatar.jsx)),
+  routed at `/#profile` in [`src/main.jsx`](./src/main.jsx).
+- Shared image pipeline: `UploadImageModal` becomes domain-agnostic via
+  `cardImagePipeline()` / `profileAvatarPipeline()` factories in
+  [`src/lib/imageStorage.js`](./src/lib/imageStorage.js); `ImageCropper`
+  gains a `profile-avatar` mode (square 256×256 frame + output).
+
+**Migration/SQL**
+- [`supabase/migrations/003_profiles_and_profile_media.sql`](./supabase/migrations/003_profiles_and_profile_media.sql)
+  — creates the `profiles` table + trigger + backfill and the `profile-media`
+  Storage bucket with same-schema RLS (path prefix `= auth.uid()`; no
+  SECURITY DEFINER helper needed since there's no cross-schema lookup).
+
 ### Sprint 3 — Image upload + cropper (2026-05-08)
 
 A new Upload Image modal replaces the old direct-to-Storage file
@@ -82,7 +343,7 @@ one (+).
   avatar click and Swap button click both route through the Upload
   Image modal in thumbnail mode. Removed the local upload-progress
   state and the file input.
-- [`src/components/EditModal.jsx`](./src/components/EditModal.jsx)
+- [`src/components/Inspector.jsx`](./src/components/Inspector.jsx)
   — wrapped in `<UploadImageProvider>` so MediaSection and
   EditModalHeader can reach the modal.
 

@@ -45,3 +45,4 @@ An ADR records **settled decisions and architecture.** It stays intentionally si
 - [ADR-0012: Foundational rename — campaign → workspace](./0012-rename-campaign-to-workspace.md)
 - [ADR-0013: Product positioning](./0013-product-positioning.md)
 - [ADR-0014: Workspace schema architecture — data-driven, deferred](./0014-workspace-schema-architecture.md)
+- [ADR-0015: Float-or-dock Inspector for card editing](./0015-float-or-dock-inspector.md)
