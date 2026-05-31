@@ -318,17 +318,20 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
 
   // Three resting states for the card's opacity:
   //   - active   (hovered / edge-highlighted / selected)        → full
-  //   - dimmed   (something ELSE is active — pulled out of focus) → way back
+  //   - dimmed   (something ELSE is active — pulled out of focus) → pushed back
   //   - resting  (nothing on the canvas is active right now)     → slightly dimmed
-  // Locked cards halve every level. The 0.15 "way back" is intentional — it
-  // signals "this isn't what you're looking at" without losing the card.
+  // Locked cards halve every level. The dim was 0.15 originally; testers
+  // (Chris/Todd, 2026-05) found selecting one node made the rest of the graph
+  // nearly invisible — losing the surrounding context that makes the web
+  // legible. Softened to 0.45 so unselected cards recede but stay readable
+  // (matches graph-focus norms in Obsidian / Neo4j).
   const baseOpacity = data.locked ? 0.5 : 1
   const isResting = !isActive && !anythingActive && !anySelected && !data.isEditing
   let opacity
   if (isActive) {
     opacity = baseOpacity
   } else if (anythingActive || anySelected) {
-    opacity = baseOpacity * 0.15
+    opacity = baseOpacity * 0.45
   } else {
     opacity = baseOpacity * 0.85
   }
