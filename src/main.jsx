@@ -18,6 +18,7 @@ import Profile from './components/Profile.jsx'
 import AnalyticsBootstrap from './components/AnalyticsBootstrap.jsx'
 import TermsOfServicePage from './components/TermsOfServicePage.jsx'
 import PrivacyPolicyPage from './components/PrivacyPolicyPage.jsx'
+import SpikeIndex from './spike/SpikeIndex.jsx'  // SPIKE-ONLY — remove with src/spike/
 
 // Tiny hash-based router. We don't need React Router for one ad-hoc page;
 // the `#migrate` route is temporary and gets removed once Phase 5 lands.
@@ -50,6 +51,10 @@ function Root() {
   // These are no-ops until a write fails or the network drops.
   useOnlineListener()
   useProbeLoop()
+
+  // SPIKE-ONLY — auth-independent so it renders even if Supabase is slow/offline.
+  // Remove with src/spike/.
+  if (hash === '#editor-spike') return <SpikeIndex />
 
   if (loading) return null
   // Pre-auth routes — accessible without signing in so a prospective user can

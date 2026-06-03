@@ -1,6 +1,15 @@
 # ADR-0004: Inline `@`-mention syntax for cross-card references
 Date: 2026-04-27
-Status: Accepted (design locked; build deferred to ~Sprint 4)
+Status: Superseded by [ADR-0016](./0016-block-editor-foundation.md) (was: design locked, build deferred)
+
+> **Superseded (2026-06-03):** [ADR-0016](./0016-block-editor-foundation.md)
+> changes the trigger (`@` → `[[`), the storage (hand-rolled `@[id|name]` string
+> → BlockNote block JSON), and the delete lifecycle (removing a mention no longer
+> deletes the connection — only the Connections block deletes). This ADR was
+> never built, so nothing is migrated. **Retained** principle: one connection row
+> per pair in the `connections` table is the single source of truth, and inline
+> references create connections. Read this ADR for that rationale; defer to
+> ADR-0016 for syntax, trigger, and lifecycle.
 
 > **Terminology note (post-2026-05-18):** This ADR predates ADR-0012's `campaign` -> `workspace` rename. References to "campaign(s)" / `campaign_id` here describe the architectural object now called "workspace" / `workspace_id`. The decision content remains accurate; only the names changed.
 
