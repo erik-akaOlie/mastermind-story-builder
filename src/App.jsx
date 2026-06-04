@@ -13,7 +13,6 @@ import {
   createNode as dbCreateNode,
   duplicateCard,
   updateNode as dbUpdateNode,
-  updateNodeSections as dbUpdateNodeSections,
   deleteNode as dbDeleteNode,
   buildDeleteCardSnapshot,
 } from './lib/nodes.js'
@@ -824,7 +823,12 @@ export default function App() {
       )
     )
 
-    // --- Persist core node fields + sections -------------------------------
+    // --- Persist core node fields -----------------------------------------
+    // Card content (summary / bullets / media) now lives in the block editor
+    // and saves itself (saveBlockZones); the Inspector only sends the header
+    // fields below. The legacy section-write path was removed at the E4
+    // cutover (ADR-0016). Undo of section content still writes via
+    // updateNodeSections directly from the undo dispatcher, not through here.
     const nodeField = {}
     if (updatedData.label !== undefined)   nodeField.label     = updatedData.label
     if (updatedData.summary !== undefined) nodeField.summary   = updatedData.summary
@@ -835,23 +839,6 @@ export default function App() {
     }
     if (Object.keys(nodeField).length > 0) {
       dbUpdateNode(nodeId, nodeField).catch(console.error)
-    }
-
-    const sectionsPatch = {}
-    if (updatedData.storyNotes !== undefined) sectionsPatch.storyNotes = updatedData.storyNotes
-    if (updatedData.hiddenLore !== undefined) sectionsPatch.hiddenLore = updatedData.hiddenLore
-    if (updatedData.dmNotes    !== undefined) sectionsPatch.dmNotes    = updatedData.dmNotes
-    if (updatedData.media      !== undefined) sectionsPatch.media      = updatedData.media
-    if (Object.keys(sectionsPatch).length > 0) {
-      // Sections API replaces all four; fill in any unspecified from current state.
-      const current = nodes.find((n) => n.id === nodeId)
-      const merged = {
-        storyNotes: sectionsPatch.storyNotes ?? current?.data?.storyNotes ?? [],
-        hiddenLore: sectionsPatch.hiddenLore ?? current?.data?.hiddenLore ?? [],
-        dmNotes:    sectionsPatch.dmNotes    ?? current?.data?.dmNotes    ?? [],
-        media:      sectionsPatch.media      ?? current?.data?.media      ?? [],
-      }
-      dbUpdateNodeSections(nodeId, merged).catch(console.error)
     }
 
     // --- Connection adds / removes -----------------------------------------
