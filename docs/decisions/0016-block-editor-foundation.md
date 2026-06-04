@@ -105,6 +105,38 @@ concern; once that was measured and small, the evidence pointed to BlockNote.)
     portable JSON with connections held separately, so an editor swap is a
     re-render problem, not a data re-architecture.
 
+## Addendum (2026-06-03): Connections are a fixed panel, not a block
+
+During Phase 2 (Chunk C) implementation, the Connections "block" approach
+(decision points 6–8 above) hit a concrete problem: a block inside the BlockNote
+document can be **deleted or moved by the user** like any other block, and the
+Connections surface must be permanent and always present. Guarding a block's
+existence inside the document fights BlockNote's model (re-insertion ordering,
+flicker). We therefore **moved Connections out of the editable document** into a
+**fixed, non-removable panel** pinned below the GM zone editor.
+
+What changes:
+- Connections are **no longer a block** in the `gm_only` document. The migration
+  stops emitting a `connections` block; `CardZones` strips any stray legacy one
+  on load; the `connections` block type stays registered (rendering nothing)
+  only as crash-safety for not-yet-re-migrated data.
+- The fixed panel reads the live connection list and deletes through the
+  Inspector's existing `localConns` flow (so canvas-edge removal, persistence,
+  and undo are unchanged).
+
+What does NOT change — this **reinforces** the original principle rather than
+reversing it:
+- Decision **§6 still holds**: connections remain first-class rows in the
+  `connections` table, never embedded in block JSON. A fixed panel honors
+  "outside the editor content" *more* faithfully than an in-document block did.
+- Decision **§7 still holds**: the panel is the authoritative place to delete a
+  connection, and deleting reverts any inline `[[links]]` to plain text.
+- Decision **§8 still holds**: the panel reads live external state every render.
+
+Only the *representation* of the Connections surface changed (block → fixed
+panel); the connection model is unchanged. Inline `[[Node]]` links still create
+connections (§4).
+
 ## Relationship to ADR-0004
 
 ADR-0004 ("Inline `@`-mention syntax") was **design-locked but never built**, so

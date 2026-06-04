@@ -130,10 +130,9 @@ export function checkNoLoss(source, savedCardView, savedGmOnly) {
     }
   }
 
-  // Connections must remain renderable: a live-reading Connections block exists.
-  if (gmOnly && !gmOnly.some((b) => b?.type === 'connections')) {
-    issues.push('Connections block missing from GM zone')
-  }
+  // Connections are NOT verified in block content (ADR-0016 revised): they live
+  // in the connections table and render in a fixed panel, never as a block. The
+  // migration never touches connection rows, so they cannot be lost here.
 
   return issues
 }

@@ -20,7 +20,6 @@ import '@blocknote/mantine/style.css'
 import { BlockNoteSchema, defaultBlockSpecs, defaultInlineContentSpecs } from '@blocknote/core'
 import { createReactBlockSpec, createReactInlineContentSpec } from '@blocknote/react'
 import ImageAlbumView from './ImageAlbumBlock.jsx'
-import ConnectionsView from './ConnectionsBlock.jsx'
 
 // ── Inline [[Node]] link ─────────────────────────────────────────────────────
 const NodeLink = createReactInlineContentSpec(
@@ -48,10 +47,15 @@ const ImageAlbum = createReactBlockSpec(
   { render: (props) => <ImageAlbumView block={props.block} editor={props.editor} /> }
 )
 
-// ── Connections (data-driven: live chips + delete; reads EditorContext) ──────
+// ── Connections — NO LONGER a content block (ADR-0016 revised) ───────────────
+// Connections render in a fixed, non-removable panel below the GM zone editor
+// (see CardZones), not inside the document. The type stays registered ONLY as
+// crash-safety so any already-migrated doc that still contains a stray
+// connections block loads without error; CardZones strips them on load, and the
+// migration no longer emits them, so this render is effectively never seen.
 const Connections = createReactBlockSpec(
   { type: 'connections', propSchema: {}, content: 'none' },
-  { render: () => <ConnectionsView /> }
+  { render: () => null }
 )
 
 // v0.51: createReactBlockSpec returns a FACTORY that must be CALLED to get the

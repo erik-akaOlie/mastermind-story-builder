@@ -94,13 +94,6 @@ describe('checkNoLoss — CATCHES loss (the point of the verifier)', () => {
     expect(checkNoLoss(source, card_view, tampered)).toContain('Image Album images do not match Image Section')
   })
 
-  it('flags a missing Connections block', () => {
-    const source = sampleSource()
-    const { card_view, gm_only } = migrateCardToBlocks(source)
-    const lossy = gm_only.filter((b) => b.type !== 'connections')
-    expect(checkNoLoss(source, card_view, lossy)).toContain('Connections block missing from GM zone')
-  })
-
   it('flags a lost Summary', () => {
     const source = sampleSource()
     const { card_view, gm_only } = migrateCardToBlocks(source)

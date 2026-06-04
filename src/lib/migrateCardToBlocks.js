@@ -74,9 +74,10 @@ export function migrateCardToBlocks(card = {}) {
     // round-trip is byte-for-byte lossless.
     gmOnly.push({ type: 'imageAlbum', props: { images: JSON.stringify(media) } })
   }
-  // Always emit the Connections block: a card may have connection rows even with
-  // no other content, and the block reads them live from the connections table.
-  gmOnly.push({ type: 'connections', props: {} })
+  // Connections are NOT a block in the document (ADR-0016, revised). They render
+  // in a fixed, non-removable panel pinned below the GM zone editor, reading the
+  // connections table live. Nothing about them is emitted into block content —
+  // the migration only needs the connections table to stay intact (it does).
 
   return { card_view: cardView, gm_only: gmOnly }
 }

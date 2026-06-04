@@ -15,6 +15,7 @@ import { useMorphAnimation, TRANSITION_MS } from '../hooks/useMorphAnimation'
 import { UploadImageProvider } from './UploadImageProvider'
 import { SEARCH_BAND_REM } from './SearchBar'
 import { EditorProvider } from './editor/EditorContext.jsx'
+import { revertLinksForNode } from './editor/editorLinks.js'
 
 // Lazy so the ~1 MB BlockNote bundle loads only when a card is opened, never in
 // the main app bundle. Block-editor Phase 2, Chunk A (ADR-0016).
@@ -651,20 +652,51 @@ export default function Inspector({
   const titleRef = useRef(null)
   useEffect(() => { titleRef.current?.focus() }, [])
 
-  // ── Editor context for the custom blocks (Phase 2, Chunk B) ──────────────
-  // The Connections + Image Album blocks read this. Deleting a connection from
-  // the block routes through the SAME localConns flow the legacy
-  // ConnectionsSection uses, so canvas-edge removal, persistence, and undo all
-  // come for free. Connections are read live (not cached in the block) so a
-  // delete can't ghost back — see ADR-0016 §8.
+  // ── Editor context for the custom blocks (Phase 2, Chunks B + C) ─────────
+  // The Connections + Image Album blocks and the [[ link autocomplete read this.
+  // Adding/deleting a connection routes through the SAME localConns flow the
+  // legacy ConnectionsSection uses, so canvas-edge create/remove, persistence,
+  // and undo all come for free. Connections are read live (not cached in the
+  // block) so a delete can't ghost back — see ADR-0016 §8.
+  //
+  // editorsRef holds every mounted zone editor so a connection delete can
+  // revert that node's [[links]] back to plain text across both zones (§7).
+  const editorsRef = useRef(null)
+  if (editorsRef.current === null) editorsRef.current = new Set()
+  const registerEditor   = useCallback((ed) => { editorsRef.current.add(ed) }, [])
+  const unregisterEditor = useCallback((ed) => { editorsRef.current.delete(ed) }, [])
+
   const editorContextValue = useMemo(() => ({
     cardId: node.id,
     workspaceId: activeWorkspaceId,
     slug: title || node.data.label,
     connections: localConns,
-    onDeleteConnection: (connectionId) =>
-      setLocalConns((prev) => prev.filter((c) => c.id !== connectionId)),
-  }), [node.id, node.data.label, activeWorkspaceId, title, localConns])
+    allOtherNodes,
+    registerEditor,
+    unregisterEditor,
+    // [[ link selection — set semantics: one connection per node-pair.
+    onAddConnection: (targetNode) =>
+      setLocalConns((prev) =>
+        prev.some((c) => c.nodeId === targetNode.id)
+          ? prev
+          : [...prev, {
+              id: crypto.randomUUID(),
+              nodeId: targetNode.id,
+              label: targetNode.data?.label,
+              type: targetNode.data?.type,
+              isNew: true,
+            }],
+      ),
+    // The authoritative connection delete (§6): drop the connection AND revert
+    // any inline [[links]] to that node to plain text across both zones (§7).
+    onDeleteConnection: (connectionId) => {
+      const conn = localConns.find((c) => c.id === connectionId)
+      if (conn) {
+        for (const ed of editorsRef.current) revertLinksForNode(ed, conn.nodeId)
+      }
+      setLocalConns((prev) => prev.filter((c) => c.id !== connectionId))
+    },
+  }), [node.id, node.data.label, activeWorkspaceId, title, localConns, allOtherNodes, registerEditor, unregisterEditor])
 
   // ── Render ────────────────────────────────────────────────────────────────
   // Header + body, shared verbatim by both the docked and undocked containers.

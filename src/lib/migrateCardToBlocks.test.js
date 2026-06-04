@@ -124,14 +124,13 @@ describe('migrateCardToBlocks — no-loss field migration', () => {
     expect(JSON.parse(album.props.images)).toEqual(card.media)
   })
 
-  it('emits a Connections block that owns NO connection data (it reads live rows)', () => {
-    const { gm_only } = migrateCardToBlocks(sampleCard())
-    const conns = gm_only.find((b) => b.type === 'connections')
-    expect(conns).toBeTruthy()
-    // ADR-0016 §6/§8: connections are first-class rows, never embedded in block
-    // JSON. The block is a live-reading marker — it must not carry a baked-in
-    // connection list that could drift from the connections table.
-    expect(conns.props ?? {}).toEqual({})
+  it('does NOT emit connections into block content (they live in a fixed panel)', () => {
+    const { card_view, gm_only } = migrateCardToBlocks(sampleCard())
+    // ADR-0016 (revised): connections are not document content at all — they
+    // render in a fixed, non-removable panel that reads the connections table
+    // live. Nothing connection-shaped should appear in either zone's blocks.
+    expect(card_view.some((b) => b.type === 'connections')).toBe(false)
+    expect(gm_only.some((b) => b.type === 'connections')).toBe(false)
   })
 
   // ── Zone isolation — nothing leaks across the player/GM boundary ─────────────
@@ -176,9 +175,9 @@ describe('migrateCardToBlocks — edge cases', () => {
     expect(bulletTexts(gm_only)).toEqual([])
     // No images → no album block (nothing to preserve).
     expect(gm_only.some((b) => b.type === 'imageAlbum')).toBe(false)
-    // A card with no other content can still have connections, so the live
-    // Connections block is always emitted.
-    expect(gm_only.some((b) => b.type === 'connections')).toBe(true)
+    // Connections are a fixed panel, never block content — an empty card emits
+    // no connections block.
+    expect(gm_only.some((b) => b.type === 'connections')).toBe(false)
   })
 
   it('tolerates legacy string bullets (pre-normalizeBullets data)', () => {
@@ -210,6 +209,6 @@ describe('migrateCardToBlocks — edge cases', () => {
     const { card_view, gm_only } = migrateCardToBlocks({})
     expect(Array.isArray(card_view)).toBe(true)
     expect(Array.isArray(gm_only)).toBe(true)
-    expect(gm_only.some((b) => b.type === 'connections')).toBe(true)
+    expect(gm_only.some((b) => b.type === 'connections')).toBe(false)
   })
 })
