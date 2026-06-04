@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react'
 import { useNodeTypes } from '../store/useTypeStore'
 import { useWorkspace } from '../lib/WorkspaceContext.jsx'
 import { useUndoStore } from '../store/useUndoStore'
@@ -14,6 +14,10 @@ import { useAutoSave } from '../hooks/useAutoSave'
 import { useMorphAnimation, TRANSITION_MS } from '../hooks/useMorphAnimation'
 import { UploadImageProvider } from './UploadImageProvider'
 import { SEARCH_BAND_REM } from './SearchBar'
+
+// Lazy so the ~1 MB BlockNote bundle loads only when a card is opened, never in
+// the main app bundle. Block-editor Phase 2, Chunk A (ADR-0016).
+const CardZones = lazy(() => import('./editor/CardZones.jsx'))
 
 const MODAL_WIDTH = '41.25rem'
 // Docked geometry (per the mockup). 8-grid: 480/8=60, 16/8=2, 80/8=10.
@@ -671,6 +675,20 @@ export default function Inspector({
 
           {/* ── Body (scrollable) ── */}
           <div className="overflow-y-auto flex-1 min-h-0 px-4 pt-4 pb-10 flex flex-col gap-10">
+
+            {/* ── New block editor (Phase 2, Chunk A — transitional) ──
+                The two zone editors read/save the migrated card_view / gm_only
+                JSON independently of the legacy fields below. The legacy
+                Summary / bullets / media / connections sections stay in place
+                until the Chunk E cutover. */}
+            <div className="flex flex-col gap-3 rounded-[0.5rem] border border-dashed border-[#c4b5fd] bg-[#faf5ff] p-3">
+              <div className="text-[0.6875rem] uppercase tracking-wider font-semibold text-[#7C3AED]">
+                Block editor (new) · legacy fields below will be removed at cutover
+              </div>
+              <Suspense fallback={<div className="text-sm text-gray-400">Loading editor…</div>}>
+                <CardZones nodeId={node.id} />
+              </Suspense>
+            </div>
 
             {/* Summary */}
             <div className="flex flex-col gap-4">
