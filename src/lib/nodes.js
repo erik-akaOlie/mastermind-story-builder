@@ -356,8 +356,15 @@ export async function restoreCardWithDependents({ dbCardRow, dbSectionRows, dbCo
 // ============================================================================
 
 async function writeSections(nodeId, { storyNotes = [], hiddenLore = [], dmNotes = [], media = [] }) {
-  // Wipe existing
-  await supabase.from('node_sections').delete().eq('node_id', nodeId)
+  // Wipe existing LEGACY rows ONLY, then re-insert them. Scoping the delete to
+  // SECTION_KINDS is CRITICAL during block-editor coexistence (ADR-0016): an
+  // unscoped node-wide delete also removed the card_view / gm_only zones the
+  // block editor saves independently (via lib/blockZones.js), causing sporadic
+  // content loss whenever this legacy auto-save fired — e.g. on a connection
+  // change, which routes through onUpdateNode → updateNodeSections even when no
+  // bullet/media field changed. The legacy path and the block path MUST touch
+  // disjoint kinds; this `.in('kind', …)` filter is what enforces that.
+  await supabase.from('node_sections').delete().eq('node_id', nodeId).in('kind', SECTION_KINDS)
 
   const rows = [
     { node_id: nodeId, kind: 'narrative',  content: storyNotes, sort_order: 0 },
