@@ -143,6 +143,77 @@ export async function createNode({
 }
 
 // ----------------------------------------------------------------------------
+// Duplicate a card (block-editor cutover, ADR-0016 Chunk E2).
+//
+// Inserts a new card row copying the source's core fields, then copies EVERY
+// one of the source's node_sections rows — kind-agnostic — under the new id.
+// Reading "all rows" (rather than an enumerated list of kinds) is the
+// future-proof choice: any kind added later is duplicated automatically, and
+// it never becomes its own cutover problem.
+//
+// Section content is read from the DB, not from canvas memory, for the same
+// reason buildDeleteCardSnapshot does: the GM zone (`gm_only`) is never held in
+// React state. The caller flushes the source editor first if it's open, so the
+// copy includes the latest unsaved edits.
+//
+// Connections are NOT copied. A connection is a deliberate act (ADR-0016 §4),
+// so a duplicate enters the graph unconnected (product decision, 2026-06-04).
+// No undo entry is recorded — duplicate is not undoable by design; the
+// affordance is to delete the copy (which IS undoable since E1).
+//
+// Returns the full React-shaped duplicate node.
+// ----------------------------------------------------------------------------
+export async function duplicateCard({
+  sourceId,
+  workspaceId,
+  typeId,
+  typeKey,
+  label = '',
+  summary = '',
+  avatarUrl = null,
+  positionX = 0,
+  positionY = 0,
+}) {
+  return persistWrite(async () => {
+    const { data: node, error: nodeErr } = await supabase
+      .from('nodes')
+      .insert({
+        workspace_id: workspaceId,
+        type_id: typeId,
+        label,
+        summary,
+        avatar_url: avatarUrl,
+        position_x: positionX,
+        position_y: positionY,
+      })
+      .select()
+      .single()
+    if (nodeErr) throw nodeErr
+
+    const { data: sectionRows, error: secErr } = await supabase
+      .from('node_sections')
+      .select('kind, content, sort_order')
+      .eq('node_id', sourceId)
+    if (secErr) throw secErr
+
+    const sectionsByKind = {}
+    if (sectionRows?.length) {
+      const copies = sectionRows.map((s) => ({
+        node_id:    node.id,
+        kind:       s.kind,
+        content:    s.content,
+        sort_order: s.sort_order,
+      }))
+      const { error: insErr } = await supabase.from('node_sections').insert(copies)
+      if (insErr) throw insErr
+      for (const s of sectionRows) sectionsByKind[s.kind] = s.content
+    }
+
+    return dbNodeToReactFlow(node, sectionsByKind, { [typeId]: { key: typeKey } })
+  }, 'this duplicate')
+}
+
+// ----------------------------------------------------------------------------
 // Update core node fields (label, summary, avatar, position) and sections.
 // Pass any subset; unspecified values are left untouched.
 // ----------------------------------------------------------------------------

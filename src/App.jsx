@@ -11,6 +11,7 @@ import TextNode from './nodes/TextNode'
 import { useWorkspace } from './lib/WorkspaceContext.jsx'
 import {
   createNode as dbCreateNode,
+  duplicateCard,
   updateNode as dbUpdateNode,
   updateNodeSections as dbUpdateNodeSections,
   deleteNode as dbDeleteNode,
@@ -911,7 +912,16 @@ export default function App() {
       return
     }
     try {
-      const duplicate = await dbCreateNode({
+      // If the source card is open in the inspector with unsaved edits, flush
+      // its block editors so the copy includes the latest content (mirrors E1).
+      if (inspectorNodeRef.current?.topicNodeId === nodeId) {
+        try { await editorFlushApiRef.current?.() } catch (err) { console.error(err) }
+      }
+      // duplicateCard copies the new block zones (and any legacy rows) straight
+      // from the DB — kind-agnostic — and copies NO connections (a duplicate
+      // enters the graph unconnected by design).
+      const duplicate = await duplicateCard({
+        sourceId: nodeId,
         workspaceId: activeWorkspaceId,
         typeId,
         typeKey: source.data.type,
@@ -920,10 +930,6 @@ export default function App() {
         avatarUrl: source.data.avatar,
         positionX: source.position.x + 40,
         positionY: source.position.y + 40,
-        storyNotes: source.data.storyNotes ?? [],
-        hiddenLore: source.data.hiddenLore ?? [],
-        dmNotes:    source.data.dmNotes    ?? [],
-        media:      source.data.media      ?? [],
       })
       setNodes((nds) => [...nds, duplicate])
     } catch (err) {

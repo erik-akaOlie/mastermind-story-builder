@@ -21,7 +21,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // The pure functions (dbNodeToReactFlow / normalizeBullets) don't touch it.
 vi.mock('./supabase.js', () => ({ supabase: { from: vi.fn() } }))
 
-import { dbNodeToReactFlow, normalizeBullets, buildDeleteCardSnapshot } from './nodes.js'
+import { dbNodeToReactFlow, normalizeBullets, buildDeleteCardSnapshot, duplicateCard } from './nodes.js'
 import { supabase } from './supabase.js'
 
 const baseDbRow = {
@@ -396,5 +396,90 @@ describe('buildDeleteCardSnapshot — content-complete, fail-closed capture', ()
     const snap = await buildDeleteCardSnapshot('ghost-id', opts())
     expect(snap).toBeNull()
     expect(supabase.from).not.toHaveBeenCalled()
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// duplicateCard — content-complete copy, kind-agnostic, no connections
+// (ADR-0016 Chunk E2). Copies EVERY source section row (incl. the new block
+// zones, which never live in canvas memory) from the DB under the new id.
+// Connections are not copied; a duplicate enters the graph unconnected.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('duplicateCard — content-complete copy, no connections', () => {
+  // Route the chained supabase calls per table:
+  //   nodes.insert(row).select().single()           → new card row
+  //   node_sections.select(...).eq('node_id', src)  → the source's section rows
+  //   node_sections.insert(copies)                  → captured for assertions
+  function mockBackend({ sourceSections }) {
+    const captured = { sectionInsert: null }
+    supabase.from.mockImplementation((table) => {
+      if (table === 'nodes') {
+        return {
+          insert: (row) => ({
+            select: () => ({
+              single: async () => ({ data: { id: 'dup-id', ...row }, error: null }),
+            }),
+          }),
+        }
+      }
+      if (table === 'node_sections') {
+        return {
+          select: () => ({ eq: async () => ({ data: sourceSections, error: null }) }),
+          insert: async (rows) => { captured.sectionInsert = rows; return { error: null } },
+        }
+      }
+      throw new Error(`unexpected table ${table}`)
+    })
+    return captured
+  }
+
+  beforeEach(() => { supabase.from.mockReset() })
+
+  const baseArgs = {
+    sourceId: 'src-1',
+    workspaceId: 'ws-1',
+    typeId: 'type-character-uuid',
+    typeKey: 'character',
+    label: 'Strahd',
+    summary: 'Vampire lord',
+    avatarUrl: 'avatars/strahd.webp',
+    positionX: 340,
+    positionY: 440,
+  }
+
+  it('copies EVERY source section kind (card_view + gm_only + legacy) under the new id', async () => {
+    const captured = mockBackend({
+      sourceSections: [
+        { kind: 'card_view', content: { blocks: 'cv' }, sort_order: 0 },
+        { kind: 'gm_only',   content: { blocks: 'gm' }, sort_order: 1 },
+        { kind: 'narrative', content: ['a bullet'],     sort_order: 0 },
+      ],
+    })
+
+    const dup = await duplicateCard(baseArgs)
+
+    // Every kind copied, re-pointed at the new node id, content + sort_order intact.
+    expect(captured.sectionInsert).toEqual([
+      { node_id: 'dup-id', kind: 'card_view', content: { blocks: 'cv' }, sort_order: 0 },
+      { node_id: 'dup-id', kind: 'gm_only',   content: { blocks: 'gm' }, sort_order: 1 },
+      { node_id: 'dup-id', kind: 'narrative', content: ['a bullet'],     sort_order: 0 },
+    ])
+    // The returned React node carries the player-facing zone so the canvas
+    // preview renders immediately, plus the copied core fields.
+    expect(dup.id).toBe('dup-id')
+    expect(dup.data.cardView).toEqual({ blocks: 'cv' })
+    expect(dup.data.label).toBe('Strahd')
+    expect(dup.position).toEqual({ x: 340, y: 440 })
+  })
+
+  it('handles a source with no section rows (brand-new / blank card) without inserting', async () => {
+    const captured = mockBackend({ sourceSections: [] })
+
+    const dup = await duplicateCard(baseArgs)
+
+    expect(captured.sectionInsert).toBeNull()   // no section insert issued
+    expect(dup.id).toBe('dup-id')
+    expect(dup.data.cardView).toBeNull()        // falls back to legacy/empty render
   })
 })
