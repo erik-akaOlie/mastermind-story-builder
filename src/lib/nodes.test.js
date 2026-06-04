@@ -21,7 +21,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // The pure functions (dbNodeToReactFlow / normalizeBullets) don't touch it.
 vi.mock('./supabase.js', () => ({ supabase: { from: vi.fn() } }))
 
-import { dbNodeToReactFlow, normalizeBullets, buildDeleteCardSnapshot, duplicateCard, updateNodeSections } from './nodes.js'
+import { dbNodeToReactFlow, normalizeBullets, buildDeleteCardSnapshot, duplicateCard, updateNodeSections, createNode } from './nodes.js'
 import { supabase } from './supabase.js'
 
 const baseDbRow = {
@@ -511,5 +511,41 @@ describe('updateNodeSections — legacy save never deletes block-editor zones', 
     // The decisive assertion: the delete is filtered to the four legacy kinds,
     // so the block zones (card_view / gm_only) are never in the delete's scope.
     expect(inFilter).toHaveBeenCalledWith('kind', ['narrative', 'hidden_lore', 'dm_notes', 'media'])
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// createNode — new cards are the node row ONLY (ADR-0016 Chunk E3). No empty
+// legacy section rows are seeded; the block editor creates card_view / gm_only
+// lazily on first save. This test pins the "no dead rows" requirement.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('createNode — blank card seeds no section rows', () => {
+  beforeEach(() => { supabase.from.mockReset() })
+
+  it('inserts only the node row and never touches node_sections', async () => {
+    const single = vi.fn().mockResolvedValue({
+      data: {
+        id: 'n1', label: '', summary: '', avatar_url: null,
+        position_x: 0, position_y: 0, type_id: 'type-character-uuid',
+      },
+      error: null,
+    })
+    supabase.from.mockImplementation((table) => {
+      if (table === 'nodes') return { insert: () => ({ select: () => ({ single }) }) }
+      throw new Error(`createNode must not touch table: ${table}`)
+    })
+
+    const node = await createNode({
+      workspaceId: 'ws', typeId: 'type-character-uuid', typeKey: 'character',
+    })
+
+    expect(node.id).toBe('n1')
+    expect(node.data.cardView).toBeNull()
+    expect(node.data.storyNotes).toEqual([])
+    // The discipline check: node_sections was never queried or inserted, so a
+    // brand-new card leaves no empty legacy rows behind.
+    expect(supabase.from).toHaveBeenCalledTimes(1)
+    expect(supabase.from).toHaveBeenCalledWith('nodes')
   })
 })

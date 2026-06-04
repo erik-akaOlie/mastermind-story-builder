@@ -90,13 +90,21 @@ export async function loadNodes(workspaceId, nodeTypesById) {
 }
 
 // ----------------------------------------------------------------------------
-// Insert a new card node + its four default (empty) sections.
-// Returns the full React-shaped node.
+// Insert a new (blank) card node — the node row ONLY.
+//
+// New cards start with NO section rows (block-editor cutover, ADR-0016 E3).
+// The block editor creates the card_view / gm_only zones lazily on first save,
+// so seeding empty legacy section rows here would just leave dead records the
+// post-cutover app never reads. createNode is only ever called for blank cards
+// now (manual "Add card" + redo-of-create); duplicate has its own path that
+// copies the source's sections (duplicateCard, E2).
 //
 // `id` is optional. Pass it to recreate a node at a known UUID — used by
 // the undo system when redoing a createCard (after it was undone via delete)
 // so that any subsequent action records still pointing at that id keep
 // working. Without `id`, Postgres assigns a fresh one.
+//
+// Returns the full React-shaped node (empty content: no bullets, cardView null).
 // ----------------------------------------------------------------------------
 export async function createNode({
   id,
@@ -108,10 +116,6 @@ export async function createNode({
   avatarUrl = null,
   positionX = 0,
   positionY = 0,
-  storyNotes = [],
-  hiddenLore = [],
-  dmNotes = [],
-  media = [],
 }) {
   return persistWrite(async () => {
     const insertRow = {
@@ -132,13 +136,7 @@ export async function createNode({
       .single()
     if (error) throw error
 
-    await writeSections(node.id, { storyNotes, hiddenLore, dmNotes, media })
-
-    return dbNodeToReactFlow(
-      node,
-      { narrative: storyNotes, hidden_lore: hiddenLore, dm_notes: dmNotes, media },
-      { [typeId]: { key: typeKey } }
-    )
+    return dbNodeToReactFlow(node, {}, { [typeId]: { key: typeKey } })
   }, 'your new card')
 }
 
