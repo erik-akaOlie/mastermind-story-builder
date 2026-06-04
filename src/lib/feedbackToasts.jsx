@@ -151,6 +151,18 @@ export function toastRedoConflict() {
   })
 }
 
+// Fired when a card delete is BLOCKED because its latest content couldn't be
+// captured for the undo snapshot (ADR-0016 Chunk E1 — fail closed). Worded to
+// reinforce trust ("we didn't delete it, and here's why") rather than reading
+// like a generic technical error. Not sticky — each attempt is its own toast.
+export function toastDeleteCaptureFailed() {
+  push({
+    variant: 'error',
+    content: "Couldn't safely delete this card because its latest content could not be captured. Please try again.",
+    durationMs: SAVE_FAIL_DURATION_MS,
+  })
+}
+
 // `context` is the human-readable label persistWrite was given
 // (default "your changes"; some call sites pass a more specific phrase).
 export function toastSaveFailed(context = 'your changes') {

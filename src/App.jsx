@@ -41,6 +41,7 @@ import { ACTION_TYPES } from './lib/undo/index.js'
 import { CanvasOpsProvider } from './lib/CanvasOpsContext.jsx'
 import { setPanToTargetImpl } from './lib/cameraOps.js'
 import { track } from './lib/analytics.js'
+import { toastDeleteCaptureFailed } from './lib/feedbackToasts.jsx'
 import { nextAltitude, MORPH_DURATION_MS, computeMinZoom } from './utils/altitude.js'
 
 // Analytics thresholds (per ADR-0009). pan_burst fires when the user
@@ -158,6 +159,18 @@ export default function App() {
   // right before a repoint swaps its topic node. Inspector assigns its
   // commitSession here while mounted.
   const inspectorCommitRef = useRef(null)
+  // Lets App force the open inspector's block-editor zones to flush any pending
+  // (debounced) save and await it — used before deleting the card the inspector
+  // is open on, so the delete snapshot reads the latest content (ADR-0016 E1).
+  const editorFlushApiRef = useRef(null)
+  // Mirror of inspectorNode for stable reads inside onDeleteNode (which is
+  // memoized without inspectorNode in its deps).
+  const inspectorNodeRef = useRef(null)
+  inspectorNodeRef.current = inspectorNode
+  // Card ids whose delete is mid-flight, so a double-click / repeated trigger
+  // can't run the async delete pipeline twice for the same card.
+  const deletingRef = useRef(null)
+  if (deletingRef.current === null) deletingRef.current = new Set()
 
   useEdgeGeometry({ nodes, edges, setNodes, setEdges })
 
@@ -927,8 +940,20 @@ export default function App() {
     )
   }, [setNodes])
 
+  // Tear down the open inspector WITHOUT committing it (no flush/undo, no
+  // card_edit_closed event) — used when the card it shows is being deleted, so
+  // its legacy auto-save can't fire a write against the row we're removing and
+  // its block editors unmount (their pending saves were already flushed above).
+  const closeInspectorForDelete = useCallback(() => {
+    const cur = inspectorNodeRef.current
+    if (!cur) return
+    setNodes((nds) => nds.map((n) =>
+      n.id === cur.topicNodeId ? { ...n, data: { ...n.data, isEditing: false } } : n))
+    setInspectorNode(null)
+  }, [setNodes])
+
   // ── Delete (DB-backed, cascades to sections + connections) ──────────────
-  const onDeleteNode = useCallback((nodeId) => {
+  const onDeleteNode = useCallback(async (nodeId) => {
     const target = nodes.find((n) => n.id === nodeId)
     if (!target) return
 
@@ -968,20 +993,49 @@ export default function App() {
       return
     }
 
-    // Card delete: snapshot dependents BEFORE the optimistic removal so the
-    // inverse can rebuild card + sections + connections (per ADR-0006 §8).
-    const snapshot = buildDeleteCardSnapshot(nodeId, {
-      nodes,
-      edges,
-      workspaceId: activeWorkspaceId,
-      typeIdByKey: useTypeStore.getState().idByKey,
-    })
+    // ── Card delete (async, content-complete, fail-closed) ────────────────
+    // Order is a correctness invariant (ADR-0016 Chunk E1):
+    //   flush pending editor saves → fetch full snapshot from DB → remove →
+    //   record undo → delete. The snapshot must be COMPLETE before recordAction
+    //   (which freezes it into sessionStorage), and a capture failure must BLOCK
+    //   the delete — an un-undoable delete is worse than no delete.
+    if (deletingRef.current.has(nodeId)) return   // guard double-trigger
+    deletingRef.current.add(nodeId)
+    try {
+      const isOpenCard = inspectorNodeRef.current?.topicNodeId === nodeId
 
-    // Optimistic removal
-    setNodes((nds) => nds.filter((n) => n.id !== nodeId))
-    setEdges((eds) => eds.filter((e) => e.source !== nodeId && e.target !== nodeId))
+      // 1. If this card is open in the inspector, force its block-editor zones
+      //    to flush any pending (debounced) save so the DB has the latest
+      //    content, then tear the inspector down so no late save targets the
+      //    row we're about to delete. (No-op when the card isn't open.)
+      if (isOpenCard) {
+        try { await editorFlushApiRef.current?.() } catch (err) { console.error(err) }
+        closeInspectorForDelete()
+      }
 
-    if (snapshot) {
+      // 2. Capture the full restore snapshot. Section content (card_view /
+      //    gm_only / legacy kinds) is read from the DB — the GM zone is never
+      //    in canvas memory. A fetch failure fails closed: nothing is removed.
+      let snapshot
+      try {
+        snapshot = await buildDeleteCardSnapshot(nodeId, {
+          nodes,
+          edges,
+          workspaceId: activeWorkspaceId,
+          typeIdByKey: useTypeStore.getState().idByKey,
+        })
+      } catch (err) {
+        console.error('Delete aborted — could not capture card content', err)
+        toastDeleteCaptureFailed()
+        return
+      }
+      if (!snapshot) return   // card vanished from state between trigger and capture
+
+      // 3. Optimistic removal.
+      setNodes((nds) => nds.filter((n) => n.id !== nodeId))
+      setEdges((eds) => eds.filter((e) => e.source !== nodeId && e.target !== nodeId))
+
+      // 4. Record undo — the snapshot is now provably complete.
       useUndoStore.getState().recordAction({
         type: ACTION_TYPES.DELETE_CARD,
         workspaceId: activeWorkspaceId,
@@ -991,19 +1045,21 @@ export default function App() {
         dbSectionRows:    snapshot.dbSectionRows,
         dbConnectionRows: snapshot.dbConnectionRows,
       })
+
+      track('card_deleted', {
+        typeKey: target.data?.type,
+        connectionCount: snapshot.dbConnectionRows?.length ?? 0,
+      })
+
+      // 5. Persist; rollback the undo entry if the write fails.
+      dbDeleteNode(nodeId).catch((err) => {
+        console.error(err)
+        useUndoStore.getState().popLastAction()
+      })
+    } finally {
+      deletingRef.current.delete(nodeId)
     }
-
-    track('card_deleted', {
-      typeKey: target.data?.type,
-      connectionCount: snapshot?.dbConnectionRows?.length ?? 0,
-    })
-
-    // Persist; rollback the undo entry if the write fails.
-    dbDeleteNode(nodeId).catch((err) => {
-      console.error(err)
-      if (snapshot) useUndoStore.getState().popLastAction()
-    })
-  }, [nodes, edges, activeWorkspaceId, setNodes, setEdges])
+  }, [nodes, edges, activeWorkspaceId, setNodes, setEdges, closeInspectorForDelete])
 
   // ── Altitude trigger (per ADR-0010) ──────────────────────────────────────
   // onMove fires throughout pan/zoom gestures, giving Bead View an
@@ -1226,6 +1282,7 @@ export default function App() {
           onUndock={onUndockInspector}
           getCloseRect={() => getNodeOriginRect(inspectorNode.topicNodeId)}
           commitApiRef={inspectorCommitRef}
+          editorFlushApiRef={editorFlushApiRef}
           onUpdate={onUpdateNode}
           onClose={() => {
             track('card_edit_closed', { typeKey: inspectorNode.node.data?.type })

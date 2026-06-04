@@ -15,8 +15,14 @@
 // Run with: npm test
 // ============================================================================
 
-import { describe, it, expect, vi } from 'vitest'
-import { dbNodeToReactFlow, normalizeBullets } from './nodes.js'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+
+// buildDeleteCardSnapshot reads section content from the DB; mock the client.
+// The pure functions (dbNodeToReactFlow / normalizeBullets) don't touch it.
+vi.mock('./supabase.js', () => ({ supabase: { from: vi.fn() } }))
+
+import { dbNodeToReactFlow, normalizeBullets, buildDeleteCardSnapshot } from './nodes.js'
+import { supabase } from './supabase.js'
 
 const baseDbRow = {
   id: 'node-1',
@@ -294,5 +300,101 @@ describe('phase 7b — bullet identity stability across array mutations', () => 
     const b = normalizeBullets(legacy)
     expect(a.map((x) => x.value)).toEqual(b.map((x) => x.value))
     expect(a.map((x) => x.id)).not.toEqual(b.map((x) => x.id))
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// buildDeleteCardSnapshot — content-complete, fail-closed capture for the
+// undo-delete round-trip (ADR-0016 Chunk E1). The snapshot must read SECTION
+// content from the DB (so the GM zone, which is never in canvas memory, is
+// captured) and must THROW on a fetch error so the caller can refuse the delete
+// rather than leave the user with an un-undoable removal.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('buildDeleteCardSnapshot — content-complete, fail-closed capture', () => {
+  const cardId = 'card-1'
+  // The in-memory node carries deliberately STALE section content. The snapshot
+  // must ignore it and read the DB instead.
+  const nodes = [{
+    id: cardId,
+    position: { x: 10, y: 20 },
+    data: {
+      type: 'character',
+      label: 'Strahd',
+      summary: 'Vampire lord',
+      avatar: 'avatars/strahd.webp',
+      storyNotes: [{ id: 'x', value: 'STALE in-memory note' }],
+    },
+  }]
+  const edges = [
+    { id: 'e1', source: cardId, target: 'ireena' },
+    { id: 'e2', source: 'unrelated-a', target: 'unrelated-b' },
+  ]
+  const opts = () => ({
+    nodes, edges, workspaceId: 'ws-1', typeIdByKey: { character: 'type-char' },
+  })
+
+  // Build the chained supabase mock: from('node_sections').select(...).eq(...) → result.
+  function mockSectionFetch(result) {
+    const eq = vi.fn().mockResolvedValue(result)
+    const select = vi.fn().mockReturnValue({ eq })
+    supabase.from.mockReturnValue({ select })
+    return { select, eq }
+  }
+
+  beforeEach(() => {
+    supabase.from.mockReset()
+  })
+
+  it('reads ALL section kinds from the DB — incl. gm_only, never from canvas memory', async () => {
+    mockSectionFetch({
+      data: [
+        { kind: 'card_view', content: { blocks: 'cv' }, sort_order: 0 },
+        { kind: 'gm_only',   content: { blocks: 'gm' }, sort_order: 1 },
+        { kind: 'narrative', content: ['legacy bullet'], sort_order: 0 },
+      ],
+      error: null,
+    })
+
+    const snap = await buildDeleteCardSnapshot(cardId, opts())
+
+    // gm_only (never in canvas memory) is present and lossless.
+    expect(snap.dbSectionRows).toEqual([
+      { node_id: cardId, kind: 'card_view', content: { blocks: 'cv' }, sort_order: 0 },
+      { node_id: cardId, kind: 'gm_only',   content: { blocks: 'gm' }, sort_order: 1 },
+      { node_id: cardId, kind: 'narrative', content: ['legacy bullet'], sort_order: 0 },
+    ])
+    // The stale in-memory storyNotes never leak into the snapshot.
+    expect(JSON.stringify(snap.dbSectionRows)).not.toContain('STALE in-memory note')
+  })
+
+  it('captures the card row from state plus only this card\'s connections', async () => {
+    mockSectionFetch({ data: [], error: null })
+
+    const snap = await buildDeleteCardSnapshot(cardId, opts())
+
+    expect(snap.dbCardRow).toMatchObject({
+      id: cardId, workspace_id: 'ws-1', type_id: 'type-char',
+      label: 'Strahd', avatar_url: 'avatars/strahd.webp',
+      position_x: 10, position_y: 20,
+    })
+    // e2 (unrelated) is excluded; only edges touching this card survive.
+    expect(snap.dbConnectionRows).toEqual([
+      { id: 'e1', workspace_id: 'ws-1', source_node_id: cardId, target_node_id: 'ireena' },
+    ])
+  })
+
+  // The fail-closed proof: a fetch error must propagate so onDeleteNode aborts.
+  it('THROWS when the section fetch errors (caller fails closed — no delete, no undo entry)', async () => {
+    mockSectionFetch({ data: null, error: { message: 'network down' } })
+
+    await expect(buildDeleteCardSnapshot(cardId, opts()))
+      .rejects.toEqual({ message: 'network down' })
+  })
+
+  it('returns null without touching the DB when the card is not in local state', async () => {
+    const snap = await buildDeleteCardSnapshot('ghost-id', opts())
+    expect(snap).toBeNull()
+    expect(supabase.from).not.toHaveBeenCalled()
   })
 })

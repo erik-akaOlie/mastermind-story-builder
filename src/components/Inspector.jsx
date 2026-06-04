@@ -76,6 +76,7 @@ export default function Inspector({
   onUndock,
   getCloseRect,
   commitApiRef,
+  editorFlushApiRef,
   onUpdate,
   onClose,
 }) {
@@ -666,6 +667,26 @@ export default function Inspector({
   const registerEditor   = useCallback((ed) => { editorsRef.current.add(ed) }, [])
   const unregisterEditor = useCallback((ed) => { editorsRef.current.delete(ed) }, [])
 
+  // Pending-save flush functions, one per mounted zone editor. App awaits the
+  // aggregate (via editorFlushApiRef) before deleting the card this Inspector
+  // is open on, so the card's latest block content is in the DB before the
+  // delete snapshot reads it (ADR-0016 Chunk E1).
+  const flushesRef = useRef(null)
+  if (flushesRef.current === null) flushesRef.current = new Set()
+  const registerFlush   = useCallback((fn) => { flushesRef.current.add(fn) }, [])
+  const unregisterFlush = useCallback((fn) => { flushesRef.current.delete(fn) }, [])
+  useEffect(() => {
+    if (!editorFlushApiRef) return
+    const flushAll = () =>
+      Promise.all(
+        [...flushesRef.current].map((fn) => {
+          try { return Promise.resolve(fn()) } catch { return Promise.resolve() }
+        }),
+      )
+    editorFlushApiRef.current = flushAll
+    return () => { if (editorFlushApiRef.current === flushAll) editorFlushApiRef.current = null }
+  }, [editorFlushApiRef])
+
   const editorContextValue = useMemo(() => ({
     cardId: node.id,
     workspaceId: activeWorkspaceId,
@@ -674,6 +695,8 @@ export default function Inspector({
     allOtherNodes,
     registerEditor,
     unregisterEditor,
+    registerFlush,
+    unregisterFlush,
     // [[ link selection — set semantics: one connection per node-pair.
     onAddConnection: (targetNode) =>
       setLocalConns((prev) =>
@@ -696,7 +719,7 @@ export default function Inspector({
       }
       setLocalConns((prev) => prev.filter((c) => c.id !== connectionId))
     },
-  }), [node.id, node.data.label, activeWorkspaceId, title, localConns, allOtherNodes, registerEditor, unregisterEditor])
+  }), [node.id, node.data.label, activeWorkspaceId, title, localConns, allOtherNodes, registerEditor, unregisterEditor, registerFlush, unregisterFlush])
 
   // ── Render ────────────────────────────────────────────────────────────────
   // Header + body, shared verbatim by both the docked and undocked containers.

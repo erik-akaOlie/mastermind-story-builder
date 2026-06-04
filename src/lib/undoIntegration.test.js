@@ -41,9 +41,11 @@ const mockDb = {
 }
 
 // ── lib/nodes.js mocks (stateful) ─────────────────────────────────────────
-// importActual brings in the real dbNodeToReactFlow + buildDeleteCardSnapshot
-// (pure functions with no Supabase dependency); the persistence functions
-// below intercept all writes.
+// importActual brings in the real dbNodeToReactFlow + buildDeleteCardSnapshot;
+// the persistence functions below intercept all writes. buildDeleteCardSnapshot
+// reads section content from Supabase (ADR-0016 E1), so the supabase client is
+// also mocked (below) against the same mockDb — the REAL snapshot logic runs,
+// preserving this file's "captures every card field" discipline guarantee.
 
 vi.mock('./nodes.js', async () => {
   const actual = await vi.importActual('./nodes.js')
@@ -115,6 +117,30 @@ vi.mock('./nodes.js', async () => {
         mockDb.connections.set(c.id, { ...c })
       }
     }),
+  }
+})
+
+// Back the supabase client with mockDb so buildDeleteCardSnapshot's section
+// fetch (from('node_sections').select(...).eq('node_id', id)) resolves against
+// the same in-memory tables every other mock here uses.
+vi.mock('./supabase.js', () => {
+  const KIND_ORDER = { narrative: 0, hidden_lore: 1, dm_notes: 2, media: 3, card_view: 4, gm_only: 5 }
+  return {
+    supabase: {
+      from: (table) => ({
+        select: () => ({
+          eq: async (_col, nodeId) => {
+            if (table !== 'node_sections') return { data: [], error: null }
+            const sections = mockDb.node_sections.get(nodeId)
+            if (!sections) return { data: [], error: null }
+            const data = Object.entries(sections).map(([kind, content]) => ({
+              kind, content, sort_order: KIND_ORDER[kind] ?? 0,
+            }))
+            return { data, error: null }
+          },
+        }),
+      }),
+    },
   }
 })
 
@@ -522,7 +548,7 @@ describe('round-trip — deleteCard (the discipline test)', () => {
     const before = snapshotState(rs)
 
     // Build the snapshot the way App.jsx does, then simulate the delete.
-    const snapshot = buildDeleteCardSnapshot('card-doomed', {
+    const snapshot = await buildDeleteCardSnapshot('card-doomed', {
       nodes: rs.state.nodes,
       edges: rs.state.edges,
       workspaceId: WORKSPACE,
@@ -560,7 +586,7 @@ describe('round-trip — deleteCard (the discipline test)', () => {
     seedCard(rs, { id: 'card-doomed', label: 'Strahd' })
     seedConnection(rs, { id: 'edge-1', sourceNodeId: 'card-doomed', targetNodeId: 'card-other' })
 
-    const snapshot = buildDeleteCardSnapshot('card-doomed', {
+    const snapshot = await buildDeleteCardSnapshot('card-doomed', {
       nodes: rs.state.nodes,
       edges: rs.state.edges,
       workspaceId: WORKSPACE,
@@ -619,7 +645,7 @@ describe('chained operation through useUndoStore', () => {
     })
 
     // 3) Forward: delete the card.
-    const snapshot = buildDeleteCardSnapshot('new-card', {
+    const snapshot = await buildDeleteCardSnapshot('new-card', {
       nodes: rs.state.nodes,
       edges: rs.state.edges,
       workspaceId: WORKSPACE,

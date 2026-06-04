@@ -188,13 +188,28 @@ export async function deleteNode(id) {
 // (per ADR-0006 §8). Capture this BEFORE issuing the delete so the inverse
 // can rebuild the card with its sections and connections intact.
 //
+// ASYNC + DB-sourced section content (block-editor cutover, ADR-0016 Chunk E1):
+// the card row and connection rows are read from the in-memory canvas state
+// (live truth — positions persist on drag-stop, connections persist instantly,
+// node columns flush on save). But SECTION CONTENT is read from the database,
+// not from canvas memory. The GM zone (`gm_only`) is never held in React state
+// (only `card_view` is, to drive the canvas preview), so an in-memory snapshot
+// would be structurally blind to half the card's content. Reading every kind
+// here makes the snapshot lossless for the new block zones (`card_view` /
+// `gm_only`) AND any surviving legacy kinds during the transition.
+//
+// A section-fetch error THROWS rather than returning a partial snapshot, so the
+// caller can FAIL CLOSED — never remove a card we can't fully restore. (The
+// caller must flush any pending editor saves before calling this, so the DB
+// holds the latest content.)
+//
 // `typeIdByKey` is passed in (rather than read from useTypeStore here) to
 // keep this module free of store dependencies. App.jsx supplies the lookup
 // at call time.
 //
-// Returns null if the card isn't in local state.
+// Returns null if the card isn't in local state (no DB fetch is issued).
 // ----------------------------------------------------------------------------
-export function buildDeleteCardSnapshot(cardId, { nodes, edges, workspaceId, typeIdByKey }) {
+export async function buildDeleteCardSnapshot(cardId, { nodes, edges, workspaceId, typeIdByKey }) {
   const node = nodes.find((n) => n.id === cardId)
   if (!node) return null
 
@@ -209,12 +224,20 @@ export function buildDeleteCardSnapshot(cardId, { nodes, edges, workspaceId, typ
     position_y:  node.position.y,
   }
 
-  const dbSectionRows = [
-    { node_id: cardId, kind: 'narrative',   content: node.data.storyNotes || [], sort_order: 0 },
-    { node_id: cardId, kind: 'hidden_lore', content: node.data.hiddenLore || [], sort_order: 1 },
-    { node_id: cardId, kind: 'dm_notes',    content: node.data.dmNotes    || [], sort_order: 2 },
-    { node_id: cardId, kind: 'media',       content: node.data.media      || [], sort_order: 3 },
-  ]
+  // Every section row for this card, regardless of kind. Mapped to the
+  // restore-insert shape restoreCardWithDependents expects.
+  const { data: sectionRows, error: secErr } = await supabase
+    .from('node_sections')
+    .select('kind, content, sort_order')
+    .eq('node_id', cardId)
+  if (secErr) throw secErr
+
+  const dbSectionRows = (sectionRows || []).map((s) => ({
+    node_id:    cardId,
+    kind:       s.kind,
+    content:    s.content,
+    sort_order: s.sort_order,
+  }))
 
   const dbConnectionRows = (edges || [])
     .filter((e) => e.source === cardId || e.target === cardId)
