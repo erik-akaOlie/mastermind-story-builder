@@ -481,6 +481,33 @@ They reorder relative to each other based on what #1 + #2 reveal.
 - **Dependencies.** None — independent of Templates work.
 - **Size:** L
 
+### Undo of connection-delete doesn't restore inline `[[link]]` styling
+- **Problem.** Per ADR-0016 §7, deleting a connection in the editor's fixed
+  Connections panel reverts any inline `[[link]]` to that node back to plain
+  text (via `revertLinksForNode`). When the user undoes that deletion
+  (Ctrl+Z), the connection row and the canvas edge are restored correctly,
+  **but the previously-reverted plain text is not re-promoted back to an
+  inline link** — it stays plain (no purple link styling). The connection
+  data and graph edge round-trip is correct; only the BlockNote inline-link
+  *mark* fails to come back.
+- **Success.** Undoing a connection deletion that had reverted one or more
+  inline `[[links]]` to plain text restores those text spans as inline links
+  again, matching their pre-delete state. Redo continues to behave
+  symmetrically.
+- **Notes.** Surfaced 2026-06-04 during Chunk E4a browser verification. **Not
+  an E4a regression** — both code paths (the panel's link-reversion side
+  effect from Chunk C, and the `removeConnection` undo handler in `lib/undo`)
+  predate E4a and were untouched by it. Root cause: the connection-delete
+  undo entry restores connection *rows*, but has no record of (and no inverse
+  for) the editor-document mutation that §7 performed as a side effect, so it
+  can't reapply the inline-link mark. Fix likely requires the connection
+  undo entry to also capture/restore the affected inline-link spans across
+  both zone documents — crosses connection-model + BlockNote document state.
+  Low data-loss risk (text and connection both survive); the gap is purely
+  the visual link mark.
+- **Dependencies.** None. Independent of the E4b/E4c/E5 cutover steps.
+- **Size:** M
+
 ### Nest component
 - **Problem.** No way to group cards / connections / text annotations
   into thematic units ("Act 1: Death House", "The Vistani plotline").

@@ -747,89 +747,17 @@ export default function Inspector({
           {/* ── Body (scrollable) ── */}
           <div className="overflow-y-auto flex-1 min-h-0 px-4 pt-4 pb-10 flex flex-col gap-10">
 
-            {/* ── New block editor (Phase 2, Chunk A — transitional) ──
+            {/* ── Block editor (ADR-0016) ──
                 The two zone editors read/save the migrated card_view / gm_only
-                JSON independently of the legacy fields below. The legacy
-                Summary / bullets / media / connections sections stay in place
-                until the Chunk E cutover. */}
-            <div className="flex flex-col gap-3 rounded-[0.5rem] border border-dashed border-[#c4b5fd] bg-[#faf5ff] p-3">
-              <div className="text-[0.6875rem] uppercase tracking-wider font-semibold text-[#7C3AED]">
-                Block editor (new) · legacy fields below will be removed at cutover
-              </div>
-              <Suspense fallback={<div className="text-sm text-gray-400">Loading editor…</div>}>
-                <EditorProvider value={editorContextValue}>
-                  <CardZones nodeId={node.id} />
-                </EditorProvider>
-              </Suspense>
-            </div>
-
-            {/* Summary */}
-            <div className="flex flex-col gap-4">
-              <SectionLabel>Summary</SectionLabel>
-              <textarea
-                className="w-full bg-[var(--modal-bg)] focus:bg-white border border-[#9ca3af] rounded-[0.25rem] p-2 text-base font-light text-[#1f2937] resize-y outline-none focus:border-gray-400 transition-colors leading-[1.32]"
-                rows={3}
-                value={summary}
-                onChange={(e) => setSummary(e.target.value)}
-                placeholder="One sentence — the quick-recall hook…"
-              />
-            </div>
-
-            {/* Story Notes */}
-            <BulletSection
-              items={storyNotes}
-              onChange={setStoryNotes}
-              label="Story Notes"
-              placeholder="Narrative beat…"
-              dotColor={typeConfig.color}
-              addLabel="Add note"
-              {...bulletCallbacks('storyNotes')}
-            />
-
-            {/* ── GM Only divider ── */}
-            <div className="flex items-center gap-2.5">
-              <span className="text-2xl font-semibold text-[#4b5563] whitespace-nowrap">GM ONLY</span>
-              <div className="flex-1 h-px bg-[#6b7280]" />
-            </div>
-
-            {/* Inspiration images */}
-            <MediaSection
-              items={media}
-              onChange={setMedia}
-              cardId={node.id}
-              workspaceId={activeWorkspaceId}
-              slug={title || node.data.label}
-              {...mediaCallbacks}
-            />
-
-            {/* Hidden Lore */}
-            <BulletSection
-              items={hiddenLore}
-              onChange={setHiddenLore}
-              label="Hidden Lore"
-              placeholder="Secret not yet revealed…"
-              dotColor={typeConfig.color}
-              addLabel="Add secret"
-              {...bulletCallbacks('hiddenLore')}
-            />
-
-            {/* DM Notes */}
-            <BulletSection
-              items={dmNotes}
-              onChange={setDmNotes}
-              label="DM Notes"
-              placeholder="Voice, motivation, tactics…"
-              dotColor={typeConfig.color}
-              addLabel="Add note"
-              {...bulletCallbacks('dmNotes')}
-            />
-
-            {/* ── Connections ── */}
-            <ConnectionsSection
-              localConns={localConns}
-              setLocalConns={setLocalConns}
-              allOtherNodes={allOtherNodes}
-            />
+                JSON, and the fixed Connections panel (inside CardZones) reads/
+                deletes through the EditorContext localConns flow. The legacy
+                Summary / bullets / media / connections sections were removed at
+                the Chunk E4 cutover; their state + wiring is cleaned up in E4b. */}
+            <Suspense fallback={<div className="text-sm text-gray-400">Loading editor…</div>}>
+              <EditorProvider value={editorContextValue}>
+                <CardZones nodeId={node.id} />
+              </EditorProvider>
+            </Suspense>
 
           </div>
     </>

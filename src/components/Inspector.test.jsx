@@ -1,14 +1,23 @@
 // Tests for Inspector — the card-editing surface (orchestration shell that
-// owns title, type, summary, three bullet sections, media, connections,
-// auto-save, and morph animation; composes InspectorHeader, BulletSection,
-// MediaSection, ConnectionsSection + useAutoSave / useMorphAnimation). These
-// pin down behavior across both inspector modes (undocked floating modal +
-// docked panel), repoint commit, and directional close.
+// owns title, type, avatar, auto-save, undo emission, and the morph animation;
+// composes InspectorHeader + the block editor (CardZones) and its fixed
+// Connections panel via EditorContext). These pin down behavior across both
+// inspector modes (undocked floating modal + docked panel), repoint commit,
+// and directional close.
+//
+// Block-editor cutover (ADR-0016 Chunk E4a): the legacy Summary / bullet /
+// media / connections sections were removed from the Inspector body. Card
+// content now lives in the two block-editor zones (CardZones, lazy-loaded,
+// BlockNote-backed) and connections in the fixed panel inside it. We mock
+// CardZones with a small synchronous stub that exercises the SURVIVING
+// Inspector → connection contract through the real EditorContext seam
+// (connections / onAddConnection / onDeleteConnection) — without pulling
+// BlockNote into jsdom.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import Inspector from './Inspector'
+import { useEditorContext } from './editor/EditorContext.jsx'
 
 // ── Module mocks ─────────────────────────────────────────────────────────────
 // Stub out the modules Inspector reaches into, so we're testing Inspector's
@@ -59,6 +68,42 @@ vi.mock('./Lightbox', () => ({
   useLightbox: () => ({ open: vi.fn() }),
 }))
 
+// CardZones is the lazy, BlockNote-backed editor surface. We never want
+// BlockNote in jsdom, so we replace it with a synchronous stub that consumes
+// the SAME EditorContext the real fixed Connections panel does. It renders the
+// live connection list (each with a delete button) plus an "add" button per
+// available node — mirroring the real surviving connection seam (add via the
+// editor, delete via the fixed panel). This keeps the Inspector → connection
+// (localConns → onUpdate → undo) contract under unit test across the cutover.
+vi.mock('./editor/CardZones.jsx', () => ({
+  default: function CardZonesStub() {
+    const { connections, allOtherNodes, onAddConnection, onDeleteConnection } =
+      useEditorContext()
+    return (
+      <div data-testid="card-zones-stub">
+        {connections.map((c) => (
+          <button
+            key={c.id}
+            aria-label={`remove ${c.label}`}
+            onClick={() => onDeleteConnection(c.id)}
+          >
+            {c.label}
+          </button>
+        ))}
+        {allOtherNodes.map((n) => (
+          <button
+            key={n.id}
+            aria-label={`add ${n.data.label}`}
+            onClick={() => onAddConnection(n)}
+          >
+            add {n.data.label}
+          </button>
+        ))}
+      </div>
+    )
+  },
+}))
+
 // Phase-4 hook into the undo store so we can assert recordAction is NOT
 // called during typing (auto-save handles persistence; undo entries are
 // emitted only on modal close) and IS called once per changed field on close.
@@ -83,7 +128,10 @@ const sampleNode = {
   },
 }
 
-const renderModal = (overrides = {}) => {
+// Renders the Inspector and resolves the lazy CardZones stub before returning,
+// so the editor seam (the connections panel) is mounted and queryable. Async
+// because React.lazy resolves on a microtask; `await act` flushes it.
+const renderModal = async (overrides = {}) => {
   const props = {
     node:           sampleNode,
     connectedNodes: [],
@@ -93,7 +141,9 @@ const renderModal = (overrides = {}) => {
     onClose:        vi.fn(),
     ...overrides,
   }
-  return { ...render(<Inspector {...props} />), props }
+  const result = render(<Inspector {...props} />)
+  await act(async () => {})
+  return { ...result, props }
 }
 
 // Inspector auto-saves on a 400ms debounce — tests that exercise the save
@@ -103,15 +153,9 @@ const flushSave = () => act(() => { vi.advanceTimersByTime(400) })
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 describe('Inspector — open + populate', () => {
-  it('populates title, summary, and all three bullet sections from node.data', () => {
-    renderModal()
-
+  it('populates the title from node.data', async () => {
+    await renderModal()
     expect(screen.getByDisplayValue('Strahd von Zarovich')).toBeInTheDocument()
-    expect(screen.getByDisplayValue('Vampire lord of Barovia')).toBeInTheDocument()
-    expect(screen.getByDisplayValue('Born ~1346')).toBeInTheDocument()
-    expect(screen.getByDisplayValue('Cursed in 1346')).toBeInTheDocument()
-    expect(screen.getByDisplayValue('Truly believes Tatyana is reincarnating')).toBeInTheDocument()
-    expect(screen.getByDisplayValue('Voice: slow, deliberate')).toBeInTheDocument()
   })
 })
 
@@ -119,8 +163,8 @@ describe('Inspector — auto-save', () => {
   beforeEach(() => { vi.useFakeTimers() })
   afterEach(() => { vi.useRealTimers() })
 
-  it('debounces title edits and calls onUpdate with the new label after 400ms', () => {
-    const { props } = renderModal()
+  it('debounces title edits and calls onUpdate with the new label after 400ms', async () => {
+    const { props } = await renderModal()
     const titleInput = screen.getByDisplayValue('Strahd von Zarovich')
 
     // Initial mount fires one save after the 400ms debounce — drain it.
@@ -143,8 +187,8 @@ describe('Inspector — auto-save', () => {
     )
   })
 
-  it('saves type changes when the user picks a new type from the dropdown', () => {
-    const { props } = renderModal()
+  it('saves type changes when the user picks a new type from the dropdown', async () => {
+    const { props } = await renderModal()
     flushSave()
     props.onUpdate.mockClear()
 
@@ -161,55 +205,6 @@ describe('Inspector — auto-save', () => {
       expect.any(Object),
     )
   })
-
-  it('saves new bullets added via the "+ Add note" button', () => {
-    const { props } = renderModal()
-    flushSave()
-    props.onUpdate.mockClear()
-
-    // Story Notes bullets are uniquely identifiable by their placeholder.
-    const storyBullets = () => screen.getAllByPlaceholderText(/narrative beat/i)
-    expect(storyBullets()).toHaveLength(2)
-
-    // "Add note" appears in both Story Notes and DM Notes — Story Notes is
-    // rendered first, so the first match is the right one.
-    fireEvent.click(screen.getAllByRole('button', { name: /\+\s*add note/i })[0])
-
-    expect(storyBullets()).toHaveLength(3)
-
-    // Type into the newly-appended bullet (last one in the section).
-    const newBullet = storyBullets().at(-1)
-    fireEvent.change(newBullet, { target: { value: 'New beat' } })
-
-    flushSave()
-
-    const lastCall = props.onUpdate.mock.calls.at(-1)
-    // Phase 7b: persisted form is `{id, value}[]`. Read by `.value` to
-    // avoid pinning to specific UUIDs (which are generated on first read
-    // from the legacy string[] fixture).
-    const values = lastCall[1].storyNotes.map((b) => b.value)
-    expect(values).toContain('New beat')
-    expect(values).toContain('Born ~1346')   // existing preserved
-  })
-
-  it('saves bullet removal when the user clicks the × on a bullet', () => {
-    const { props } = renderModal()
-    flushSave()
-    props.onUpdate.mockClear()
-
-    // Find the × buttons that sit next to story note textareas.
-    // Each bullet row is <li> with the [×] as the last button.
-    const targetBullet = screen.getByDisplayValue('Born ~1346').closest('li')
-    const removeBtn = Array.from(targetBullet.querySelectorAll('button')).at(-1)
-    fireEvent.click(removeBtn)
-
-    flushSave()
-
-    const lastCall = props.onUpdate.mock.calls.at(-1)
-    const values = lastCall[1].storyNotes.map((b) => b.value)
-    expect(values).not.toContain('Born ~1346')
-    expect(values).toContain('Cursed in 1346')
-  })
 })
 
 describe('Inspector — connections', () => {
@@ -221,23 +216,22 @@ describe('Inspector — connections', () => {
     data: { label: 'Ireena Kolyana', type: 'character' },
   }
 
-  it('shows pre-existing connections as chips', () => {
-    renderModal({
+  it('shows pre-existing connections in the editor connections panel', async () => {
+    await renderModal({
       connectedNodes: [{ edgeId: 'edge-1', nodeId: 'node-ireena', label: 'Ireena Kolyana', type: 'character' }],
     })
     expect(screen.getByText('Ireena Kolyana')).toBeInTheDocument()
   })
 
-  it('adds a connection — onUpdate gets addConnections with a client-assigned id', () => {
-    const { props } = renderModal({
+  it('adds a connection — onUpdate gets addConnections with a client-assigned id', async () => {
+    const { props } = await renderModal({
       connectedNodes: [],
       allOtherNodes: [otherNode],
     })
     flushSave()
     props.onUpdate.mockClear()
 
-    fireEvent.click(screen.getByText('Add connection'))
-    fireEvent.click(screen.getByText('Ireena Kolyana'))
+    fireEvent.click(screen.getByRole('button', { name: /add Ireena Kolyana/i }))
 
     flushSave()
 
@@ -248,16 +242,14 @@ describe('Inspector — connections', () => {
     expect(lastCall[2].addConnections[0].id).not.toBe('')
   })
 
-  it('removes a connection — onUpdate gets removeConnections carrying the original edge id', () => {
-    const { props } = renderModal({
+  it('removes a connection — onUpdate gets removeConnections carrying the original edge id', async () => {
+    const { props } = await renderModal({
       connectedNodes: [{ edgeId: 'edge-1', nodeId: 'node-ireena', label: 'Ireena Kolyana', type: 'character' }],
     })
     flushSave()
     props.onUpdate.mockClear()
 
-    const chip = screen.getByText('Ireena Kolyana').closest('div')
-    const removeBtn = chip.querySelector('button')
-    fireEvent.click(removeBtn)
+    fireEvent.click(screen.getByRole('button', { name: /remove Ireena Kolyana/i }))
 
     flushSave()
 
@@ -272,8 +264,8 @@ describe('Inspector — close behavior', () => {
   beforeEach(() => { vi.useFakeTimers() })
   afterEach(() => { vi.useRealTimers() })
 
-  it('flushes a pending save and calls onClose when the user presses Escape', () => {
-    const { props } = renderModal()
+  it('flushes a pending save and calls onClose when the user presses Escape', async () => {
+    const { props } = await renderModal()
     flushSave()
     props.onUpdate.mockClear()
 
@@ -306,8 +298,8 @@ describe('Inspector — undo entries (phase 4)', () => {
   })
   afterEach(() => { vi.useRealTimers() })
 
-  it('does NOT recordAction while the user is typing (auto-save handles persistence; undo entries are session-bounded)', () => {
-    renderModal()
+  it('does NOT recordAction while the user is typing (auto-save handles persistence; undo entries are session-bounded)', async () => {
+    await renderModal()
     flushSave()
 
     // Several keystrokes + debounce flushes — no recordAction should fire.
@@ -322,18 +314,17 @@ describe('Inspector — undo entries (phase 4)', () => {
     expect(recordActionMock).not.toHaveBeenCalled()
   })
 
-  it('emits exactly one editCardField action per changed field on modal close', () => {
-    renderModal()
+  it('emits exactly one editCardField action per changed field on modal close', async () => {
+    await renderModal()
     flushSave()
     recordActionMock.mockClear()
 
-    // Edit BOTH title and summary, then close.
+    // Edit BOTH title and type (two surviving scalar fields), then close.
     fireEvent.change(screen.getByDisplayValue('Strahd von Zarovich'), {
       target: { value: 'Strahd the Damned' },
     })
-    fireEvent.change(screen.getByDisplayValue('Vampire lord of Barovia'), {
-      target: { value: 'Lord of Castle Ravenloft' },
-    })
+    fireEvent.click(screen.getByText('Character'))
+    fireEvent.click(screen.getByText('Location'))
 
     fireEvent.keyDown(window, { key: 'Escape' })
 
@@ -342,7 +333,7 @@ describe('Inspector — undo entries (phase 4)', () => {
 
     const calls = recordActionMock.mock.calls.map((c) => c[0])
     const fields = calls.map((e) => e.field).sort()
-    expect(fields).toEqual(['label', 'summary'])
+    expect(fields).toEqual(['label', 'type'])
 
     const labelEntry = calls.find((e) => e.field === 'label')
     expect(labelEntry).toMatchObject({
@@ -352,17 +343,17 @@ describe('Inspector — undo entries (phase 4)', () => {
       after:  'Strahd the Damned',
     })
 
-    const summaryEntry = calls.find((e) => e.field === 'summary')
-    expect(summaryEntry).toMatchObject({
+    const typeEntry = calls.find((e) => e.field === 'type')
+    expect(typeEntry).toMatchObject({
       type: 'editCardField',
       cardId: 'node-strahd',
-      before: 'Vampire lord of Barovia',
-      after:  'Lord of Castle Ravenloft',
+      before: 'character',
+      after:  'location',
     })
   })
 
-  it('emits no editCardField action on close when nothing changed', () => {
-    renderModal()
+  it('emits no editCardField action on close when nothing changed', async () => {
+    await renderModal()
     flushSave()
     recordActionMock.mockClear()
 
@@ -372,7 +363,7 @@ describe('Inspector — undo entries (phase 4)', () => {
     expect(recordActionMock).not.toHaveBeenCalled()
   })
 
-  it('records before:"" (raw, not "Untitled") when the user types into a freshly-created empty card', () => {
+  it('records before:"" (raw, not "Untitled") when the user types into a freshly-created empty card', async () => {
     // Regression: an earlier version persisted `title.trim() || "Untitled"`,
     // so the snapshot captured "Untitled" while createCard.dbRow.label stayed
     // "". Redo-create restored "" and redo-edit then refused (`before` !==
@@ -382,7 +373,7 @@ describe('Inspector — undo entries (phase 4)', () => {
       ...sampleNode,
       data: { ...sampleNode.data, label: '' },
     }
-    renderModal({ node: emptyCard })
+    await renderModal({ node: emptyCard })
     flushSave()
     recordActionMock.mockClear()
 
@@ -401,63 +392,14 @@ describe('Inspector — undo entries (phase 4)', () => {
     })
   })
 
-  it('emits list-item edits and connection events in chronological order on close (phase 7a + 7c)', () => {
-    // Erik's reported issue: edit a bullet, then add a connection, then close.
-    // Expectation: undo step #1 removes the connection (most recent action),
-    // step #2 removes the bullet. Stack push order must be [bullet, connection].
-    // Phase 7c: the bullet edit is now an addListItem (per-item granularity)
-    // instead of editCardField bundling.
-    const otherNode = {
-      id: 'node-ireena',
-      data: { label: 'Ireena Kolyana', type: 'character' },
-    }
-    renderModal({ allOtherNodes: [otherNode] })
+  it('emits multiple field edits in chronological order by last-dirty time (most recent on top)', async () => {
+    await renderModal()
     flushSave()
     recordActionMock.mockClear()
 
-    // 1) Add a bullet and type into it. The blur (which would log an
-    //    editListItem) merges into the addListItem per Erik's spec —
-    //    "click +Add, type, blur" is one undo step.
-    fireEvent.click(screen.getAllByRole('button', { name: /\+\s*add note/i })[0])
-    const newBullet = screen.getAllByPlaceholderText(/narrative beat/i).at(-1)
-    fireEvent.change(newBullet, { target: { value: 'New beat' } })
-    fireEvent.blur(newBullet)
-
-    act(() => { vi.advanceTimersByTime(50) })
-
-    // 2) Add a connection.
-    fireEvent.click(screen.getByText('Add connection'))
-    fireEvent.click(screen.getByText('Ireena Kolyana'))
-
-    fireEvent.keyDown(window, { key: 'Escape' })
-
-    // Two recordActions: addListItem storyNotes (older, post-merge) then
-    // addConnection (newer).
-    expect(recordActionMock).toHaveBeenCalledTimes(2)
-    expect(recordActionMock.mock.calls[0][0]).toMatchObject({
-      type: 'addListItem',
-      field: 'storyNotes',
-    })
-    // Merge worked: the recorded item carries the typed value, not ''.
-    expect(recordActionMock.mock.calls[0][0].item.value).toBe('New beat')
-    expect(recordActionMock.mock.calls[1][0]).toMatchObject({
-      type: 'addConnection',
-      sourceNodeId: 'node-strahd',
-      targetNodeId: 'node-ireena',
-    })
-    // Each addConnection entry carries a connectionId (client-assigned UUID).
-    expect(recordActionMock.mock.calls[1][0].connectionId).toEqual(expect.any(String))
-  })
-
-  it('emits multiple field edits in chronological order by last-dirty time (most recent on top)', () => {
-    renderModal()
-    flushSave()
-    recordActionMock.mockClear()
-
-    // 1) Touch summary first.
-    fireEvent.change(screen.getByDisplayValue('Vampire lord of Barovia'), {
-      target: { value: 'Lord of Barovia' },
-    })
+    // 1) Change type first.
+    fireEvent.click(screen.getByText('Character'))
+    fireEvent.click(screen.getByText('Location'))
     act(() => { vi.advanceTimersByTime(50) })
 
     // 2) Touch title second — its last-dirty is later.
@@ -467,18 +409,18 @@ describe('Inspector — undo entries (phase 4)', () => {
 
     fireEvent.keyDown(window, { key: 'Escape' })
 
-    // Push order: summary first (older lastAt), label second.
+    // Push order: type first (older lastAt), label second.
     // Stack top = label (most recent action).
     expect(recordActionMock).toHaveBeenCalledTimes(2)
     expect(recordActionMock.mock.calls[0][0]).toMatchObject({
-      type: 'editCardField', field: 'summary',
+      type: 'editCardField', field: 'type',
     })
     expect(recordActionMock.mock.calls[1][0]).toMatchObject({
       type: 'editCardField', field: 'label',
     })
   })
 
-  it('logs every connection click — add then remove in same session yields two undo entries', () => {
+  it('logs every connection click — add then remove in same session yields two undo entries', async () => {
     // Trust-preserving choice: every click is its own undo step. Even if the
     // user adds then removes within a session (net no change), they still get
     // two stack entries — undo once restores intermediate state, twice cancels.
@@ -486,19 +428,14 @@ describe('Inspector — undo entries (phase 4)', () => {
       id: 'node-ireena',
       data: { label: 'Ireena Kolyana', type: 'character' },
     }
-    renderModal({ allOtherNodes: [otherNode] })
+    await renderModal({ allOtherNodes: [otherNode] })
     flushSave()
     recordActionMock.mockClear()
 
-    fireEvent.click(screen.getByText('Add connection'))
-    fireEvent.click(screen.getByText('Ireena Kolyana'))
-
+    // Add via the editor seam, then remove via the fixed panel's × button.
+    fireEvent.click(screen.getByRole('button', { name: /add Ireena Kolyana/i }))
     act(() => { vi.advanceTimersByTime(50) })
-
-    // Find the just-added chip and remove it.
-    const chip = screen.getByText('Ireena Kolyana').closest('div')
-    const removeBtn = chip.querySelector('button')
-    fireEvent.click(removeBtn)
+    fireEvent.click(screen.getByRole('button', { name: /remove Ireena Kolyana/i }))
 
     fireEvent.keyDown(window, { key: 'Escape' })
 
@@ -506,37 +443,10 @@ describe('Inspector — undo entries (phase 4)', () => {
     expect(recordActionMock.mock.calls[0][0]).toMatchObject({ type: 'addConnection' })
     expect(recordActionMock.mock.calls[1][0]).toMatchObject({ type: 'removeConnection' })
     // Both entries carry the SAME connectionId (the client-side UUID assigned
-    // at the picker click — it stays stable through the whole session even
-    // though the connection was never persisted long-term).
+    // when the connection was created — it stays stable through the whole
+    // session even though the connection was never persisted long-term).
     expect(recordActionMock.mock.calls[0][0].connectionId)
       .toBe(recordActionMock.mock.calls[1][0].connectionId)
-  })
-
-  it('phase 7c: adding+typing a single bullet emits exactly one addListItem (merge)', () => {
-    renderModal()
-    flushSave()
-    recordActionMock.mockClear()
-
-    // Click +Add → empty bullet appears. Type into it. Blur. The blur
-    // produces an editListItem which merges into the addListItem (Erik's
-    // spec: "click +Add, type, blur" is one undo step). Close the modal.
-    fireEvent.click(screen.getAllByRole('button', { name: /\+\s*add note/i })[0])
-    const newBullet = screen.getAllByPlaceholderText(/narrative beat/i).at(-1)
-    fireEvent.change(newBullet, { target: { value: 'New beat' } })
-    fireEvent.blur(newBullet)
-
-    fireEvent.keyDown(window, { key: 'Escape' })
-
-    // Exactly one entry: addListItem with the typed value (post-merge).
-    expect(recordActionMock).toHaveBeenCalledTimes(1)
-    const entry = recordActionMock.mock.calls[0][0]
-    expect(entry).toMatchObject({
-      type: 'addListItem',
-      cardId: 'node-strahd',
-      field: 'storyNotes',
-    })
-    expect(entry.item.value).toBe('New beat')
-    expect(entry.item.id).toEqual(expect.any(String))
   })
 })
 
@@ -547,8 +457,8 @@ describe('Inspector — avatar upload', () => {
   })
   afterEach(() => { vi.useRealTimers() })
 
-  it('opens the Upload Image modal in thumbnail mode and writes the saved path to thumbnail', () => {
-    const { props } = renderModal()
+  it('opens the Upload Image modal in thumbnail mode and writes the saved path to thumbnail', async () => {
+    const { props } = await renderModal()
     flushSave()
     props.onUpdate.mockClear()
 
@@ -575,131 +485,6 @@ describe('Inspector — avatar upload', () => {
   })
 })
 
-describe('Inspector — per-item bullet undo (phase 7c)', () => {
-  beforeEach(() => {
-    vi.useFakeTimers()
-    recordActionMock.mockClear()
-  })
-  afterEach(() => { vi.useRealTimers() })
-
-  it("Erik's scenario: add bullet then move bullet emits two separate undo entries (add → reorder)", () => {
-    renderModal()
-    flushSave()
-    recordActionMock.mockClear()
-
-    // 1. Click +Add. New bullet appears.
-    fireEvent.click(screen.getAllByRole('button', { name: /\+\s*add note/i })[0])
-    const newBullet = screen.getAllByPlaceholderText(/narrative beat/i).at(-1)
-    fireEvent.change(newBullet, { target: { value: 'fresh beat' } })
-    fireEvent.blur(newBullet)  // merge into addListItem
-
-    act(() => { vi.advanceTimersByTime(50) })
-
-    // 2. Reorder: drag the existing 'Born ~1346' bullet to the end.
-    //    BulletSection's onDragEnd would normally fire from a real DnD-Kit
-    //    pointer event; we can't simulate that directly here, but we can
-    //    verify the modal-close emission shape produces TWO entries when
-    //    add+typed and a reorder both happen. The reorder side is exercised
-    //    end-to-end in undoIntegration.test.js's round-trip tests.
-
-    fireEvent.keyDown(window, { key: 'Escape' })
-
-    // For the simulated path here (just the add+type), we expect ONE entry.
-    // The full add+reorder = 2 entries scenario is covered by the
-    // integration round-trip test using direct dispatcher calls. This
-    // test pins the in-component logging of the add-with-merge.
-    expect(recordActionMock).toHaveBeenCalledTimes(1)
-    expect(recordActionMock.mock.calls[0][0]).toMatchObject({
-      type: 'addListItem',
-      field: 'storyNotes',
-    })
-    expect(recordActionMock.mock.calls[0][0].item.value).toBe('fresh beat')
-  })
-
-  it('removing a bullet emits one removeListItem with the recorded item + position', () => {
-    renderModal()
-    flushSave()
-    recordActionMock.mockClear()
-
-    // Find the existing 'Born ~1346' bullet's row and click its × button.
-    const targetRow = screen.getByDisplayValue('Born ~1346').closest('li')
-    const removeBtn = Array.from(targetRow.querySelectorAll('button')).at(-1)
-    fireEvent.click(removeBtn)
-
-    fireEvent.keyDown(window, { key: 'Escape' })
-
-    expect(recordActionMock).toHaveBeenCalledTimes(1)
-    const entry = recordActionMock.mock.calls[0][0]
-    expect(entry).toMatchObject({
-      type: 'removeListItem',
-      field: 'storyNotes',
-      cardId: 'node-strahd',
-      position: 0,
-    })
-    expect(entry.item.value).toBe('Born ~1346')
-    expect(entry.item.id).toEqual(expect.any(String))
-  })
-
-  it('add then remove same bullet within a session emits two entries (each click is its own step)', () => {
-    renderModal()
-    flushSave()
-    recordActionMock.mockClear()
-
-    // Add a bullet.
-    fireEvent.click(screen.getAllByRole('button', { name: /\+\s*add note/i })[0])
-    const newBullet = screen.getAllByPlaceholderText(/narrative beat/i).at(-1)
-
-    // Find the new bullet's row and click ×.
-    const newRow = newBullet.closest('li')
-    const removeBtn = Array.from(newRow.querySelectorAll('button')).at(-1)
-    fireEvent.click(removeBtn)
-
-    fireEvent.keyDown(window, { key: 'Escape' })
-
-    expect(recordActionMock).toHaveBeenCalledTimes(2)
-    // The remove invalidates the pending-add merge slot, so both entries
-    // stay separate — one Ctrl+Z restores the empty bullet, second removes it.
-    expect(recordActionMock.mock.calls[0][0].type).toBe('addListItem')
-    expect(recordActionMock.mock.calls[1][0].type).toBe('removeListItem')
-    // Same item id in both entries.
-    expect(recordActionMock.mock.calls[0][0].item.id)
-      .toBe(recordActionMock.mock.calls[1][0].item.id)
-  })
-
-  it('does NOT emit editCardField for storyNotes (now per-item only)', () => {
-    renderModal()
-    flushSave()
-    recordActionMock.mockClear()
-
-    fireEvent.click(screen.getAllByRole('button', { name: /\+\s*add note/i })[0])
-    const newBullet = screen.getAllByPlaceholderText(/narrative beat/i).at(-1)
-    fireEvent.change(newBullet, { target: { value: 'X' } })
-    fireEvent.blur(newBullet)
-    fireEvent.keyDown(window, { key: 'Escape' })
-
-    const fieldEntries = recordActionMock.mock.calls
-      .map((c) => c[0])
-      .filter((e) => e.type === 'editCardField' && e.field === 'storyNotes')
-    expect(fieldEntries).toHaveLength(0)
-  })
-
-  it('still emits editCardField for scalar fields (label/summary/avatar/type)', () => {
-    renderModal()
-    flushSave()
-    recordActionMock.mockClear()
-
-    fireEvent.change(screen.getByDisplayValue('Strahd von Zarovich'), {
-      target: { value: 'Strahd v2' },
-    })
-    fireEvent.keyDown(window, { key: 'Escape' })
-
-    expect(recordActionMock).toHaveBeenCalledTimes(1)
-    expect(recordActionMock.mock.calls[0][0]).toMatchObject({
-      type: 'editCardField', field: 'label',
-    })
-  })
-})
-
 describe('Inspector — repoint commit (Chunk 2)', () => {
   beforeEach(() => {
     vi.useFakeTimers()
@@ -707,9 +492,9 @@ describe('Inspector — repoint commit (Chunk 2)', () => {
   })
   afterEach(() => { vi.useRealTimers() })
 
-  it('exposes commitSession on commitApiRef so App can commit before a repoint', () => {
+  it('exposes commitSession on commitApiRef so App can commit before a repoint', async () => {
     const commitApiRef = { current: null }
-    const { props } = renderModal({ commitApiRef })
+    const { props } = await renderModal({ commitApiRef })
     flushSave()
     props.onUpdate.mockClear()
     recordActionMock.mockClear()
@@ -735,9 +520,9 @@ describe('Inspector — repoint commit (Chunk 2)', () => {
     expect(labelEntry).toMatchObject({ before: 'Strahd von Zarovich', after: 'Strahd the Damned' })
   })
 
-  it('commitSession is idempotent — calling it twice emits the undo entry once', () => {
+  it('commitSession is idempotent — calling it twice emits the undo entry once', async () => {
     const commitApiRef = { current: null }
-    renderModal({ commitApiRef })
+    await renderModal({ commitApiRef })
     flushSave()
     recordActionMock.mockClear()
 
@@ -759,14 +544,14 @@ describe('Inspector — docked mode (Chunk 2c)', () => {
   beforeEach(() => { vi.useFakeTimers() })
   afterEach(() => { vi.useRealTimers() })
 
-  it('renders an edge-collapse close control instead of an X when docked', () => {
-    renderModal({ mode: 'docked' })
+  it('renders an edge-collapse close control instead of an X when docked', async () => {
+    await renderModal({ mode: 'docked' })
     expect(screen.getByRole('button', { name: /collapse to edge/i })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^close$/i })).not.toBeInTheDocument()
   })
 
-  it('docked close calls onClose after the slide-down animation', () => {
-    const { props } = renderModal({ mode: 'docked' })
+  it('docked close calls onClose after the slide-down animation', async () => {
+    const { props } = await renderModal({ mode: 'docked' })
     flushSave()
 
     fireEvent.click(screen.getByRole('button', { name: /collapse to edge/i }))
@@ -781,9 +566,9 @@ describe('Inspector — directional close (Chunk 3)', () => {
   beforeEach(() => { vi.useFakeTimers() })
   afterEach(() => { vi.useRealTimers() })
 
-  it('consults getCloseRect on close so the morph targets the node’s current position', () => {
+  it('consults getCloseRect on close so the morph targets the node’s current position', async () => {
     const getCloseRect = vi.fn(() => ({ left: 200, top: 120, width: 256, height: 180 }))
-    const { props } = renderModal({
+    const { props } = await renderModal({
       getCloseRect,
       originRect: { left: 0, top: 0, width: 256, height: 180 },
     })
