@@ -7,6 +7,7 @@ import { useLightbox } from '../components/Lightbox'
 import { labelInitial } from '../utils/labelUtils'
 import { BEAD_DIAMETER_PX, BEAD_BORDER_SCREEN_PX, MORPH_DURATION_MS, CONNECTION_DOT_SCREEN_PX, currentThresholdZoom } from '../utils/altitude'
 import { useReducedMotion } from '../hooks/useReducedMotion'
+import BlockPreview from './BlockPreview'
 
 // Shared offscreen canvas for text-width measurement. Created once, reused by
 // every card instance. Used to decide whether the title needs the icon's space.
@@ -830,28 +831,37 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
         </div>
       </div>
 
-      {/* Summary */}
-      {data.summary && (
-        <div className="px-3 pt-2 pb-1 border-b border-gray-100">
-          <p className="text-gray-500 text-xs leading-snug">{data.summary}</p>
+      {/* Card content — block-editor Phase 2, Chunk D. When the migrated Card
+          View JSON is present, render it read-only via BlockPreview. Fall back
+          to the legacy summary + story-notes rendering for any card without a
+          card_view row yet (brand-new or un-migrated). */}
+      {data.cardView != null ? (
+        <div className="p-3">
+          <BlockPreview blocks={data.cardView} />
         </div>
+      ) : (
+        <>
+          {data.summary && (
+            <div className="px-3 pt-2 pb-1 border-b border-gray-100">
+              <p className="text-gray-500 text-xs leading-snug">{data.summary}</p>
+            </div>
+          )}
+          <div className="p-3 flex flex-col gap-2">
+            {data.storyNotes && data.storyNotes.length > 0 ? (
+              <ul className="flex flex-col gap-2">
+                {data.storyNotes.map((bullet) => (
+                  <li key={bullet.id} className="flex items-start gap-2 text-xs text-gray-700 leading-snug">
+                    <span className="mt-1.5 w-1 h-1 rounded-full bg-gray-400 flex-shrink-0" />
+                    {bullet.value}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-gray-300 text-xs italic leading-snug">No content yet</p>
+            )}
+          </div>
+        </>
       )}
-
-      {/* Body */}
-      <div className="p-3 flex flex-col gap-2">
-        {data.storyNotes && data.storyNotes.length > 0 ? (
-          <ul className="flex flex-col gap-2">
-            {data.storyNotes.map((bullet) => (
-              <li key={bullet.id} className="flex items-start gap-2 text-xs text-gray-700 leading-snug">
-                <span className="mt-1.5 w-1 h-1 rounded-full bg-gray-400 flex-shrink-0" />
-                {bullet.value}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-gray-300 text-xs italic leading-snug">No content yet</p>
-        )}
-      </div>
       </div>
       {/* Bead content layer — absolutely positioned, fills the clip wrapper.
           Cross-fades opposite to the card-content layer. Avatar (if any)

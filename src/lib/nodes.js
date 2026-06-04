@@ -307,6 +307,10 @@ export function dbNodeToReactFlow(n, sections, nodeTypesById) {
       hiddenLore:  normalizeBullets(sections.hidden_lore),
       dmNotes:     normalizeBullets(sections.dm_notes),
       media:       sections.media ?? [],
+      // Card View block JSON (block-editor Phase 2, Chunk D) — drives the
+      // read-only canvas preview. null when the card has no card_view row yet
+      // (un-migrated or brand-new); the canvas falls back to legacy fields then.
+      cardView:    sections.card_view ?? null,
       locked:      false,
     },
   }

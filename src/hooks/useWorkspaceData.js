@@ -49,6 +49,10 @@ const KIND_TO_FIELD = {
   hidden_lore: 'hiddenLore',
   dm_notes:    'dmNotes',
   media:       'media',
+  // Card View block JSON → data.cardView, so a save in the block editor updates
+  // the read-only canvas preview live (Chunk D). gm_only isn't mapped — the
+  // canvas never shows GM content.
+  card_view:   'cardView',
 }
 
 // Bullet kinds use `{id, value}[]` with stable ids (phase 7b). Media stays
