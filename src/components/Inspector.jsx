@@ -3,12 +3,7 @@ import { useNodeTypes } from '../store/useTypeStore'
 import { useWorkspace } from '../lib/WorkspaceContext.jsx'
 import { useUndoStore } from '../store/useUndoStore'
 import { ACTION_TYPES, deepEqual } from '../lib/undo/index.js'
-import { normalizeBullets } from '../lib/nodes.js'
 import CreateTypeModal from './CreateTypeModal'
-import BulletSection from './BulletSection'
-import SectionLabel from './SectionLabel'
-import MediaSection from './MediaSection'
-import ConnectionsSection from './ConnectionsSection'
 import InspectorHeader from './InspectorHeader'
 import { useAutoSave } from '../hooks/useAutoSave'
 import { useMorphAnimation, TRANSITION_MS } from '../hooks/useMorphAnimation'
@@ -30,28 +25,19 @@ const DOCK_SNAP_PX    = 96        // drag the right edge within this of the
 const DETACH_PX       = 24        // drag the docked header this far to detach
 
 // Scalar card fields that emit `editCardField` undo entries on modal close.
-// Phase 7c removed the four list-shaped fields (storyNotes / hiddenLore /
-// dmNotes / media) from this set — they now use per-item entries
-// (addListItem / removeListItem / editListItem / reorderListItem) so a
-// single Ctrl+Z can never silently bundle multiple bullets or images.
+// Card content (summary / story notes / hidden lore / DM notes / media) moved
+// into the block editor at the E4 cutover (ADR-0016); the only fields the
+// Inspector still owns + persists via onUpdate are these three header fields,
+// plus connections (tracked separately below).
 //
 // Emission order is chronological by per-field last-dirty timestamp,
-// interleaved with connection events and per-item list events all sorted
-// by their own timestamps in handleClose's emission pass.
-const EDITABLE_FIELDS = ['label', 'type', 'summary', 'avatar']
+// interleaved with connection events, all sorted by timestamp in
+// commitSession's emission pass.
+const EDITABLE_FIELDS = ['label', 'type', 'avatar']
 const FIELD_LABELS = {
-  label:   'title',
-  type:    'type',
-  summary: 'summary',
-  avatar:  'avatar',
-}
-
-// Singular nouns for list-item action labels (toast display in phase 9).
-const LIST_ITEM_NOUNS = {
-  storyNotes: 'story note',
-  hiddenLore: 'secret',
-  dmNotes:    'DM note',
-  media:      'image',
+  label:  'title',
+  type:   'type',
+  avatar: 'avatar',
 }
 
 // Return a readable foreground color for a given hex background.
@@ -82,30 +68,11 @@ export default function Inspector({
 }) {
   const isDocked = mode === 'docked'
   // ── Form state ────────────────────────────────────────────────────────────
-  const [title,      setTitle]      = useState(node.data.label   || '')
+  // Card content (summary / bullets / media) lives in the block editor now;
+  // the Inspector owns only the three header fields below, plus connections.
+  const [title,      setTitle]      = useState(node.data.label  || '')
   const [type,       setType]       = useState(node.data.type)
-  const [summary,    setSummary]    = useState(node.data.summary || '')
-  const [thumbnail,  setThumbnail]  = useState(node.data.avatar  || null)
-  // Bullet sections arrive from dbNodeToReactFlow already normalized to
-  // `{id, value}[]`. Defensive normalize here too — the modal might be
-  // mounted with data from any source (Realtime, optimistic update, test
-  // fixture) and a single shape contract avoids per-call-site bugs.
-  const [storyNotes, setStoryNotes] = useState(() =>
-    normalizeBullets(node.data.storyNotes ?? node.data.narrative)
-  )
-  const [hiddenLore, setHiddenLore] = useState(() =>
-    normalizeBullets(node.data.hiddenLore)
-  )
-  const [dmNotes, setDmNotes] = useState(() => {
-    // dmNotes had a one-time legacy shape where it was a single string
-    // instead of an array; coerce that into a 1-element list before normalizing.
-    const d = node.data.dmNotes
-    const arr = Array.isArray(d) ? d : (typeof d === 'string' && d.trim() ? [d] : [])
-    return normalizeBullets(arr)
-  })
-  const [media,      setMedia]      = useState(() =>
-    (node.data.media || []).map((src) => ({ id: crypto.randomUUID(), src }))
-  )
+  const [thumbnail,  setThumbnail]  = useState(node.data.avatar || null)
   const NODE_TYPES = useNodeTypes()
   const typeConfig = NODE_TYPES[type] || { color: '#6B7280', label: type }
   const TypeIcon   = typeConfig.icon
@@ -153,18 +120,9 @@ export default function Inspector({
   // mismatched and got silently rejected.
   const livePersistedRef = useRef(null)
   livePersistedRef.current = {
-    label:      title.trim(),
+    label:  title.trim(),
     type,
-    summary,
-    // Phase 7b: bullets persist as `{id, value}[]` so identity is stable
-    // across reads / writes / Realtime echoes. Filter empties (the user
-    // can leave a half-typed bullet behind on close), but keep the id —
-    // an empty bullet that gets dropped doesn't need to survive anyway.
-    storyNotes: storyNotes.filter((b) => b.value.trim()),
-    hiddenLore: hiddenLore.filter((b) => b.value.trim()),
-    dmNotes:    dmNotes.filter((b) => b.value.trim()),
-    media:      media.map((m) => m.src),
-    avatar:     thumbnail || null,
+    avatar: thumbnail || null,
   }
 
   // Per-field session start snapshot (ADR-0006 §7). Captured ONCE on mount
@@ -199,14 +157,6 @@ export default function Inspector({
   const prevLiveRef     = useRef(null)
   const connectionLogRef = useRef([])      // [{ kind, connectionId, nodeId, timestamp }]
   const prevLocalConnsRef = useRef(localConns)
-
-  // Phase 7c: per-item events for the four list-shaped fields. The log is
-  // an ordered append of every user-visible bullet/media operation, with
-  // a per-itemId "pending add" slot so the FIRST edit on a freshly-added
-  // bullet folds into the add entry (Erik's spec: "click +Add, type, blur"
-  // is one undo step, not two; later re-edits become their own entries).
-  const listItemLogRef         = useRef([])
-  const pendingAddByItemIdRef  = useRef(new Map())   // itemId → index in listItemLogRef
 
   useEffect(() => {
     const start = sessionStartRef.current
@@ -259,89 +209,6 @@ export default function Inspector({
     prevLocalConnsRef.current = curr
   }, [localConns])
 
-  // ── Per-item list logging (phase 7c) ─────────────────────────────────────
-  // BulletSection / MediaSection fire semantic callbacks for each
-  // user-visible action. We push them into listItemLogRef in click order;
-  // handleClose later sorts everything by timestamp and emits one
-  // recordAction per remaining log entry.
-  //
-  // Add-then-first-edit merge: when an editListItem arrives whose itemId
-  // matches the most recent un-touched addListItem in the log, replace
-  // the add's value with the edit's after-value and drop the edit. Any
-  // event for that id between the add and the edit cancels the merge
-  // (the bullet has stopped being "freshly added" and re-edits should
-  // be their own undo step).
-  const logListItemEvent = (event) => {
-    const log = listItemLogRef.current
-    const pending = pendingAddByItemIdRef.current
-    const itemId = event.itemId ?? event.item?.id ??
-      (event.item && typeof event.item === 'object' && event.item.path) ??
-      (typeof event.item === 'string' ? event.item : null)
-
-    if (event.kind === 'editListItem' && itemId != null && pending.has(itemId)) {
-      const idx = pending.get(itemId)
-      const addEntry = log[idx]
-      if (addEntry?.kind === 'addListItem' && addEntry.item && typeof addEntry.item === 'object') {
-        addEntry.item = { ...addEntry.item, value: event.after }
-        addEntry.timestamp = event.timestamp
-        pending.delete(itemId)
-        return
-      }
-    }
-
-    log.push(event)
-    if (event.kind === 'addListItem') {
-      if (itemId != null) pending.set(itemId, log.length - 1)
-    } else if (itemId != null) {
-      // Any non-add event for this id invalidates the pending merge.
-      pending.delete(itemId)
-    }
-  }
-
-  // Curried section-callback factories so each BulletSection / MediaSection
-  // gets its `field` baked in without having to know it.
-  const bulletCallbacks = (field) => ({
-    onAddItem: ({ item, position }) => {
-      logListItemEvent({
-        kind: 'addListItem', field, item, position, timestamp: Date.now(),
-      })
-    },
-    onRemoveItem: ({ item, position }) => {
-      logListItemEvent({
-        kind: 'removeListItem', field, item, position, timestamp: Date.now(),
-      })
-    },
-    onItemBlur: ({ itemId, position, before, after }) => {
-      logListItemEvent({
-        kind: 'editListItem', field, itemId, position, before, after,
-        timestamp: Date.now(),
-      })
-    },
-    onReorderItem: ({ itemId, from, to }) => {
-      logListItemEvent({
-        kind: 'reorderListItem', field, itemId, from, to, timestamp: Date.now(),
-      })
-    },
-  })
-  const mediaCallbacks = {
-    onAddItem: ({ item, position }) => {
-      logListItemEvent({
-        kind: 'addListItem', field: 'media', item, position, timestamp: Date.now(),
-      })
-    },
-    onRemoveItem: ({ item, position }) => {
-      logListItemEvent({
-        kind: 'removeListItem', field: 'media', item, position, timestamp: Date.now(),
-      })
-    },
-    onReorderItem: ({ itemId, from, to }) => {
-      logListItemEvent({
-        kind: 'reorderListItem', field: 'media', itemId, from, to,
-        timestamp: Date.now(),
-      })
-    },
-  }
-
   // ── Auto-save ─────────────────────────────────────────────────────────────
   // Payload shape for connections is { addConnections, removeConnections },
   // each entry { id, nodeId }. The id is generated client-side at picker
@@ -377,7 +244,7 @@ export default function Inspector({
       addConnections.forEach(({ id, nodeId }) => syncedConnsRef.current.set(id, nodeId))
       removeConnections.forEach(({ id }) => syncedConnsRef.current.delete(id))
     },
-    deps: [title, type, summary, storyNotes, hiddenLore, dmNotes, media, thumbnail, localConns],
+    deps: [title, type, thumbnail, localConns],
   })
 
   const animateClose = useMorphAnimation({ modalRef, backdropRef, originRect, skipOpenMorph, getCloseRect, onClose })
@@ -431,9 +298,6 @@ export default function Inspector({
       for (const ev of connectionLogRef.current) {
         emissions.push(ev)
       }
-      for (const ev of listItemLogRef.current) {
-        emissions.push(ev)
-      }
       emissions.sort((a, b) => a.timestamp - b.timestamp)
 
       for (const e of emissions) {
@@ -468,52 +332,6 @@ export default function Inspector({
             connectionId: e.connectionId,
             sourceNodeId: node.id,
             targetNodeId: e.nodeId,
-          })
-        } else if (e.kind === 'addListItem') {
-          useUndoStore.getState().recordAction({
-            type: ACTION_TYPES.ADD_LIST_ITEM,
-            workspaceId: activeWorkspaceId,
-            label: `Add ${LIST_ITEM_NOUNS[e.field] || 'item'}`,
-            timestamp: isoTs,
-            cardId: node.id,
-            field: e.field,
-            position: e.position,
-            item: e.item,
-          })
-        } else if (e.kind === 'removeListItem') {
-          useUndoStore.getState().recordAction({
-            type: ACTION_TYPES.REMOVE_LIST_ITEM,
-            workspaceId: activeWorkspaceId,
-            label: `Remove ${LIST_ITEM_NOUNS[e.field] || 'item'}`,
-            timestamp: isoTs,
-            cardId: node.id,
-            field: e.field,
-            position: e.position,
-            item: e.item,
-          })
-        } else if (e.kind === 'editListItem') {
-          useUndoStore.getState().recordAction({
-            type: ACTION_TYPES.EDIT_LIST_ITEM,
-            workspaceId: activeWorkspaceId,
-            label: `Edit ${LIST_ITEM_NOUNS[e.field] || 'item'}`,
-            timestamp: isoTs,
-            cardId: node.id,
-            field: e.field,
-            itemId: e.itemId,
-            before: e.before,
-            after:  e.after,
-          })
-        } else if (e.kind === 'reorderListItem') {
-          useUndoStore.getState().recordAction({
-            type: ACTION_TYPES.REORDER_LIST_ITEM,
-            workspaceId: activeWorkspaceId,
-            label: `Reorder ${LIST_ITEM_NOUNS[e.field] || 'item'}`,
-            timestamp: isoTs,
-            cardId: node.id,
-            field: e.field,
-            itemId: e.itemId,
-            from: e.from,
-            to:   e.to,
           })
         }
       }
