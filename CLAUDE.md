@@ -124,6 +124,23 @@ src/
                                    external https, and Storage paths). Signature: useImageUrl(input,
                                    {variant, bucket}); a string second arg is treated as {variant} for
                                    backward compat. Default bucket is 'workspace-media'.
+    migrateCardToBlocks.js         PURE converter (block-editor Phase 1, ADR-0016): one card's legacy
+                                   fielded content → the two new BlockNote zones. Card View ← Summary +
+                                   "Discoverable Lore" (was Story Notes). GM's Eyes Only ← "Notes" (Hidden
+                                   Lore then DM Notes, merged) + Image Album (Image Section images, JSON-
+                                   stringified verbatim) + a live-reading Connections block. Does NOT take
+                                   connections (they stay first-class rows; the block reads them live), so
+                                   it structurally cannot lose/dupe one. No side effects → fully unit-tested
+                                   for zero loss (migrateCardToBlocks.test.js, written test-first).
+    blockMigration.js              Orchestration over the pure converter: loads every card the user owns
+                                   (RLS-scoped), classifies each (new / stale / up-to-date via order-
+                                   insensitive jsonEqual), writes ONLY the card_view/gm_only rows
+                                   idempotently (B1: delete-then-insert just those two kinds), then reads
+                                   them back and verifies no-loss (A1, checkNoLoss). NEVER touches legacy
+                                   rows; NEVER deletes data. runBlockMigration({dryRun}) returns a report
+                                   {total, toMigrate, migrated, verified, skipped, failed[], nothingToMigrate}.
+                                   checkNoLoss + jsonEqual + classifyCard are exported + unit-tested
+                                   (blockMigration.test.js proves the verifier CATCHES loss, not just passes).
     errorReporting.js              persistWrite() retry wrapper; on final failure, fires toastSaveFailed
                                    (chip-toast, no longer Sonner)
     feedbackToasts.jsx             public push API for undo / redo / conflict / save-fail chip toasts.
@@ -218,6 +235,13 @@ src/
     Lightbox.jsx                   shared <LightboxProvider>; any consumer calls useLightbox().open(value)
     MigrateImages.jsx              one-shot tool at #migrate to backfill base64 → Storage; safe to delete
                                    once no workspace has any base64 image entries
+    MigrateBlocks.jsx              one-shot tool at #migrate-blocks (block-editor Phase 1, ADR-0016).
+                                   Dry-run preview (default; proves conversion readiness, writes nothing)
+                                   + explicit two-click "Apply for real" (writes + read-back verify; proves
+                                   saved data survived the DB round-trip). Renders runBlockMigration's report
+                                   with all counts + per-failure detail. Auth-gated; legacy rows untouched;
+                                   never deletes. Remove once the editor reads migrated data + legacy cleanup
+                                   ships (separate tool + ADR).
     AnalyticsBootstrap.jsx         mounted inside <ProfileProvider> in main.jsx. Watches profile.id +
                                    profile.is_test_user; on change, calls initAnalytics(profile) (which
                                    itself bails for non-testers). Renders nothing.
@@ -669,6 +693,7 @@ Custom user-created types are persisted per-user as rows in the `node_types` tab
 - [x] **Profile avatars** — Profile page lets the user upload, replace, and remove a profile photo (1:1 crop, 256×256 WebP, stored in the new `profile-media` Supabase Storage bucket). `public.profiles` row holds `avatar_path` + `display_name` (latter has no UI yet). Auto-create trigger on `auth.users` INSERT so every sign-up gets a profile row. Shared `ProfileContext` so the top-left UserAvatar chip updates immediately when the photo changes — same source of truth as the Profile page header. Cropper gains a `profile-avatar` mode (square frame, 256×256 output); UploadImageModal becomes pipeline-agnostic via `cardImagePipeline()` / `profileAvatarPipeline()` factories so the same UI shell handles both image domains. See migration 003.
 - [x] **Behavioral analytics + session replay** — PostHog Cloud wired (per ADR-0009). Loads only when `profile.is_test_user === true` via dynamic import (separate Vite chunk; non-testers download zero bytes of `posthog-js`). 16 named events fire at action sites across `App.jsx`, `ConnectionsSection`, `TypePicker`, and `useUndoShortcuts`. `AuthContext.signOut` resets the session so it doesn't bleed across users on the same browser. Three safety guards (conditional load, try/catch on every public call, early bail) ensure non-testers see zero behavioral or performance impact. Password fields are protected by a `.ph-mask` class + PostHog's default `type=password` masking + the fact that the login screen renders pre-init. Migration 004 adds the `is_test_user` boolean column.
 - [x] **Altitude rail** — Left-edge instrument that reads navigation state (current zoom, threshold, dynamic minZoom, altitude) and writes back exactly one value (`thresholdGridGapMm`). Two visual states: ambient line at rest, expanded controls (icons + draggable thumb + label + bar-chevron marker) on hover. The thumb's vertical extent IS the hysteresis dead-band; dragging it retunes the Card↔Bead threshold and morphs the canvas in real time (App.jsx subscribes to `thresholdGridGapMm` and re-runs the shared `evaluateAltitude` helper). Highlight semantics differ by state — active reads as "threshold structure," rest reads as "current altitude" — so the rail never lies about which side of the dead-band the user is on. Hue-matched dark scrim behind the UI scales wider when active. See [ADR-0010 addendum (2026-05-15)](./docs/decisions/0010-zoom-progressive-disclosure.md).
+- [x] **Block-editor content migration (Phase 1)** — Card content is moving from fixed form fields to a BlockNote block editor (ADR-0016). Phase 1 ships the data migration only (not the editor UI yet): a pure converter (`migrateCardToBlocks`) turns each card's Summary / Story Notes / Hidden Lore / DM Notes / Image Section images into two new `node_sections` kinds — `card_view` (Summary + "Discoverable Lore") and `gm_only` ("Notes" = Hidden Lore + DM Notes merged, + Image Album + a live-reading Connections block). The `#migrate-blocks` one-shot tool (`MigrateBlocks.jsx`) runs it: dry-run preview by default, explicit apply that writes idempotently (only the two new kinds) then reads back and verifies zero loss. No DB migration needed (the `kind` column is unconstrained). **Connections are NOT copied into block content** — they stay first-class rows; the block reads them live. **Legacy section rows are never modified or deleted** — removing them is a future, separate tool + ADR gated on the new editor reading migrated data + manual review. No-loss is proven test-first (`migrateCardToBlocks.test.js`) and the verifier is proven to catch loss (`blockMigration.test.js`); real run migrated + verified all 108 cards in Erik's campaign, 0 failures.
 
 ## What Is NOT Built (roadmap)
 

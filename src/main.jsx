@@ -14,6 +14,7 @@ import SearchBar from './components/SearchBar.jsx'
 import LockOverlay from './components/LockOverlay.jsx'
 import FeedbackChipBar from './components/FeedbackChipBar.jsx'
 import MigrateImages from './components/MigrateImages.jsx'
+import MigrateBlocks from './components/MigrateBlocks.jsx'
 import Profile from './components/Profile.jsx'
 import AnalyticsBootstrap from './components/AnalyticsBootstrap.jsx'
 import TermsOfServicePage from './components/TermsOfServicePage.jsx'
@@ -63,6 +64,7 @@ function Root() {
   if (hash === '#privacy') return <PrivacyPolicyPage />
   if (!session) return <Login />
   if (hash === '#migrate') return <MigrateImages />
+  if (hash === '#migrate-blocks') return <MigrateBlocks />
   if (hash === '#profile') return <Profile />
   if (!activeWorkspaceId) return <CampaignPicker />
 
