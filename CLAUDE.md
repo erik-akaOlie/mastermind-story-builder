@@ -37,6 +37,16 @@ For architecture and systems-design discussions, use this structure by default w
 6. **Recommended approach**
 7. **Tradeoffs/risks**
 
+**Presenting options & recommendations.** For any advisory turn — weighing approaches, triaging issues, scope calls, recommending a path — use this 5-part structure, in order:
+
+1. **What I found (facts)** — observed reality from code/files/git/conversation; what exists vs. what doesn't.
+2. **Why it matters** — what's at stake acting vs. not, and the tradeoffs in play.
+3. **Options (A, B, C)** — distinct named paths, **each with its pros and cons**.
+4. **Recommendation + why** — the call, with reasoning. Be willing to recommend; don't punt unless the choice genuinely needs Erik's domain judgment.
+5. **Confidence** — high / medium-high / medium / low, with a one-line reason if low.
+
+Skip it for pure execution, simple factual answers, quick clarifications, or status updates. If only one path is viable, say so rather than invent fake options. Don't surface decisions as a bare multiple-choice prompt — the reasoning must be visible. This complements the 7-part structure above: 7-part for deep architecture/systems-design dives, 5-part for everyday decisions.
+
 Do not spend context budget analyzing your own behavior unless explicitly requested.
 
 Do not confuse visible salience with structural invariance. Recommendations should be grounded in stable system references, not visually prominent elements.
