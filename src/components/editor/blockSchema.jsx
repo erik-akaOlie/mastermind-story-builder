@@ -19,6 +19,8 @@ import '@blocknote/core/fonts/inter.css'
 import '@blocknote/mantine/style.css'
 import { BlockNoteSchema, defaultBlockSpecs, defaultInlineContentSpecs } from '@blocknote/core'
 import { createReactBlockSpec, createReactInlineContentSpec } from '@blocknote/react'
+import ImageAlbumView from './ImageAlbumBlock.jsx'
+import ConnectionsView from './ConnectionsBlock.jsx'
 
 // ── Inline [[Node]] link ─────────────────────────────────────────────────────
 const NodeLink = createReactInlineContentSpec(
@@ -40,60 +42,16 @@ const NodeLink = createReactInlineContentSpec(
   }
 )
 
-// ── Image Album (Chunk A placeholder — count only) ───────────────────────────
+// ── Image Album (data-driven: thumbnails + upload + remove) ──────────────────
 const ImageAlbum = createReactBlockSpec(
   { type: 'imageAlbum', propSchema: { images: { default: '[]' } }, content: 'none' },
-  {
-    render: (props) => {
-      let count = 0
-      try {
-        count = JSON.parse(props.block.props.images || '[]').length
-      } catch {
-        count = 0
-      }
-      return (
-        <div
-          contentEditable={false}
-          style={{
-            border: '1px dashed #c4b5fd',
-            borderRadius: 8,
-            padding: '8px 10px',
-            margin: '4px 0',
-            width: '100%',
-            fontSize: 12,
-            color: '#6b7280',
-          }}
-        >
-          Image Album · {count} image{count === 1 ? '' : 's'}
-          <span style={{ color: '#9ca3af' }}> — grid &amp; upload coming next</span>
-        </div>
-      )
-    },
-  }
+  { render: (props) => <ImageAlbumView block={props.block} editor={props.editor} /> }
 )
 
-// ── Connections (Chunk A placeholder — live list comes in Chunk B) ───────────
+// ── Connections (data-driven: live chips + delete; reads EditorContext) ──────
 const Connections = createReactBlockSpec(
   { type: 'connections', propSchema: {}, content: 'none' },
-  {
-    render: () => (
-      <div
-        contentEditable={false}
-        style={{
-          border: '1px solid #e5e7eb',
-          borderRadius: 8,
-          padding: '8px 10px',
-          margin: '4px 0',
-          width: '100%',
-          background: '#fafafa',
-          fontSize: 12,
-          color: '#6b7280',
-        }}
-      >
-        Connections — live list coming next
-      </div>
-    ),
-  }
+  { render: () => <ConnectionsView /> }
 )
 
 // v0.51: createReactBlockSpec returns a FACTORY that must be CALLED to get the

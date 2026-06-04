@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo, lazy, Suspense } from 'react'
 import { useNodeTypes } from '../store/useTypeStore'
 import { useWorkspace } from '../lib/WorkspaceContext.jsx'
 import { useUndoStore } from '../store/useUndoStore'
@@ -14,6 +14,7 @@ import { useAutoSave } from '../hooks/useAutoSave'
 import { useMorphAnimation, TRANSITION_MS } from '../hooks/useMorphAnimation'
 import { UploadImageProvider } from './UploadImageProvider'
 import { SEARCH_BAND_REM } from './SearchBar'
+import { EditorProvider } from './editor/EditorContext.jsx'
 
 // Lazy so the ~1 MB BlockNote bundle loads only when a card is opened, never in
 // the main app bundle. Block-editor Phase 2, Chunk A (ADR-0016).
@@ -650,6 +651,21 @@ export default function Inspector({
   const titleRef = useRef(null)
   useEffect(() => { titleRef.current?.focus() }, [])
 
+  // ── Editor context for the custom blocks (Phase 2, Chunk B) ──────────────
+  // The Connections + Image Album blocks read this. Deleting a connection from
+  // the block routes through the SAME localConns flow the legacy
+  // ConnectionsSection uses, so canvas-edge removal, persistence, and undo all
+  // come for free. Connections are read live (not cached in the block) so a
+  // delete can't ghost back — see ADR-0016 §8.
+  const editorContextValue = useMemo(() => ({
+    cardId: node.id,
+    workspaceId: activeWorkspaceId,
+    slug: title || node.data.label,
+    connections: localConns,
+    onDeleteConnection: (connectionId) =>
+      setLocalConns((prev) => prev.filter((c) => c.id !== connectionId)),
+  }), [node.id, node.data.label, activeWorkspaceId, title, localConns])
+
   // ── Render ────────────────────────────────────────────────────────────────
   // Header + body, shared verbatim by both the docked and undocked containers.
   const inner = (
@@ -686,7 +702,9 @@ export default function Inspector({
                 Block editor (new) · legacy fields below will be removed at cutover
               </div>
               <Suspense fallback={<div className="text-sm text-gray-400">Loading editor…</div>}>
-                <CardZones nodeId={node.id} />
+                <EditorProvider value={editorContextValue}>
+                  <CardZones nodeId={node.id} />
+                </EditorProvider>
               </Suspense>
             </div>
 
