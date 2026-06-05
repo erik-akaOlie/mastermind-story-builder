@@ -39,6 +39,7 @@ import {
   applyForward,
   canApplyInverse,
   canApplyForward,
+  isKnownActionType,
 } from '../lib/undo/index.js'
 import {
   toastUndoSuccess,
@@ -55,6 +56,16 @@ function buildKey(userId, workspaceId) {
   return `${KEY_PREFIX}${userId}:${workspaceId}`
 }
 
+// Drop entries whose action type is no longer handled by the dispatcher.
+// Tab-local undo history (sessionStorage) can outlive a code change that
+// retires an action type — e.g. the list-item families removed in E5
+// (ADR-0016). Such an entry would otherwise sit on the stack and, on Ctrl+Z,
+// surface a misleading "conflict" toast via the dispatcher's unknown-type
+// guard. Filtering at load makes the retirement silent and explicit.
+function keepKnown(arr) {
+  return Array.isArray(arr) ? arr.filter((e) => isKnownActionType(e?.type)) : []
+}
+
 function loadFromStorage(key) {
   if (!key) return { past: [], future: [] }
   try {
@@ -62,8 +73,8 @@ function loadFromStorage(key) {
     if (!raw) return { past: [], future: [] }
     const parsed = JSON.parse(raw)
     return {
-      past: Array.isArray(parsed?.past) ? parsed.past : [],
-      future: Array.isArray(parsed?.future) ? parsed.future : [],
+      past: keepKnown(parsed?.past),
+      future: keepKnown(parsed?.future),
     }
   } catch {
     return { past: [], future: [] }

@@ -77,6 +77,17 @@ const handlers = new Map([
   [ACTION_TYPES.DELETE_TEXT_NODE,   deleteTextNode],
 ])
 
+// Is `type` a currently-handled action? Derived from the handlers Map so the
+// "live types" set has a single source of truth and can't drift. Used by
+// useUndoStore.loadFromStorage to drop stale sessionStorage entries whose
+// action type was retired (e.g. the list-item families removed in E5,
+// ADR-0016). canApply* already fail closed on an unknown type, so this filter
+// is belt-and-suspenders: it keeps a retired entry from surfacing a misleading
+// "conflict" toast on Ctrl+Z and makes the retirement explicit + tested.
+export function isKnownActionType(type) {
+  return handlers.has(type)
+}
+
 export function canApplyInverse(entry, currentState = {}) {
   const h = entry ? handlers.get(entry.type) : null
   if (!h) return { ok: false, reason: `Unknown action type: ${entry?.type}` }

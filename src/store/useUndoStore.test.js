@@ -25,6 +25,14 @@ vi.mock('../lib/undo/index.js', () => ({
   canApplyForward: vi.fn(() => ({ ok: true })),
   applyInverse:    vi.fn(async () => {}),
   applyForward:    vi.fn(async () => {}),
+  // Mirrors the real predicate (handlers.has): true for the ten currently-
+  // handled types above, false for anything retired (e.g. the E5 list-item
+  // families). Used by loadFromStorage to drop stale entries on hydrate.
+  isKnownActionType: (type) => [
+    'createCard', 'editCardField', 'moveCard', 'deleteCard',
+    'addConnection', 'removeConnection',
+    'createTextNode', 'editTextNode', 'moveTextNode', 'deleteTextNode',
+  ].includes(type),
 }))
 
 // Toast helpers — mocked so tests assert what got fired without rendering JSX.
@@ -371,6 +379,33 @@ describe('useUndoStore — setScope hydration', () => {
 
   it('falls back to empty stacks when sessionStorage holds malformed JSON', () => {
     sessionStorage.setItem(KEY, '{not json')
+    setScope()
+    expect(s().past).toEqual([])
+    expect(s().future).toEqual([])
+  })
+
+  // E5 (ADR-0016): tab-local history can outlive a code change that retires an
+  // action type (e.g. the list-item undo families). Such entries are dropped on
+  // hydrate so they never reach the stack — keeps Ctrl+Z from surfacing a
+  // misleading "conflict" toast for an action that simply no longer exists.
+  it('drops entries whose action type is no longer handled, keeping the valid ones', () => {
+    const stale = { type: 'addListItem', label: 'Add bullet', cardId: 'x' }
+    sessionStorage.setItem(KEY, JSON.stringify({
+      past:   [A, stale, B],
+      future: [stale, A],
+    }))
+    setScope()
+    expect(s().past).toEqual([A, B])
+    expect(s().future).toEqual([A])
+  })
+
+  it('hydrates to empty when every stored entry has a retired action type', () => {
+    const stale1 = { type: 'editListItem',    label: 'Edit bullet',   cardId: 'x' }
+    const stale2 = { type: 'reorderListItem', label: 'Reorder bullet', cardId: 'y' }
+    sessionStorage.setItem(KEY, JSON.stringify({
+      past:   [stale1, stale2],
+      future: [stale1],
+    }))
     setScope()
     expect(s().past).toEqual([])
     expect(s().future).toEqual([])
