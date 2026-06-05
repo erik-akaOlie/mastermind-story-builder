@@ -1,7 +1,7 @@
 // editCardField — phase 4.
-// One entry per changed field per modal session. Two field families:
-//   NODE_FIELDS    — label, summary, avatar, type → updateNode
-//   SECTION_FIELDS — storyNotes, hiddenLore, dmNotes, media → updateNodeSections
+// One entry per changed field per modal session. NODE_FIELDS only:
+//   NODE_FIELDS — label, summary, avatar, type → updateNode
+// (Section fields were retired in E5, ADR-0016.)
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
@@ -9,19 +9,17 @@ vi.mock('../nodes.js', async () => {
   const actual = await vi.importActual('../nodes.js')
   return {
     ...actual,
-    updateNode:         vi.fn(async () => {}),
-    updateNodeSections: vi.fn(async () => {}),
+    updateNode: vi.fn(async () => {}),
   }
 })
 
 import { canApplyInverse, canApplyForward, applyInverse, applyForward } from './editCardField.js'
 import { ACTION_TYPES } from './index.js'
-import { updateNode, updateNodeSections } from '../nodes.js'
+import { updateNode } from '../nodes.js'
 import { useTypeStore } from '../../store/useTypeStore.js'
 
 beforeEach(() => {
   updateNode.mockClear()
-  updateNodeSections.mockClear()
 })
 
 const editEntry = (overrides = {}) => ({
@@ -39,14 +37,10 @@ const editEntry = (overrides = {}) => ({
 const cardWith = (fields = {}) => ({
   id: 'card-1',
   data: {
-    label:      'Strahd',
-    summary:    'new',
-    avatar:     null,
-    type:       'character',
-    storyNotes: ['beat 1'],
-    hiddenLore: [],
-    dmNotes:    [],
-    media:      [],
+    label:   'Strahd',
+    summary: 'new',
+    avatar:  null,
+    type:    'character',
     ...fields,
   },
 })
@@ -79,21 +73,6 @@ describe('editCardField — canApplyInverse', () => {
     expect(result.ok).toBe(false)
     expect(result.reason).toMatch(/unsupported field/i)
   })
-
-  it('does deep-equality for array fields (storyNotes)', () => {
-    const entry = editEntry({
-      field: 'storyNotes',
-      before: ['beat 1'],
-      after:  ['beat 1', 'beat 2'],
-    })
-    expect(canApplyInverse(entry, {
-      nodes: [cardWith({ storyNotes: ['beat 1', 'beat 2'] })],
-    })).toEqual({ ok: true })
-    // Different array contents → refuse.
-    expect(canApplyInverse(entry, {
-      nodes: [cardWith({ storyNotes: ['something else'] })],
-    }).ok).toBe(false)
-  })
 })
 
 describe('editCardField — canApplyForward', () => {
@@ -113,7 +92,6 @@ describe('editCardField — applyInverse (NODE_FIELDS)', () => {
   it('summary: persists `before` via updateNode({ summary })', async () => {
     await applyInverse(editEntry(), {})
     expect(updateNode).toHaveBeenCalledWith('card-1', { summary: 'old' })
-    expect(updateNodeSections).not.toHaveBeenCalled()
   })
 
   it('label: persists `before` via updateNode({ label })', async () => {
@@ -165,62 +143,9 @@ describe('editCardField — applyInverse (NODE_FIELDS)', () => {
   })
 })
 
-describe('editCardField — applyInverse (SECTION_FIELDS)', () => {
-  it('storyNotes: writes `before` and merges other three sections from current state', async () => {
-    const entry = editEntry({
-      field: 'storyNotes',
-      before: ['beat A'],
-      after:  ['beat A', 'beat B'],
-    })
-    const target = cardWith({
-      storyNotes: ['beat A', 'beat B'],
-      hiddenLore: ['secret 1'],
-      dmNotes:    ['note 1'],
-      media:      ['m1'],
-    })
-    await applyInverse(entry, { nodes: [target] })
-
-    expect(updateNodeSections).toHaveBeenCalledWith('card-1', {
-      storyNotes: ['beat A'],          // recorded `before`
-      hiddenLore: ['secret 1'],        // current state preserved
-      dmNotes:    ['note 1'],          // current state preserved
-      media:      ['m1'],              // current state preserved
-    })
-    expect(updateNode).not.toHaveBeenCalled()
-  })
-
-  it('media: handles an array of {path, alt, uploaded_at} objects', async () => {
-    const beforeMedia = [{ path: 'p1.webp', alt: '', uploaded_at: 'iso-1' }]
-    const afterMedia  = [
-      { path: 'p1.webp', alt: '', uploaded_at: 'iso-1' },
-      { path: 'p2.webp', alt: '', uploaded_at: 'iso-2' },
-    ]
-    const entry = editEntry({ field: 'media', before: beforeMedia, after: afterMedia })
-    const target = cardWith({ media: afterMedia })
-    await applyInverse(entry, { nodes: [target] })
-
-    expect(updateNodeSections).toHaveBeenCalledWith('card-1', expect.objectContaining({
-      media: beforeMedia,
-    }))
-  })
-})
-
 describe('editCardField — applyForward', () => {
   it('writes `after` back via updateNode (mirror of inverse on summary)', async () => {
     await applyForward(editEntry(), {})
     expect(updateNode).toHaveBeenCalledWith('card-1', { summary: 'new' })
-  })
-
-  it('writes `after` back via updateNodeSections for section fields', async () => {
-    const entry = editEntry({
-      field: 'dmNotes',
-      before: [],
-      after:  ['restored note'],
-    })
-    const target = cardWith({ dmNotes: [] })
-    await applyForward(entry, { nodes: [target] })
-    expect(updateNodeSections).toHaveBeenCalledWith('card-1', expect.objectContaining({
-      dmNotes: ['restored note'],
-    }))
   })
 })

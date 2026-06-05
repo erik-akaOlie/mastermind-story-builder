@@ -377,41 +377,19 @@ describe('round-trip — moveCard', () => {
 })
 
 describe('round-trip — editCardField', () => {
-  // Each field family — we want one test per field type to catch shape
-  // drift if (e.g.) someone changes the typeId lookup or section persist
-  // path without updating the dispatcher.
-  // Bullet kinds (storyNotes / hiddenLore / dmNotes) carry stable ids in
-  // their entries — the structured form the dispatcher reads from React
-  // state. We use fixed ids in the fixtures so the round-trip assertion
-  // can compare exactly without flakiness from generated UUIDs.
+  // One test per NODE_FIELD to catch shape drift if (e.g.) someone changes the
+  // typeId lookup or the updateNode persist path without updating the
+  // dispatcher. (Section fields were retired in E5, ADR-0016.)
   const fields = [
-    ['label',      'Strahd',        'Strahd the Damned'],
-    ['summary',    'Vampire lord',  'Lord of Castle Ravenloft'],
-    ['avatar',     'old.webp',      'new.webp'],
-    ['storyNotes',
-      [{ id: 'sn-1', value: 'beat 1' }],
-      [{ id: 'sn-1', value: 'beat 1' }, { id: 'sn-2', value: 'beat 2' }]],
-    ['hiddenLore',
-      [{ id: 'hl-1', value: 'secret 1' }],
-      [{ id: 'hl-1', value: 'secret 1' }, { id: 'hl-2', value: 'secret 2' }]],
-    ['dmNotes',
-      [{ id: 'dm-1', value: 'note 1' }],
-      [{ id: 'dm-2', value: 'note 2' }]],
-    ['media',
-      [{ path: 'p1.webp', alt: '', uploaded_at: 'iso-1' }],
-      [{ path: 'p1.webp', alt: '', uploaded_at: 'iso-1' },
-       { path: 'p2.webp', alt: '', uploaded_at: 'iso-2' }]],
+    ['label',   'Strahd',        'Strahd the Damned'],
+    ['summary', 'Vampire lord',  'Lord of Castle Ravenloft'],
+    ['avatar',  'old.webp',      'new.webp'],
   ]
 
   it.each(fields)('%s: edit → undo restores; redo replays', async (field, before, after) => {
     const rs = makeReactState()
     const seedFields =
-      field === 'storyNotes' ? { storyNotes: before } :
-      field === 'hiddenLore' ? { hiddenLore: before } :
-      field === 'dmNotes'    ? { dmNotes: before } :
-      field === 'media'      ? { media: before } :
-      field === 'avatar'     ? { avatarUrl: before } :
-                               { [field]: before }
+      field === 'avatar' ? { avatarUrl: before } : { [field]: before }
     seedCard(rs, { id: 'card-1', label: 'Strahd', summary: 'Vampire lord', ...seedFields })
     const startSnapshot = snapshotState(rs)
 
@@ -421,11 +399,8 @@ describe('round-trip — editCardField', () => {
     ))
     if (field === 'avatar') {
       mockDb.nodes.get('card-1').avatar_url = after
-    } else if (['label', 'summary'].includes(field)) {
+    } else {
       mockDb.nodes.get('card-1')[field] = after
-    } else if (['storyNotes', 'hiddenLore', 'dmNotes', 'media'].includes(field)) {
-      const kind = { storyNotes: 'narrative', hiddenLore: 'hidden_lore', dmNotes: 'dm_notes', media: 'media' }[field]
-      mockDb.node_sections.get('card-1')[kind] = after
     }
 
     const entry = {

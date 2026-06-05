@@ -1,19 +1,14 @@
 // Card-family helpers — used by createCard, editCardField, moveCard, deleteCard.
 //
-// editCardField has two field families:
-//   NODE_FIELDS:    label, summary, avatar, type → updateNode
-//   SECTION_FIELDS: storyNotes, hiddenLore, dmNotes, media → updateNodeSections
-//
-// updateNodeSections rewrites all four sections in one call, so the dispatcher
-// merges current local state for the three unchanged sections with the
-// recorded value for the changed one. canApply* compare against the live
-// node's React-shape data using deep equality (`deepEqual` in `_shared.js`).
+// editCardField operates on NODE_FIELDS only (label, summary, avatar, type →
+// updateNode). canApply* compare against the live node's React-shape data using
+// deep equality (`deepEqual` in `_shared.js`). The section-field family was
+// retired in E5 (ADR-0016); that content lives in the block editor now.
 
 import { useTypeStore } from '../../store/useTypeStore.js'
 import { deepEqual } from './_shared.js'
 
-export const NODE_FIELDS    = new Set(['label', 'summary', 'avatar', 'type'])
-export const SECTION_FIELDS = new Set(['storyNotes', 'hiddenLore', 'dmNotes', 'media'])
+export const NODE_FIELDS = new Set(['label', 'summary', 'avatar', 'type'])
 
 // moveCard — defensive shape-reader. The entry shape is `{ cards: [{ cardId,
 // before, after }, ...] }` (post-Sprint-2 grouping). If a stale singular-
@@ -31,7 +26,7 @@ export function checkEditCardField(entry, { nodes = [] } = {}, side /* 'before' 
   if (!cardId || !field) {
     return { ok: false, reason: 'Malformed editCardField entry' }
   }
-  if (!NODE_FIELDS.has(field) && !SECTION_FIELDS.has(field)) {
+  if (!NODE_FIELDS.has(field)) {
     return { ok: false, reason: `Unsupported field: ${field}` }
   }
   const target = nodes.find((n) => n.id === cardId)

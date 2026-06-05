@@ -1,12 +1,15 @@
 // editCardField — one entry per changed field per modal session (see
-// ADR-0006 §7). Two field families:
+// ADR-0006 §7). Operates on NODE_FIELDS only:
 //
-//   NODE_FIELDS:    label, summary, avatar, type → updateNode
-//   SECTION_FIELDS: storyNotes, hiddenLore, dmNotes, media → updateNodeSections
+//   NODE_FIELDS: label, summary, avatar, type → updateNode
+//
+// Section fields (storyNotes/hiddenLore/dmNotes/media) were retired in E5
+// (ADR-0016) along with the legacy fielded editor; that content lives in the
+// block editor now, which owns its own save + undo.
 
-import { updateNode, updateNodeSections } from '../nodes.js'
+import { updateNode } from '../nodes.js'
 import { useTypeStore } from '../../store/useTypeStore.js'
-import { NODE_FIELDS, SECTION_FIELDS, checkEditCardField } from './_cardHelpers.js'
+import { NODE_FIELDS, checkEditCardField } from './_cardHelpers.js'
 
 export function canApplyInverse(entry, currentState = {}) {
   return checkEditCardField(entry, currentState, 'after')
@@ -24,11 +27,11 @@ export async function applyForward(entry, context = {}) {
   return editCardFieldSide(entry, context, 'after')
 }
 
-async function editCardFieldSide(entry, { nodes = [], setNodes } = {}, side /* 'before' | 'after' */) {
+async function editCardFieldSide(entry, { setNodes } = {}, side /* 'before' | 'after' */) {
   const { cardId, field } = entry
   const value = entry[side]
 
-  if (!NODE_FIELDS.has(field) && !SECTION_FIELDS.has(field)) {
+  if (!NODE_FIELDS.has(field)) {
     throw new Error(`[undoActions] editCardField: unsupported field "${field}"`)
   }
 
@@ -43,30 +46,15 @@ async function editCardFieldSide(entry, { nodes = [], setNodes } = {}, side /* '
     )
   }
 
-  if (NODE_FIELDS.has(field)) {
-    if (field === 'type') {
-      const typeId = useTypeStore.getState().idByKey?.[value]
-      if (!typeId) {
-        throw new Error(`[undoActions] editCardField: no typeId for type key "${value}"`)
-      }
-      await updateNode(cardId, { typeId })
-    } else if (field === 'avatar') {
-      await updateNode(cardId, { avatarUrl: value })
-    } else {
-      await updateNode(cardId, { [field]: value })
+  if (field === 'type') {
+    const typeId = useTypeStore.getState().idByKey?.[value]
+    if (!typeId) {
+      throw new Error(`[undoActions] editCardField: no typeId for type key "${value}"`)
     }
-    return
+    await updateNode(cardId, { typeId })
+  } else if (field === 'avatar') {
+    await updateNode(cardId, { avatarUrl: value })
+  } else {
+    await updateNode(cardId, { [field]: value })
   }
-
-  // SECTION_FIELDS — updateNodeSections replaces all four, so merge current
-  // state for the unchanged three with the recorded value for the changed one.
-  const target = nodes.find((n) => n.id === cardId)
-  const data = target?.data || {}
-  await updateNodeSections(cardId, {
-    storyNotes: data.storyNotes || [],
-    hiddenLore: data.hiddenLore || [],
-    dmNotes:    data.dmNotes    || [],
-    media:      data.media      || [],
-    [field]:    value,
-  })
 }
