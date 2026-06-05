@@ -21,7 +21,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // The pure functions (dbNodeToReactFlow / normalizeBullets) don't touch it.
 vi.mock('./supabase.js', () => ({ supabase: { from: vi.fn() } }))
 
-import { dbNodeToReactFlow, normalizeBullets, buildDeleteCardSnapshot, duplicateCard, updateNodeSections, createNode } from './nodes.js'
+import { dbNodeToReactFlow, normalizeBullets, buildDeleteCardSnapshot, duplicateCard, createNode } from './nodes.js'
 import { supabase } from './supabase.js'
 
 const baseDbRow = {
@@ -481,36 +481,6 @@ describe('duplicateCard — content-complete copy, no connections', () => {
     expect(captured.sectionInsert).toBeNull()   // no section insert issued
     expect(dup.id).toBe('dup-id')
     expect(dup.data.cardView).toBeNull()        // falls back to legacy/empty render
-  })
-})
-
-// ─────────────────────────────────────────────────────────────────────────────
-// updateNodeSections — must NEVER wipe the block-editor zones (ADR-0016
-// coexistence bugfix). The legacy auto-save (onUpdateNode → updateNodeSections
-// → writeSections) used to delete EVERY node_sections row for the card and
-// rewrite only the four legacy kinds, destroying card_view / gm_only and
-// causing sporadic content loss. The delete must be scoped to the legacy kinds.
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe('updateNodeSections — legacy save never deletes block-editor zones', () => {
-  beforeEach(() => { supabase.from.mockReset() })
-
-  it("scopes its delete to legacy kinds only — card_view / gm_only untouched", async () => {
-    // Capture the delete chain: delete().eq('node_id', id).in('kind', KINDS)
-    const inFilter = vi.fn().mockResolvedValue({ error: null })
-    const eqFilter = vi.fn().mockReturnValue({ in: inFilter })
-    const del = vi.fn().mockReturnValue({ eq: eqFilter })
-    const insert = vi.fn().mockResolvedValue({ error: null })
-    supabase.from.mockReturnValue({ delete: del, insert })
-
-    await updateNodeSections('n1', {
-      storyNotes: [], hiddenLore: [], dmNotes: [], media: [],
-    })
-
-    expect(eqFilter).toHaveBeenCalledWith('node_id', 'n1')
-    // The decisive assertion: the delete is filtered to the four legacy kinds,
-    // so the block zones (card_view / gm_only) are never in the delete's scope.
-    expect(inFilter).toHaveBeenCalledWith('kind', ['narrative', 'hidden_lore', 'dm_notes', 'media'])
   })
 })
 

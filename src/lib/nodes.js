@@ -16,8 +16,6 @@
 import { supabase } from './supabase.js'
 import { persistWrite } from './errorReporting.js'
 
-const SECTION_KINDS = ['narrative', 'hidden_lore', 'dm_notes', 'media']
-
 // Bullet sections (narrative / hidden_lore / dm_notes) store
 // `[{id, value}, ...]` JSONB so each item has a stable identity. ID stability
 // is the foundation phase 7c builds per-item undo entries on — without it,
@@ -232,17 +230,6 @@ export async function updateNode(id, { label, summary, avatarUrl, positionX, pos
 }
 
 // ----------------------------------------------------------------------------
-// Replace all sections for a node. Deletes existing sections, inserts new ones.
-// For V1 this is simple and correct; can be optimized with upserts later.
-// ----------------------------------------------------------------------------
-export async function updateNodeSections(nodeId, { storyNotes, hiddenLore, dmNotes, media }) {
-  return persistWrite(
-    () => writeSections(nodeId, { storyNotes, hiddenLore, dmNotes, media }),
-    'this card'
-  )
-}
-
-// ----------------------------------------------------------------------------
 // Delete a node (cascades to its sections and any connections touching it).
 // ----------------------------------------------------------------------------
 export async function deleteNode(id) {
@@ -347,31 +334,6 @@ export async function restoreCardWithDependents({ dbCardRow, dbSectionRows, dbCo
       if (connErr) throw connErr
     }
   }, 'this restore')
-}
-
-// ============================================================================
-// Internal helpers
-// ============================================================================
-
-async function writeSections(nodeId, { storyNotes = [], hiddenLore = [], dmNotes = [], media = [] }) {
-  // Wipe existing LEGACY rows ONLY, then re-insert them. Scoping the delete to
-  // SECTION_KINDS is CRITICAL during block-editor coexistence (ADR-0016): an
-  // unscoped node-wide delete also removed the card_view / gm_only zones the
-  // block editor saves independently (via lib/blockZones.js), causing sporadic
-  // content loss whenever this legacy auto-save fired — e.g. on a connection
-  // change, which routes through onUpdateNode → updateNodeSections even when no
-  // bullet/media field changed. The legacy path and the block path MUST touch
-  // disjoint kinds; this `.in('kind', …)` filter is what enforces that.
-  await supabase.from('node_sections').delete().eq('node_id', nodeId).in('kind', SECTION_KINDS)
-
-  const rows = [
-    { node_id: nodeId, kind: 'narrative',  content: storyNotes, sort_order: 0 },
-    { node_id: nodeId, kind: 'hidden_lore', content: hiddenLore, sort_order: 1 },
-    { node_id: nodeId, kind: 'dm_notes',   content: dmNotes,    sort_order: 2 },
-    { node_id: nodeId, kind: 'media',      content: media,      sort_order: 3 },
-  ]
-  const { error } = await supabase.from('node_sections').insert(rows)
-  if (error) throw error
 }
 
 // Exported for unit testing; this is the marshaling boundary the tests cover.

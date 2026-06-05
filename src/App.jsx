@@ -827,8 +827,7 @@ export default function App() {
     // Card content (summary / bullets / media) now lives in the block editor
     // and saves itself (saveBlockZones); the Inspector only sends the header
     // fields below. The legacy section-write path was removed at the E4
-    // cutover (ADR-0016). Undo of section content still writes via
-    // updateNodeSections directly from the undo dispatcher, not through here.
+    // cutover (ADR-0016).
     const nodeField = {}
     if (updatedData.label !== undefined)   nodeField.label     = updatedData.label
     if (updatedData.summary !== undefined) nodeField.summary   = updatedData.summary

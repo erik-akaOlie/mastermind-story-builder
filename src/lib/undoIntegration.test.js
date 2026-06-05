@@ -102,12 +102,6 @@ vi.mock('./nodes.js', async () => {
       if (patch.typeId    !== undefined) row.type_id    = patch.typeId
     }),
 
-    updateNodeSections: vi.fn(async (nodeId, { storyNotes, hiddenLore, dmNotes, media }) => {
-      mockDb.node_sections.set(nodeId, {
-        narrative: storyNotes, hidden_lore: hiddenLore, dm_notes: dmNotes, media,
-      })
-    }),
-
     restoreCardWithDependents: vi.fn(async ({ dbCardRow, dbSectionRows = [], dbConnectionRows = [] }) => {
       mockDb.nodes.set(dbCardRow.id, { ...dbCardRow })
       const sections = { narrative: [], hidden_lore: [], dm_notes: [], media: [] }
