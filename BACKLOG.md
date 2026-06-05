@@ -203,6 +203,27 @@ They reorder relative to each other based on what #1 + #2 reveal.
   interacts with React Flow layout. Doesn't change persistence shape.
 - **Size:** M
 
+### Remove orphaned legacy section UI components
+- **Problem.** The block-editor cutover (ADR-0016, Chunks E4–E5) removed the
+  legacy fielded card editor, leaving some of its section components imported
+  by nothing. Confirmed orphaned as of E5b (2026-06-04):
+  [`BulletSection.jsx`](./src/components/BulletSection.jsx) has zero live
+  importers. Its siblings [`MediaSection.jsx`](./src/components/MediaSection.jsx)
+  and [`ConnectionsSection.jsx`](./src/components/ConnectionsSection.jsx) (the
+  old in-Inspector connections list — distinct from the new
+  `editor/ConnectionsBlock.jsx` fixed panel) are likely also orphaned but were
+  not audited during E5b to keep that chunk scoped to undo infrastructure.
+- **Success.** Each genuinely-orphaned legacy section component (and any
+  now-unused exports/helpers it pulled in) is deleted. Anything still
+  referenced by live code stays. Full suite green + clean build after removal.
+- **Notes.** Surfaced during the E5b proposal (2026-06-04). Deliberately
+  excluded from E5b — E5 is scoped to the undo families + section-write path,
+  not orphaned UI. Verify each component's import graph before deleting (don't
+  assume from the name; `ConnectionsSection` in particular has a same-stem
+  sibling that IS live).
+- **Dependencies.** None. Independent of the remaining E5c/E5d chunks.
+- **Size:** S.
+
 ---
 
 ## Foundational Progress
