@@ -27,20 +27,19 @@ describe('undo dispatcher — exports + catalog', () => {
     expect(typeof applyForward).toBe('function')
   })
 
-  it('catalogs the ten action types from ADR-0006 §1 plus phase-7c list-item four', () => {
+  it('catalogs the ten action types from ADR-0006 §1', () => {
     expect(KNOWN).toEqual(
       expect.arrayContaining([
         // ADR §1 baseline ten
         'createCard', 'editCardField', 'moveCard', 'deleteCard',
         'addConnection', 'removeConnection',
         'createTextNode', 'editTextNode', 'moveTextNode', 'deleteTextNode',
-        // Phase 7c additions: list-item granularity for storyNotes /
-        // hiddenLore / dmNotes / media so an undo can never silently
-        // bundle multiple bullets together.
-        'addListItem', 'removeListItem', 'editListItem', 'reorderListItem',
       ]),
     )
-    expect(KNOWN).toHaveLength(14)
+    expect(KNOWN).toHaveLength(10)
+    // The phase-7c list-item families (add/remove/edit/reorderListItem) were
+    // retired in E5 (ADR-0016) along with the legacy fielded editor.
+    expect(KNOWN).not.toContain('addListItem')
   })
 })
 

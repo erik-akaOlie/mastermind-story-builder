@@ -1,7 +1,6 @@
 // Universal helpers for the undo dispatcher. Things that aren't specific to
 // any one action family — kept tiny on purpose. Family-specific helpers live
-// in `_cardHelpers.js`, `_connectionHelpers.js`, `_listItemHelpers.js`, and
-// `_textNodeHelpers.js`.
+// in `_cardHelpers.js`, `_connectionHelpers.js`, and `_textNodeHelpers.js`.
 
 // Small structural deep-equal good enough for the React-shape values we
 // snapshot: strings, nulls, arrays of strings, arrays of plain objects

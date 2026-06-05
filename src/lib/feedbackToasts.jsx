@@ -64,9 +64,7 @@ function targetForEntry(entry) {
   const t = entry.type
 
   // Card-family (single card, exists when toast fires)
-  if (t === 'createCard' || t === 'editCardField' ||
-      t === 'addListItem' || t === 'removeListItem' ||
-      t === 'editListItem' || t === 'reorderListItem') {
+  if (t === 'createCard' || t === 'editCardField') {
     return entry.cardId ? { ids: [entry.cardId] } : null
   }
 
