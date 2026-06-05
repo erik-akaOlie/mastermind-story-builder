@@ -836,6 +836,44 @@ They reorder relative to each other based on what #1 + #2 reveal.
   derived; doesn't need to live in the React Flow node object).
 - **Size:** S (investigation) → M (fix)
 
+### BlockNote text-edit undo history lost on Inspector close / node switch
+- **Problem.** BlockNote text-edit undo history is lost when the Inspector
+  closes or switches nodes because the editor instance is destroyed and
+  recreated. Each card zone (`card_view` / `gm_only`) mounts a fresh BlockNote
+  editor via `useCreateBlockNote` in
+  [`ZoneEditor.jsx`](./src/components/editor/ZoneEditor.jsx); the editor's
+  per-keystroke undo history lives only in that in-memory instance
+  (ProseMirror's history — ProseMirror is the editing engine inside BlockNote).
+  When the Inspector closes, or the user switches to another card and returns,
+  the Inspector remounts (`key={topicNodeId}` in
+  [`App.jsx`](./src/App.jsx)) and `CardZones` reloads on `nodeId` change, so the
+  editor is recreated and its history starts empty. While the editor stays
+  mounted and focused, undo/redo work correctly.
+- **The open question.** Consider whether per-node editor history persistence
+  is needed, or whether this is acceptable because saved content reloads as a
+  fresh editing session. Most document editors (Notion, Google Docs) also drop
+  in-session undo once you close and reopen a doc, so "fresh session on reopen"
+  may be the right, expected behavior — but a card the user closes and reopens
+  rapidly during prep is a different rhythm than opening a long-form doc, so
+  it's worth a deliberate decision rather than an accident of the editor's
+  lifecycle.
+- **Why it's an exploration, not a bug.** Verified 2026-06-04: this is expected
+  editor-instance behavior, NOT a defect and NOT caused by the workspace
+  undo system. The three focus-routing tests all passed (history survives blur +
+  direct refocus); history only resets on the close/switch remount. There is no
+  correctness or data-loss issue — saved content always reloads intact. The
+  decision is product/UX: is in-session-only editor undo acceptable, and if not,
+  what would persistence even mean (replay a stored edit stream? snapshot
+  diffing?) given the source of truth is the saved block JSON, not the editor's
+  transient history.
+- **Notes.** Surfaced 2026-06-04 while verifying that the E5 undo-cleanup work
+  does not threaten BlockNote undo — it does not; E5 touches none of the editor,
+  shortcut, or Realtime code involved here. Logged as a separate concern so E5
+  stays scoped.
+- **Dependencies.** None. Independent of E5 and of the workspace undo system.
+- **Size:** S (decision) → M–L (if persistence is pursued — crosses BlockNote
+  document state + a new persistence shape).
+
 ---
 
 ## Process habits
