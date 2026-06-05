@@ -830,7 +830,6 @@ export default function App() {
     // cutover (ADR-0016).
     const nodeField = {}
     if (updatedData.label !== undefined)   nodeField.label     = updatedData.label
-    if (updatedData.summary !== undefined) nodeField.summary   = updatedData.summary
     if (updatedData.avatar !== undefined)  nodeField.avatarUrl = updatedData.avatar
     if (updatedData.type !== undefined) {
       const typeId = useTypeStore.getState().idByKey[updatedData.type]
@@ -865,7 +864,7 @@ export default function App() {
         })
         .catch(console.error)
     })
-  }, [nodes, edges, activeWorkspaceId, setNodes, setEdges])
+  }, [activeWorkspaceId, setNodes, setEdges])
 
   // ── Duplicate (DB-backed) ───────────────────────────────────────────────
   const onDuplicate = useCallback(async (nodeId) => {
