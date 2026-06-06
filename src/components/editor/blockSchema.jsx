@@ -17,6 +17,7 @@
 
 import '@blocknote/core/fonts/inter.css'
 import '@blocknote/mantine/style.css'
+import './inspectorEditor.css' // Inspector-scoped overrides — MUST stay after Mantine's
 import { BlockNoteSchema, defaultBlockSpecs, defaultInlineContentSpecs } from '@blocknote/core'
 import { createReactBlockSpec, createReactInlineContentSpec } from '@blocknote/react'
 import ImageAlbumView from './ImageAlbumBlock.jsx'

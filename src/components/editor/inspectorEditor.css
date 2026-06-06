@@ -1,0 +1,61 @@
+/* ============================================================================
+   inspectorEditor.css — Inspector-scoped BlockNote overrides (Chunk F2)
+   ----------------------------------------------------------------------------
+   Imported AFTER @blocknote/mantine/style.css so these win on equal specificity.
+
+   GUARDRAILS (so a future dark mode stays the easy part — see CLAUDE.md / the
+   F2 decision):
+     1. Surface is TRANSPARENT, not a hardcoded light color — it inherits the
+        Inspector body (the pale type-tinted `color-mix(type 5%, white)`), so if
+        the body ever gains a dark token the editor follows for free.
+     2. These rules touch ONLY sizes / spacing / font-style — never colors.
+        Text + UI colors stay owned by BlockNote's `theme` prop, so flipping
+        that prop to "dark" later just works with nothing here to unpick.
+
+   Spacing per the 8pt grid (CLAUDE.md): H1 20, H2 16, body 16. H1 must stay
+   BELOW the 24px node title (nothing in the Inspector should be larger than
+   the title) yet read as a heading above the 16px H2/body. 24 and 16 are
+   adjacent 8pt steps with no 8pt value between, so the top heading takes the
+   justified 4pt value 20px. H2 = 16px (8pt) at weight 900 — same size as body
+   but set firmly apart by a heavier weight than the default heading 700.
+   ============================================================================ */
+
+/* 1 — Transparent surface (theme-neutral; inherits the Inspector body). */
+.bn-container {
+  --bn-colors-editor-background: transparent;
+}
+
+/* 2 — Inspector heading scale. BlockNote applies `font-size: var(--level)` on
+   headings, so we retune that variable per level rather than fighting its
+   font-size rule. Only H1/H2 are restyled (the levels we keep); H3–H6 stay at
+   their defaults until F6 hides them.
+
+   NOTE on level 1: BlockNote tags only levels 2–6 with `data-level`; level 1 is
+   the implicit default (it inherits the base `[data-content-type=heading]
+   {--level:3em}` and carries no `data-level="1"`). So we target level 1 via
+   BOTH `:not([data-level])` and `[data-level="1"]` — whichever the DOM uses —
+   while the `:not` keeps this off levels 2–6 entirely. */
+.bn-block-content[data-content-type="heading"]:not([data-level]),
+.bn-block-content[data-content-type="heading"][data-level="1"] {
+  --level: 20px;
+}
+.bn-block-content[data-content-type="heading"][data-level="2"] {
+  --level: 16px;
+  /* BlockNote pins heading weight at 700 via a higher-specificity selector
+     (.bn-block-outer:not([data-prev-type])>.bn-block>.bn-block-content[...]),
+     so a plain declaration here loses. `!important` forces 900 without
+     mirroring BlockNote's internal DOM chain, which could change between
+     versions. Scoped to this one property on H2 only. */
+  font-weight: 900 !important;
+}
+
+/* 3 — Body text locked to 16px (8pt). */
+.bn-editor {
+  font-size: 16px;
+}
+
+/* 4 — Quote: italic only for now. The colored left-accent border is a color
+   decision and is deferred to F5 (hover/focus + accents), per guardrail 2. */
+.bn-block-content[data-content-type="quote"] {
+  font-style: italic;
+}

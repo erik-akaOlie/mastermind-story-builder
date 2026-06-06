@@ -94,7 +94,7 @@ export default function ZoneEditor({ initialContent, onSave }) {
   }, [editor, registerEditor, unregisterEditor])
 
   return (
-    <BlockNoteView editor={editor} onChange={handleChange}>
+    <BlockNoteView editor={editor} onChange={handleChange} theme="light">
       {/* [[Node]] autocomplete. Triggers on "[" (the measured workaround);
           choosing a node inserts the inline link and declares the connection. */}
       <SuggestionMenuController
