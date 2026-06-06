@@ -17,7 +17,7 @@
 import { useEffect, useState } from 'react'
 import ZoneEditor from './ZoneEditor.jsx'
 import ConnectionsView from './ConnectionsBlock.jsx'
-import SectionLabel from '../SectionLabel.jsx'
+import InspectorSectionHeader from '../InspectorSectionHeader.jsx'
 import { loadBlockZones, saveBlockZones } from '../../lib/blockZones.js'
 
 // Strip any legacy `connections` block — connections live in the fixed panel now.
@@ -55,29 +55,30 @@ export default function CardZones({ nodeId }) {
   return (
     <div className="flex flex-col gap-8">
       {/* ── Card View ── */}
-      <div className="flex flex-col gap-2">
-        <SectionLabel>Card View</SectionLabel>
-        <div className="rounded-[0.25rem] border border-[#d1d5db] bg-white">
-          <ZoneEditor
-            initialContent={zones.card_view}
-            onSave={(doc) => saveBlockZones(nodeId, { card_view: doc }).catch(console.error)}
-          />
-        </div>
-      </div>
+      <section className="flex flex-col gap-4">
+        <InspectorSectionHeader label="Card View" />
+        <ZoneEditor
+          initialContent={zones.card_view}
+          onSave={(doc) => saveBlockZones(nodeId, { card_view: doc }).catch(console.error)}
+        />
+      </section>
 
-      {/* ── GM's Eyes Only ── editor + the fixed, non-removable Connections panel */}
-      <div className="flex flex-col gap-2">
-        <SectionLabel>GM&rsquo;s Eyes Only</SectionLabel>
-        <div className="rounded-[0.25rem] border border-[#d1d5db] bg-white">
-          <ZoneEditor
-            initialContent={zones.gm_only}
-            onSave={(doc) => saveBlockZones(nodeId, { gm_only: doc }).catch(console.error)}
-          />
-        </div>
-        {/* Connections live OUTSIDE the editable document so they can never be
-            deleted or reordered away. Reads/deletes via EditorContext. */}
+      {/* ── GM's Eyes Only ── */}
+      <section className="flex flex-col gap-4">
+        <InspectorSectionHeader label="GM&rsquo;s Eyes Only" />
+        <ZoneEditor
+          initialContent={zones.gm_only}
+          onSave={(doc) => saveBlockZones(nodeId, { gm_only: doc }).catch(console.error)}
+        />
+      </section>
+
+      {/* ── Connection Manager ── its own section now. Connections live OUTSIDE
+          the editable document so they can never be deleted or reordered away;
+          reads/deletes still flow through EditorContext (unchanged). */}
+      <section className="flex flex-col gap-4">
+        <InspectorSectionHeader label="Connection Manager" />
         <ConnectionsView />
-      </div>
+      </section>
     </div>
   )
 }

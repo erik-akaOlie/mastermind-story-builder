@@ -33,13 +33,7 @@ export default function ConnectionsView() {
   const nodeTypes = useNodeTypes()
 
   return (
-    <div
-      contentEditable={false}
-      className="w-full rounded-[0.5rem] border border-[#e5e7eb] bg-[#fafafa] p-3 my-1"
-    >
-      <div className="text-[0.6875rem] uppercase tracking-wider font-semibold text-[#6b7280] mb-2">
-        Connections
-      </div>
+    <div contentEditable={false} className="w-full">
       {connections.length === 0 ? (
         <div className="text-sm text-gray-400">
           No connections yet — type <span className="font-mono">[[</span> in the text to link a card.
