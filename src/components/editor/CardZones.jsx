@@ -53,7 +53,10 @@ export default function CardZones({ nodeId }) {
   }
 
   return (
-    <div className="flex flex-col gap-8">
+    // `inspector-editor` scopes inspectorEditor.css's BlockNote overrides to the
+    // Inspector's editors only — the selectors there are otherwise global `.bn-*`
+    // and would restyle any future BlockNote instance elsewhere in the app.
+    <div className="inspector-editor flex flex-col gap-8">
       {/* ── Card View ── */}
       <section className="flex flex-col gap-4">
         <InspectorSectionHeader label="Card View" />

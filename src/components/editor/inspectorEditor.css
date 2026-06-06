@@ -1,7 +1,14 @@
 /* ============================================================================
-   inspectorEditor.css — Inspector-scoped BlockNote overrides (Chunk F2)
+   inspectorEditor.css — Inspector-scoped BlockNote overrides (Chunks F2 + F3)
    ----------------------------------------------------------------------------
    Imported AFTER @blocknote/mantine/style.css so these win on equal specificity.
+
+   SCOPING (F3): every rule is prefixed with `.inspector-editor` — a marker class
+   on the CardZones root (the project-owned wrapper around the Inspector's two
+   zone editors). The underlying selectors are global `.bn-*`; without the prefix
+   they would restyle ANY future BlockNote instance elsewhere in the app. The
+   prefix also lifts specificity to two classes, so these still win over Mantine's
+   single-class base.
 
    GUARDRAILS (so a future dark mode stays the easy part — see CLAUDE.md / the
    F2 decision):
@@ -21,7 +28,7 @@
    ============================================================================ */
 
 /* 1 — Transparent surface (theme-neutral; inherits the Inspector body). */
-.bn-container {
+.inspector-editor .bn-container {
   --bn-colors-editor-background: transparent;
 }
 
@@ -35,11 +42,11 @@
    {--level:3em}` and carries no `data-level="1"`). So we target level 1 via
    BOTH `:not([data-level])` and `[data-level="1"]` — whichever the DOM uses —
    while the `:not` keeps this off levels 2–6 entirely. */
-.bn-block-content[data-content-type="heading"]:not([data-level]),
-.bn-block-content[data-content-type="heading"][data-level="1"] {
+.inspector-editor .bn-block-content[data-content-type="heading"]:not([data-level]),
+.inspector-editor .bn-block-content[data-content-type="heading"][data-level="1"] {
   --level: 20px;
 }
-.bn-block-content[data-content-type="heading"][data-level="2"] {
+.inspector-editor .bn-block-content[data-content-type="heading"][data-level="2"] {
   --level: 16px;
   /* BlockNote pins heading weight at 700 via a higher-specificity selector
      (.bn-block-outer:not([data-prev-type])>.bn-block>.bn-block-content[...]),
@@ -50,12 +57,30 @@
 }
 
 /* 3 — Body text locked to 16px (8pt). */
-.bn-editor {
+.inspector-editor .bn-editor {
   font-size: 16px;
 }
 
 /* 4 — Quote: italic only for now. The colored left-accent border is a color
    decision and is deferred to F5 (hover/focus + accents), per guardrail 2. */
-.bn-block-content[data-content-type="quote"] {
+.inspector-editor .bn-block-content[data-content-type="quote"] {
   font-style: italic;
+}
+
+/* 5 — Content column (F3). Indent block text so it left-aligns with the node
+   title's first character in the header. That character sits 80px from the
+   Inspector's left edge (8px body pad + 64px avatar + 8px gap; the title input's
+   own left padding was removed so its text aligns with the type-row icon at the
+   column edge). This column is identical in docked and undocked modes because the
+   header layout doesn't change with panel width. The scrollable body already
+   supplies 16px of left padding, so the editor adds 64px (= 80 − 16) to reach the
+   column. Right padding is trimmed from BlockNote's symmetric 54px default to 16px
+   (body breathing room). These longhands override `.bn-editor { padding-inline: 54px }`.
+   All values (8px gap, 80px column, 64px padding) are clean 8pt-grid.
+
+   The +/drag-handle side menu lives in this left gutter; its 4px offset from the
+   text and vertical centering are F4 concerns — NOT solved here. */
+.inspector-editor .bn-editor {
+  padding-left: 64px;
+  padding-right: 16px;
 }

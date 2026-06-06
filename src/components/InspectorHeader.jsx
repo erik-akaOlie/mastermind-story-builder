@@ -88,7 +88,7 @@ export default function InspectorHeader({
   return (
     <div
       onPointerDown={onPointerDown}
-      className="flex items-center gap-4 p-2 flex-shrink-0 select-none cursor-move touch-none"
+      className="flex items-center gap-2 p-2 flex-shrink-0 select-none cursor-move touch-none"
       style={{ backgroundColor: typeConfig.color }}
     >
       {/* Avatar — click to lightbox; hover the Swap button to replace */}
@@ -140,7 +140,7 @@ export default function InspectorHeader({
       <div className="flex-1 min-w-0 flex flex-col">
         <input
           ref={titleRef}
-          className="modal-header-input self-start bg-transparent font-semibold text-2xl leading-none outline-none rounded-[0.25rem] px-2 py-1"
+          className="modal-header-input self-start bg-transparent font-semibold text-2xl leading-none outline-none rounded-[0.25rem] pr-2 py-1"
           style={{
             color: hdrText,
             // Size the field to its content (px-2 supplies the 8px L/R
