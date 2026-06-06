@@ -395,6 +395,18 @@ Position changes persist only on `onNodeDragStop` (not on every pixel of drag). 
 
 ## Key Conventions
 
+### Spacing & sizing — 8pt grid (hard rule)
+
+All pixel values — font sizes, padding, margins, widths, gaps — follow this decision hierarchy:
+
+- **Start with a value divisible by 8.**
+- Move to a value divisible by **4** only when the design requirement cannot be satisfied with an 8pt increment.
+- Move to a value divisible by **2** only when the requirement cannot be satisfied with either an 8pt or 4pt increment.
+- Never use arbitrary values (10, 14, 18, 22, 26, 30…) without explicit, written justification in the same change.
+- Measurements extracted from Figma are **observations of design intent, not implementation requirements** — reconcile every extracted value to this hierarchy before implementing. Where a mockup and this rule conflict, **this rule wins.**
+
+This is a hard constraint, in the same category as the chunking, browser-verification, and data-loss-protection rules — apply it in every session.
+
 ### System CTA color
 
 `#0284C7` (Tailwind `sky-600`) for all card-type-agnostic action buttons (login, "Create" in CreateTypeModal, "New workspace" in CampaignPicker). **Never reuse a card-type color for system UI.**

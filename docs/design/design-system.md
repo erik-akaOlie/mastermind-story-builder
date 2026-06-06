@@ -19,6 +19,18 @@ This document captures design decisions — the functional grammar of the interf
 - **Progressive disclosure.** At every zoom level, the interface shows just enough to orient the user and invite them deeper.
 - **Skinnable by design.** All visual treatments are structurally separable from aesthetic choices, so the interface can be reskinned without touching underlying logic.
 
+### Spacing & sizing — 8pt grid (hard rule)
+
+All pixel values — font sizes, padding, margins, widths, gaps — follow a strict decision hierarchy:
+
+- **Start with a value divisible by 8.**
+- Move to a value divisible by **4** only when the design requirement cannot be satisfied with an 8pt increment.
+- Move to a value divisible by **2** only when the requirement cannot be satisfied with either an 8pt or 4pt increment.
+- Never use arbitrary values (10, 14, 18, 22, 26, 30…) without explicit, written justification in the same change.
+- Measurements extracted from Figma are **observations of design intent, not implementation requirements** — reconcile every extracted value to this hierarchy before implementing. Where a mockup and this rule conflict, **this rule wins.**
+
+This is a hard constraint, not a preference. (Mirrored in `CLAUDE.md` → Key Conventions, which is authoritative for implementation.)
+
 ---
 
 ## 1. Node System
