@@ -22,6 +22,18 @@ import { BlockNoteSchema, defaultBlockSpecs, defaultInlineContentSpecs } from '@
 import { createReactBlockSpec, createReactInlineContentSpec } from '@blocknote/react'
 import ImageAlbumView from './ImageAlbumBlock.jsx'
 
+// ── "Callout" = MasterMind's product name for BlockNote's native `quote` block ──
+// We deliberately do NOT create a custom block type. The stored document JSON keeps
+// BlockNote's standard `quote` type (so there is no migration, Markdown export stays
+// clean, and the change is trivially reversible); we only RELABEL it "Callout"
+// everywhere users and maintainers interact with it. Reference this constant instead
+// of the literal 'quote' wherever we mean the Callout block, so the intent is explicit
+// and a future promotion to a real custom `callout` type is a one-symbol change.
+//
+// Promote to a custom type ONLY when Callouts need callout-specific structure (icon,
+// title, color variants). See the ADR-0016 addendum (added in F5b).
+export const CALLOUT_BLOCK_TYPE = 'quote'
+
 // ── Inline [[Node]] link ─────────────────────────────────────────────────────
 const NodeLink = createReactInlineContentSpec(
   { type: 'nodeLink', propSchema: { nodeId: { default: '' }, label: { default: '' } }, content: 'none' },

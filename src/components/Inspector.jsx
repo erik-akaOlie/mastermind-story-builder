@@ -10,6 +10,7 @@ import { useMorphAnimation, TRANSITION_MS } from '../hooks/useMorphAnimation'
 import { UploadImageProvider } from './UploadImageProvider'
 import { SEARCH_BAND_REM } from './SearchBar'
 import { EditorProvider } from './editor/EditorContext.jsx'
+import { EditorErrorBoundary } from './editor/EditorErrorBoundary.jsx'
 import { revertLinksForNode } from './editor/editorLinks.js'
 
 // Lazy so the ~1 MB BlockNote bundle loads only when a card is opened, never in
@@ -571,11 +572,13 @@ export default function Inspector({
                 deletes through the EditorContext localConns flow. The legacy
                 Summary / bullets / media / connections sections were removed at
                 the Chunk E4 cutover; their state + wiring is cleaned up in E4b. */}
-            <Suspense fallback={<div className="text-sm text-gray-400">Loading editor…</div>}>
-              <EditorProvider value={editorContextValue}>
-                <CardZones nodeId={node.id} />
-              </EditorProvider>
-            </Suspense>
+            <EditorErrorBoundary>
+              <Suspense fallback={<div className="text-sm text-gray-400">Loading editor…</div>}>
+                <EditorProvider value={editorContextValue}>
+                  <CardZones nodeId={node.id} />
+                </EditorProvider>
+              </Suspense>
+            </EditorErrorBoundary>
 
           </div>
     </>

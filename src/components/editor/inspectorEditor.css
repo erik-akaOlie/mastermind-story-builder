@@ -78,7 +78,7 @@
    (body breathing room). These longhands override `.bn-editor { padding-inline: 54px }`.
    All values (8px gap, 80px column, 64px padding) are clean 8pt-grid.
 
-   The +/drag-handle side menu lives in this left gutter; its 4px offset from the
+   The +/drag-handle side menu lives in this left gutter; its 8px offset from the
    text comes from a spacer in our custom side menu (ZoneEditor). */
 .inspector-editor .bn-editor {
   padding-left: 64px;
@@ -98,4 +98,79 @@
    DOM chain (same rationale as rule 2's weight override). */
 .inspector-editor .bn-side-menu {
   height: auto !important;
+}
+
+/* ============================================================================
+   PORTALED MENU STYLES (F5a)
+   ----------------------------------------------------------------------------
+   The block control menus (6-dot drag-handle menu + its "Turn into" submenu)
+   render in a body-level PORTAL, OUTSIDE the `.inspector-editor` wrapper, so the
+   `.inspector-editor`-scoped rules above cannot reach them. We scope these by
+   unique `mm-` classNames we attach to the specific elements instead (see
+   blockControls.jsx) — those classNames exist nowhere else, so the rules stay
+   effectively self-scoped without an ancestor selector.
+   ============================================================================ */
+
+/* 7 — Keep every menu option reachable regardless of viewport height. When a
+   dropdown (e.g. the 7-item "Turn into" submenu) is taller than the space below
+   its trigger, cap its height and scroll inside it rather than letting the last
+   options fall off-screen. 320px = 40×8 (8pt grid); 60vh keeps it within frame
+   on short windows. */
+.mm-menu-scroll {
+  max-height: min(320px, 60vh) !important;
+  overflow-y: auto !important;
+}
+
+/* 8 — Destructive-action affordance (F5a): a Delete/destructive menu item reads
+   in neutral gray at rest, and on hover turns its text + background light red to
+   reinforce that the action is destructive. This is MasterMind's destructive
+   pattern — reuse `.mm-danger-item` (or these red-50/red-600 values) for other
+   delete/destructive controls. `!important` overrides Mantine's own item-hover
+   background. Colors: Tailwind red-50 (#fef2f2) / red-600 (#dc2626). */
+.mm-danger-item:hover,
+.mm-danger-item[data-hovered] {
+  background-color: #fef2f2 !important;
+  color: #dc2626 !important;
+}
+
+/* 9 — Notion-style hover tooltips for the +/6-dot side-menu controls (F5a).
+   The bubble is PORTALED to <body> and positioned with fixed coords by JS
+   (ControlTooltip in blockControls.jsx), which flips it above the control when
+   there's no room below — so it is never clipped by the window edge. These
+   classes are therefore NOT scoped under `.inspector-editor` (the bubble lives
+   on <body>, outside that wrapper); the unique `mm-tip*` names self-scope them.
+   This rule is visual only — position/visibility come from the inline style. */
+.mm-tip {
+  display: inline-flex;
+}
+.mm-tip__bubble {
+  /* Must beat the Inspector panel's z-[9999] — otherwise the portaled bubble
+     renders BEHIND the Inspector and only its sliver over the canvas shows. */
+  z-index: 10000;
+  white-space: nowrap;
+  background: #1f2937; /* gray-800 */
+  color: #ffffff;
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 4px 8px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  pointer-events: none;
+}
+.mm-tip__bubble b {
+  font-weight: 600;
+}
+
+/* 10 — Hide the text/background color control from the floating formatting
+   toolbar (F5a — Erik's call to drop color for now). BlockNote tags that button
+   `data-test="colors"`. We hide it with CSS rather than a custom
+   FormattingToolbarController (which is a suspected cause of the F5a editor
+   crash), so the toolbar keeps every default behavior except color. To restore
+   color later: delete this rule (and the matching note in blockControls.jsx).
+   NOTE: the toolbar's block-type dropdown still shows BlockNote's DEFAULT labels;
+   relabeling it to the MasterMind list ("Callout", H1/H2 only) is deferred to F5b
+   alongside the slash menu, where the React override can be added + browser-
+   verified carefully in isolation. */
+.inspector-editor [data-test="colors"] {
+  display: none !important;
 }

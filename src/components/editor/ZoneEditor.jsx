@@ -17,17 +17,35 @@ import {
   SuggestionMenuController,
   SideMenuController,
   SideMenu,
-  AddBlockButton,
   DragHandleButton,
+  useComponentsContext,
   useExtensionState,
 } from '@blocknote/react'
 import { SideMenuExtension } from '@blocknote/core'
 import { BlockNoteView } from '@blocknote/mantine'
+import { Plus } from '@phosphor-icons/react'
 import { schema } from './blockSchema.jsx'
 import { useEditorContext } from './EditorContext.jsx'
 import { insertNodeLink, searchNodes } from './editorLinks.js'
+import { BlockControlMenu, ControlTooltip } from './blockControls.jsx'
 
 const SAVE_DEBOUNCE_MS = 600
+
+// Side-menu control tooltip content (F5a), rendered via ControlTooltip.
+// The "+" simply adds a paragraph below (no Alt-click, no menu — Erik's call), so
+// its tooltip is one line. The 6-dot describes drag + click-to-open-menu.
+const ADD_TOOLTIP = (
+  <span>
+    <b>Click</b> to add a block below
+  </span>
+)
+const DRAG_TOOLTIP = (
+  <span>
+    <b>Drag</b> to move
+    <br />
+    <b>Click</b> to open menu
+  </span>
+)
 
 // ── Custom side menu (F4) ────────────────────────────────────────────────────
 // Keeps BlockNote's DEFAULT +/drag-handle buttons (native gray, native hover, no
@@ -46,9 +64,10 @@ const SAVE_DEBOUNCE_MS = 600
 // offset MEASURED from that block's actual first-line geometry. Measuring live
 // (rather than a hardcoded H1–H6 map) means it survives future type-scale changes.
 // No typography is changed. Scoped to the Inspector editor.
-function CenteredSideMenu(props) {
+function CenteredSideMenu({ editor, ...props }) {
   // The hovered block, straight from BlockNote's side-menu extension state.
   const block = useExtensionState(SideMenuExtension, { selector: (s) => s?.block })
+  const Components = useComponentsContext()
   const innerRef = useRef(null)
   useLayoutEffect(() => {
     const el = innerRef.current
@@ -76,11 +95,45 @@ function CenteredSideMenu(props) {
   return (
     <SideMenu {...props}>
       <div ref={innerRef} style={{ display: 'flex', alignItems: 'center' }}>
-        <AddBlockButton {...props} />
-        <DragHandleButton {...props} />
-        {/* 4px gap between the drag handle and the text column, kept inside the
-            menu element so it stays part of the hover surface. */}
-        <div aria-hidden style={{ width: 4, flexShrink: 0 }} />
+        {/* "+" — a CUSTOM button (not BlockNote's AddBlockButton). BlockNote's
+            default opens the full block-type library on click; we instead just
+            insert a paragraph below and focus it (Erik's call: new rows default to
+            text; change type via the 6-dot "Turn into"). Owning the single click
+            handler also avoids the dual-handler conflict that corrupted the side
+            menu when we tried to intercept the default button's native listener. */}
+        <ControlTooltip label={ADD_TOOLTIP}>
+          {/* Use BlockNote's OWN side-menu button (the same component the 6-dot
+              uses) so the "+" matches it exactly — gray color + hover rollover.
+              We only swap the behavior: instead of opening the block library, it
+              inserts a paragraph below and focuses it (Erik's call). */}
+          {Components ? (
+            <Components.SideMenu.Button
+              className="bn-button"
+              label="Add block below"
+              icon={<Plus size={18} weight="bold" />}
+              onClick={() => {
+                if (!block) return
+                try {
+                  const [created] = editor.insertBlocks([{ type: 'paragraph' }], block, 'after')
+                  if (created) editor.setTextCursorPosition(created, 'end')
+                  editor.focus?.()
+                } catch {
+                  /* never let an add failure crash the editor */
+                }
+              }}
+            />
+          ) : null}
+        </ControlTooltip>
+        {/* Custom 6-dot menu (F5a): Turn into ▶ / Duplicate / Delete, no Color. */}
+        <ControlTooltip label={DRAG_TOOLTIP}>
+          <DragHandleButton {...props} dragHandleMenu={() => <BlockControlMenu editor={editor} />} />
+        </ControlTooltip>
+        {/* 8px gap between the drag handle and the text column (F5a: widened from
+            4px). It's the rightmost flex item and BlockNote anchors the menu's
+            right edge to the content column, so widening it slides the controls
+            LEFT while the content stays put. Kept inside the menu element so the
+            gap stays part of the hover surface. 8px = one 8pt step. */}
+        <div aria-hidden style={{ width: 8, flexShrink: 0 }} />
       </div>
     </SideMenu>
   )
@@ -163,7 +216,12 @@ export default function ZoneEditor({ initialContent, onSave }) {
     // `sideMenu={false}` disables BlockNote's built-in side menu so our custom
     // CenteredSideMenu (above) is the only one (F4): default buttons, 4px gap,
     // and first-line vertical centering via a live-measured per-block offset.
-    <BlockNoteView editor={editor} onChange={handleChange} theme="light" sideMenu={false}>
+    <BlockNoteView
+      editor={editor}
+      onChange={handleChange}
+      theme="light"
+      sideMenu={false}
+    >
       {/* [[Node]] autocomplete. Triggers on "[" (the measured workaround);
           choosing a node inserts the inline link and declares the connection. */}
       <SuggestionMenuController
@@ -176,9 +234,10 @@ export default function ZoneEditor({ initialContent, onSave }) {
         }
       />
 
-      {/* Custom side menu (F4) — see CenteredSideMenu above for the full rationale
-          (first-line vertical centering + 4px gap, no typography changes). */}
-      <SideMenuController sideMenu={(props) => <CenteredSideMenu {...props} />} />
+      {/* Custom side menu (F4 + F5a) — first-line vertical centering + 4px gap
+          (F4), plus the reorganized 6-dot menu via dragHandleMenu (F5a). `editor`
+          is threaded through so the menu can convert/duplicate/delete the block. */}
+      <SideMenuController sideMenu={(props) => <CenteredSideMenu {...props} editor={editor} />} />
     </BlockNoteView>
   )
 }
