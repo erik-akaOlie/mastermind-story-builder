@@ -79,8 +79,23 @@
    All values (8px gap, 80px column, 64px padding) are clean 8pt-grid.
 
    The +/drag-handle side menu lives in this left gutter; its 4px offset from the
-   text and vertical centering are F4 concerns — NOT solved here. */
+   text comes from a spacer in our custom side menu (ZoneEditor). */
 .inspector-editor .bn-editor {
   padding-left: 64px;
   padding-right: 16px;
+}
+
+/* 6 — Side-menu vertical alignment: collapse the control box (F4).
+   ----------------------------------------------------------------------------
+   BlockNote vertically centers the +/drag-handle controls inside a box anchored
+   to each block's TOP, and over-sizes that box on some headings (H1/H2/H4/H5/H6),
+   dropping the controls off the first line. `height: auto` collapses the box to
+   its content (one button row) so the controls sit predictably at the block top;
+   our custom side menu (ZoneEditor) then shifts them by a per-block, live-measured
+   offset onto that block's actual first line — see `ZoneEditor`'s CenteredSideMenu.
+   This is positioning only: no typography changes, scoped to the Inspector editor.
+   `!important` defeats BlockNote's inflated height without mirroring its internal
+   DOM chain (same rationale as rule 2's weight override). */
+.inspector-editor .bn-side-menu {
+  height: auto !important;
 }

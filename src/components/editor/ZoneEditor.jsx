@@ -11,14 +11,80 @@
 // CardZones guarantees that.
 // ============================================================================
 
-import { useRef, useEffect, useCallback } from 'react'
-import { useCreateBlockNote, SuggestionMenuController } from '@blocknote/react'
+import { useRef, useEffect, useCallback, useLayoutEffect } from 'react'
+import {
+  useCreateBlockNote,
+  SuggestionMenuController,
+  SideMenuController,
+  SideMenu,
+  AddBlockButton,
+  DragHandleButton,
+  useExtensionState,
+} from '@blocknote/react'
+import { SideMenuExtension } from '@blocknote/core'
 import { BlockNoteView } from '@blocknote/mantine'
 import { schema } from './blockSchema.jsx'
 import { useEditorContext } from './EditorContext.jsx'
 import { insertNodeLink, searchNodes } from './editorLinks.js'
 
 const SAVE_DEBOUNCE_MS = 600
+
+// ── Custom side menu (F4) ────────────────────────────────────────────────────
+// Keeps BlockNote's DEFAULT +/drag-handle buttons (native gray, native hover, no
+// chrome, familiar order) and makes only two changes, both positioning-only:
+//   1. A 4px gap from the text column (the spacer div), kept inside the menu so
+//      it stays part of the hover surface (no control flicker).
+//   2. Vertical centering on the hovered block's FIRST LINE.
+//
+// Why #2 needs JS: BlockNote centers the controls inside a box anchored to the
+// block top and over-sizes that box on several heading levels (H1/H2/H4/H5/H6),
+// so the controls sit visibly low. A pure-CSS per-level fix is impossible — the
+// side menu is a single element BlockNote repositions, carrying no block-level
+// attribute to target. So we read the hovered block from BlockNote's OWN side-menu
+// state (useExtensionState + SideMenuExtension — not DOM guessing), collapse the
+// box (height:auto, inspectorEditor.css rule 6), and shift the controls by an
+// offset MEASURED from that block's actual first-line geometry. Measuring live
+// (rather than a hardcoded H1–H6 map) means it survives future type-scale changes.
+// No typography is changed. Scoped to the Inspector editor.
+function CenteredSideMenu(props) {
+  // The hovered block, straight from BlockNote's side-menu extension state.
+  const block = useExtensionState(SideMenuExtension, { selector: (s) => s?.block })
+  const innerRef = useRef(null)
+  useLayoutEffect(() => {
+    const el = innerRef.current
+    if (!el) return
+    el.style.transform = ''
+    if (!block?.id) return
+    try {
+      const outer = document.querySelector(`.bn-block-outer[data-id="${CSS.escape(block.id)}"]`)
+      const inner = outer?.querySelector('.bn-inline-content')
+      if (!inner) return // e.g. image-album block has no text line — leave default
+      const lh = parseFloat(getComputedStyle(inner).lineHeight)
+      if (!lh) return
+      // First-line center measured from the block's OWN top — NOT the menu's live
+      // screen position, so there's no timing race with BlockNote's repositioning.
+      const firstLineOffset =
+        inner.getBoundingClientRect().top - outer.getBoundingClientRect().top + lh / 2
+      // Box is collapsed (height:auto), so the controls sit at block-top + half
+      // their own height; shift them down onto the first-line center.
+      const elHalf = el.getBoundingClientRect().height / 2
+      el.style.transform = `translateY(${firstLineOffset - elHalf}px)`
+    } catch {
+      /* any measurement failure: leave controls at BlockNote's default position */
+    }
+  }, [block])
+  return (
+    <SideMenu {...props}>
+      <div ref={innerRef} style={{ display: 'flex', alignItems: 'center' }}>
+        <AddBlockButton {...props} />
+        <DragHandleButton {...props} />
+        {/* 4px gap between the drag handle and the text column, kept inside the
+            menu element so it stays part of the hover surface. */}
+        <div aria-hidden style={{ width: 4, flexShrink: 0 }} />
+      </div>
+    </SideMenu>
+  )
+}
 
 export default function ZoneEditor({ initialContent, onSave }) {
   const editor = useCreateBlockNote({
@@ -94,7 +160,10 @@ export default function ZoneEditor({ initialContent, onSave }) {
   }, [editor, registerEditor, unregisterEditor])
 
   return (
-    <BlockNoteView editor={editor} onChange={handleChange} theme="light">
+    // `sideMenu={false}` disables BlockNote's built-in side menu so our custom
+    // CenteredSideMenu (above) is the only one (F4): default buttons, 4px gap,
+    // and first-line vertical centering via a live-measured per-block offset.
+    <BlockNoteView editor={editor} onChange={handleChange} theme="light" sideMenu={false}>
       {/* [[Node]] autocomplete. Triggers on "[" (the measured workaround);
           choosing a node inserts the inline link and declares the connection. */}
       <SuggestionMenuController
@@ -106,6 +175,10 @@ export default function ZoneEditor({ initialContent, onSave }) {
           }))
         }
       />
+
+      {/* Custom side menu (F4) — see CenteredSideMenu above for the full rationale
+          (first-line vertical centering + 4px gap, no typography changes). */}
+      <SideMenuController sideMenu={(props) => <CenteredSideMenu {...props} />} />
     </BlockNoteView>
   )
 }
