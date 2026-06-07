@@ -224,6 +224,29 @@ They reorder relative to each other based on what #1 + #2 reveal.
 - **Dependencies.** None. Independent of the remaining E5c/E5d chunks.
 - **Size:** S.
 
+### Standardize destructive-action styling (app-wide)
+- **Problem.** Destructive actions (delete / remove) are styled ad hoc across
+  the app. F5a established a clear pattern for the block editor's Delete: neutral
+  at rest, text + highlight turn light red on hover (Tailwind red-50 bg /
+  red-600 text — see `.mm-danger-item` in
+  [`src/components/editor/inspectorEditor.css`](./src/components/editor/inspectorEditor.css)).
+  Other destructive controls don't follow it: the card right-click menu
+  ([`ContextMenu.jsx`](./src/components/ContextMenu.jsx)), the text-note toolbar
+  trash button ([`TextNode.jsx`](./src/nodes/TextNode.jsx)), workspace delete in
+  [`CampaignPicker.jsx`](./src/components/CampaignPicker.jsx), and the
+  Connection Manager's chip remove.
+- **Success.** A single documented destructive-action pattern (the F5a red-hover
+  treatment) is applied consistently to every delete/destructive control. The
+  pattern is written down (design-system doc and/or a shared utility class) so
+  new destructive controls inherit it by default.
+- **Notes.** Split out of F5a (2026-06-07) deliberately to keep that chunk scoped
+  to the block editor — this rollout touches Inspector chrome + canvas UI, which
+  is outside the editor. Audit each destructive control's markup before applying
+  (some are Tailwind buttons, some are BlockNote/Mantine menu items — the visual
+  pattern is shared, the implementation per surface differs).
+- **Dependencies.** None.
+- **Size:** S.
+
 ---
 
 ## Foundational Progress
