@@ -35,6 +35,7 @@ import { useReducedMotion } from './hooks/useReducedMotion'
 import { useArrowKeyNavigation } from './hooks/useArrowKeyNavigation'
 import MarqueeRect from './components/MarqueeRect'
 import AltitudeRail from './components/AltitudeRail'
+import AlignmentToolbar from './components/AlignmentToolbar'
 import { useUndoStore } from './store/useUndoStore'
 import { useCanvasUiStore } from './store/useCanvasUiStore'
 import { ACTION_TYPES } from './lib/undo/index.js'
@@ -453,45 +454,46 @@ export default function App() {
     })
   }, [activeWorkspaceId])
 
-  // Arrow-key nudge for selected nodes. Mirrors finalizeDragStop's persist +
-  // undo shape so a keyboard nudge round-trips through Ctrl+Z the same way a
-  // drag does. The 4px "movedFar" threshold from the drag path is intentionally
-  // skipped — keyboard input is deterministic, not jitter, so every press
-  // records an entry.
-  const nudgeSelectedNodes = useCallback((dx, dy) => {
-    const selectedIds = useCanvasUiStore.getState().selectedNodeIds
-    if (selectedIds.size === 0) return
+  // Apply a batch of node moves as one logical action: optimistic setNodes,
+  // a single grouped MOVE_CARD undo entry for the cards + one MOVE_TEXT_NODE
+  // entry per text node, position persistence, and rollback if any write
+  // fails. Shared by the arrow-key nudge and the alignment toolbar so both
+  // round-trip through Ctrl+Z exactly like a drag (which has its own threshold
+  // + analytics logic and stays separate). `moves` items are
+  // { id, type, before:{x,y}, after:{x,y} }; no-op moves are dropped so a
+  // re-align of already-aligned cards records nothing. `verb` labels the undo
+  // entry ('Move', 'Align', 'Distribute').
+  const commitNodeMoves = useCallback((moves, verb = 'Move') => {
+    const real = moves.filter(
+      (m) => m.before.x !== m.after.x || m.before.y !== m.after.y,
+    )
+    if (real.length === 0) return
 
-    const cardMoves    = []  // grouped into one MOVE_CARD entry per press
+    const cardMoves    = []  // grouped into one MOVE_CARD entry
     const cardPersists = []
     const textMoves    = []  // one MOVE_TEXT_NODE entry per text node
 
-    for (const n of nodesRef.current) {
-      if (!selectedIds.has(n.id)) continue
-      const before = { x: n.position.x, y: n.position.y }
-      const after  = { x: before.x + dx, y: before.y + dy }
-      if (n.type === 'campaignNode') {
-        cardMoves.push({ cardId: n.id, before, after })
-        cardPersists.push(dbUpdateNode(n.id, { positionX: after.x, positionY: after.y }))
-      } else if (n.type === 'textNode') {
-        const persist = dbUpdateTextNode(n.id, { positionX: after.x, positionY: after.y })
-        textMoves.push({ textNodeId: n.id, before, after, persist })
+    for (const m of real) {
+      if (m.type === 'campaignNode') {
+        cardMoves.push({ cardId: m.id, before: m.before, after: m.after })
+        cardPersists.push(dbUpdateNode(m.id, { positionX: m.after.x, positionY: m.after.y }))
+      } else if (m.type === 'textNode') {
+        const persist = dbUpdateTextNode(m.id, { positionX: m.after.x, positionY: m.after.y })
+        textMoves.push({ textNodeId: m.id, before: m.before, after: m.after, persist })
       }
     }
 
-    if (cardMoves.length === 0 && textMoves.length === 0) return
-
+    const afterById = new Map(real.map((m) => [m.id, m.after]))
     setNodes((nds) => nds.map((n) => {
-      if (!selectedIds.has(n.id)) return n
-      if (n.type !== 'campaignNode' && n.type !== 'textNode') return n
-      return { ...n, position: { x: n.position.x + dx, y: n.position.y + dy } }
+      const a = afterById.get(n.id)
+      return a ? { ...n, position: { x: a.x, y: a.y } } : n
     }))
 
     if (cardMoves.length > 0) {
       useUndoStore.getState().recordAction({
         type: ACTION_TYPES.MOVE_CARD,
         workspaceId: activeWorkspaceId,
-        label: cardMoves.length === 1 ? 'Move card' : `Move ${cardMoves.length} cards`,
+        label: cardMoves.length === 1 ? `${verb} card` : `${verb} ${cardMoves.length} cards`,
         timestamp: new Date().toISOString(),
         cards: cardMoves,
       })
@@ -508,7 +510,7 @@ export default function App() {
       useUndoStore.getState().recordAction({
         type: ACTION_TYPES.MOVE_TEXT_NODE,
         workspaceId: activeWorkspaceId,
-        label: 'Move text',
+        label: verb === 'Move' ? 'Move text' : `${verb} text`,
         timestamp: new Date().toISOString(),
         textNodeId,
         before,
@@ -520,6 +522,87 @@ export default function App() {
       })
     })
   }, [setNodes, activeWorkspaceId])
+
+  // Arrow-key nudge for selected nodes. The 4px "movedFar" threshold from the
+  // drag path is intentionally skipped — keyboard input is deterministic, not
+  // jitter, so every press records an entry.
+  const nudgeSelectedNodes = useCallback((dx, dy) => {
+    const selectedIds = useCanvasUiStore.getState().selectedNodeIds
+    if (selectedIds.size === 0) return
+    const moves = []
+    for (const n of nodesRef.current) {
+      if (!selectedIds.has(n.id)) continue
+      if (n.type !== 'campaignNode' && n.type !== 'textNode') continue
+      const before = { x: n.position.x, y: n.position.y }
+      moves.push({ id: n.id, type: n.type, before, after: { x: before.x + dx, y: before.y + dy } })
+    }
+    commitNodeMoves(moves)
+  }, [commitNodeMoves])
+
+  // Align / distribute the current multi-node selection (driven by the
+  // AlignmentToolbar). Reference is the selection's bounding box. Align modes
+  // move one axis; distribute (needs 3+) equalizes the gaps between adjacent
+  // edges along an axis, holding the two extreme nodes fixed.
+  const alignSelectedNodes = useCallback((mode) => {
+    const selectedIds = useCanvasUiStore.getState().selectedNodeIds
+    if (selectedIds.size < 2) return
+
+    const sel = []
+    for (const n of nodesRef.current) {
+      if (!selectedIds.has(n.id)) continue
+      if (n.type !== 'campaignNode' && n.type !== 'textNode') continue
+      const w = n.width  ?? (n.type === 'campaignNode' ? 256 : (n.data?.width  ?? 256))
+      const h = n.height ?? (n.type === 'campaignNode' ? 180 : (n.data?.height ?? 96))
+      sel.push({ id: n.id, type: n.type, x: n.position.x, y: n.position.y, w, h })
+    }
+    if (sel.length < 2) return
+
+    if (mode === 'distribute-h' || mode === 'distribute-v') {
+      if (sel.length < 3) return
+      const horiz = mode === 'distribute-h'
+      const sorted = [...sel].sort((a, b) => (horiz ? a.x - b.x : a.y - b.y))
+      const startEdge = horiz ? sorted[0].x : sorted[0].y
+      const last = sorted[sorted.length - 1]
+      const endEdge = horiz ? last.x + last.w : last.y + last.h
+      const sumSize = sorted.reduce((acc, s) => acc + (horiz ? s.w : s.h), 0)
+      const gap = (endEdge - startEdge - sumSize) / (sorted.length - 1)
+      let cursor = startEdge
+      const targetById = new Map()
+      for (const s of sorted) {
+        targetById.set(s.id, cursor)
+        cursor += (horiz ? s.w : s.h) + gap
+      }
+      const moves = sel.map((s) => {
+        const t = targetById.get(s.id)
+        const after = horiz ? { x: t, y: s.y } : { x: s.x, y: t }
+        return { id: s.id, type: s.type, before: { x: s.x, y: s.y }, after }
+      })
+      commitNodeMoves(moves, 'Distribute')
+      return
+    }
+
+    const minX = Math.min(...sel.map((s) => s.x))
+    const minY = Math.min(...sel.map((s) => s.y))
+    const maxX = Math.max(...sel.map((s) => s.x + s.w))
+    const maxY = Math.max(...sel.map((s) => s.y + s.h))
+    const cX = (minX + maxX) / 2
+    const cY = (minY + maxY) / 2
+
+    const moves = sel.map((s) => {
+      let { x, y } = s
+      switch (mode) {
+        case 'left':     x = minX;           break
+        case 'center-h': x = cX - s.w / 2;   break
+        case 'right':    x = maxX - s.w;     break
+        case 'top':      y = minY;           break
+        case 'middle':   y = cY - s.h / 2;   break
+        case 'bottom':   y = maxY - s.h;     break
+        default: break
+      }
+      return { id: s.id, type: s.type, before: { x: s.x, y: s.y }, after: { x, y } }
+    })
+    commitNodeMoves(moves, 'Align')
+  }, [commitNodeMoves])
 
   useArrowKeyNavigation({ rfInstanceRef, onNudgeSelected: nudgeSelectedNodes })
 
@@ -1225,6 +1308,8 @@ export default function App() {
         fitView
       >
         <Background color="#1f2937" />
+        {/* Screen-layer overlay (constant size) for aligning a multi-selection. */}
+        <AlignmentToolbar onAlign={alignSelectedNodes} />
       </ReactFlow>
 
       <MarqueeRect marquee={marqueeOverlay} rfInstanceRef={rfInstanceRef} />
