@@ -24,6 +24,21 @@ const DOCKED_RIGHT    = '1rem'    // 16px off the right edge
 const DOCK_SNAP_PX    = 96        // drag the right edge within this of the
                                   // viewport edge to arm docking
 const DETACH_PX       = 24        // drag the docked header this far to detach
+const VIEWPORT_MARGIN = 8         // keep the floating modal this far inside the
+                                  // viewport so the header stays grabbable
+
+// Clamp a centered-modal drag offset so the modal stays within the viewport.
+// The undocked inspector is flex-centered, so the offset (dragPos) is measured
+// from that centered base position — hence baseLeft/baseTop. Shared by the
+// drag, detach, and resize re-clamp paths so they can't drift apart.
+function clampOffset(x, y, w, h, m = VIEWPORT_MARGIN) {
+  const baseLeft = (window.innerWidth  - w) / 2
+  const baseTop  = (window.innerHeight - h) / 2
+  return {
+    x: Math.min(Math.max(x, m - baseLeft), window.innerWidth  - w - m - baseLeft),
+    y: Math.min(Math.max(y, m - baseTop),  window.innerHeight - h - m - baseTop),
+  }
+}
 
 // Scalar card fields that emit `editCardField` undo entries on modal close.
 // Card content (summary / story notes / hidden lore / DM notes / media) moved
@@ -393,12 +408,10 @@ export default function Inspector({
       const el = modalRef.current
       if (el) {
         const w = el.offsetWidth, h = el.offsetHeight
-        const baseLeft = (window.innerWidth  - w) / 2
-        const baseTop  = (window.innerHeight - h) / 2
-        const m = 8
-        nx = Math.min(Math.max(nx, m - baseLeft), window.innerWidth  - w - m - baseLeft)
-        ny = Math.min(Math.max(ny, m - baseTop),  window.innerHeight - h - m - baseTop)
+        const clamped = clampOffset(nx, ny, w, h)
+        nx = clamped.x; ny = clamped.y
         // Arm docking when the panel's right edge nears the viewport edge.
+        const baseLeft = (window.innerWidth - w) / 2
         const rightEdge = baseLeft + nx + w
         const armed = (window.innerWidth - rightEdge) < DOCK_SNAP_PX
         if (armed !== dockArmedRef.current) {
@@ -441,14 +454,10 @@ export default function Inspector({
       const el = modalRef.current
       const w = el?.offsetWidth  || 660
       const h = el?.offsetHeight || 520
-      const baseLeft = (window.innerWidth  - w) / 2
       const baseTop  = (window.innerHeight - h) / 2
-      const m = 8
-      let nx = cx - window.innerWidth / 2      // modal center-x under cursor
-      let ny = (cy - 24) - baseTop             // header just under the cursor
-      nx = Math.min(Math.max(nx, m - baseLeft), window.innerWidth  - w - m - baseLeft)
-      ny = Math.min(Math.max(ny, m - baseTop),  window.innerHeight - h - m - baseTop)
-      dragPosRef.current = { x: nx, y: ny }
+      const rawX = cx - window.innerWidth / 2   // modal center-x under cursor
+      const rawY = (cy - 24) - baseTop          // header just under the cursor
+      dragPosRef.current = clampOffset(rawX, rawY, w, h)
       setDragPos(dragPosRef.current)
     }
     const onMove = (ev) => {
@@ -467,6 +476,34 @@ export default function Inspector({
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
   }, [])
+
+  // ── Keep the floating header on-screen when content height changes ────────
+  // The modal is flex-centered, so growing content (e.g. typing in the block
+  // editor) expands it symmetrically about its center — a modal dragged near
+  // the top would otherwise carry its header (the only drag handle) above the
+  // viewport. Re-run the same clamp the drag path uses whenever the modal
+  // resizes or the window resizes. Undocked only; docked is pinned.
+  useEffect(() => {
+    if (isDocked) return
+    const el = modalRef.current
+    if (!el) return
+    const reclamp = () => {
+      const { x, y } = dragPosRef.current
+      const clamped = clampOffset(x, y, el.offsetWidth, el.offsetHeight)
+      if (clamped.x !== x || clamped.y !== y) {
+        dragPosRef.current = clamped
+        setDragPos(clamped)
+        onPositionChangeRef.current?.(clamped)
+      }
+    }
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(reclamp) : null
+    ro?.observe(el)
+    window.addEventListener('resize', reclamp)
+    return () => {
+      ro?.disconnect()
+      window.removeEventListener('resize', reclamp)
+    }
+  }, [isDocked])
 
   // ── Title focus on mount ─────────────────────────────────────────────────
   const titleRef = useRef(null)
