@@ -20,6 +20,7 @@ import ConnectionsView from './ConnectionsBlock.jsx'
 import InspectorSectionHeader from '../InspectorSectionHeader.jsx'
 import { EditorErrorBoundary } from './EditorErrorBoundary.jsx'
 import { loadBlockZones, saveBlockZones, DEFAULT_GM_ZONE } from '../../lib/blockZones.js'
+import { dedupeBlockIds } from './blockIds.js'
 
 // Strip any legacy `connections` block — connections live in the fixed panel now.
 function stripConnections(blocks) {
@@ -36,7 +37,16 @@ export default function CardZones({ nodeId }) {
     setError(null)
     loadBlockZones(nodeId)
       .then((z) => {
-        if (alive) setZones({ card_view: z.card_view, gm_only: stripConnections(z.gm_only) })
+        // Self-heal (F5f, Layer 2): regenerate any duplicate block IDs already
+        // persisted (from a session before the live plugin existed) so the editor
+        // mounts a clean document. dedupeBlockIds returns the SAME reference when
+        // there's nothing to fix, so clean cards incur no change. Per-zone, since
+        // each zone is its own document. Persists on the user's next edit (lazy).
+        if (alive)
+          setZones({
+            card_view: dedupeBlockIds(z.card_view),
+            gm_only: dedupeBlockIds(stripConnections(z.gm_only)),
+          })
       })
       .catch((e) => {
         if (alive) setError(e.message)
