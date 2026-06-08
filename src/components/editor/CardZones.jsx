@@ -21,6 +21,7 @@ import InspectorSectionHeader from '../InspectorSectionHeader.jsx'
 import { EditorErrorBoundary } from './EditorErrorBoundary.jsx'
 import { loadBlockZones, saveBlockZones, DEFAULT_GM_ZONE } from '../../lib/blockZones.js'
 import { dedupeBlockIds } from './blockIds.js'
+import { installCrossZoneDragGuard, uninstallCrossZoneDragGuard } from './crossZoneDragGuard.js'
 
 // Strip any legacy `connections` block — connections live in the fixed panel now.
 function stripConnections(blocks) {
@@ -30,6 +31,15 @@ function stripConnections(blocks) {
 export default function CardZones({ nodeId }) {
   const [zones, setZones] = useState(null) // { card_view, gm_only } | null while loading
   const [error, setError] = useState(null)
+
+  // F5g: block cross-zone block-drags (Card View <-> GM) while both editors are
+  // mounted — they corrupt/drop blocks (see crossZoneDragGuard). Within-zone
+  // reordering is unaffected. Ref-counted, so it's safe under React strict-mode
+  // double-mount and any future multi-instance use.
+  useEffect(() => {
+    installCrossZoneDragGuard()
+    return () => uninstallCrossZoneDragGuard()
+  }, [])
 
   useEffect(() => {
     let alive = true

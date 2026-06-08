@@ -249,6 +249,29 @@ They reorder relative to each other based on what #1 + #2 reveal.
 
 ---
 
+### Explicit "Move to Other Section" command (Card View ⇄ GM's Eyes Only)
+- **Problem.** Cross-section block dragging between the two zone editors was
+  **disabled** in F5g because BlockNote's native cross-editor move (insert in the
+  destination + a deferred, selection-based delete in the source) is selection/
+  timing-fragile across two stacked editors and silently dropped blocks (data loss).
+  Within-zone reordering still works; there is currently **no** supported way to move
+  a block (e.g. a Media Gallery) from Card View to GM's Eyes Only or back.
+- **Success.** A deliberate, reliable "Move to Card View" / "Move to GM's Eyes Only"
+  command (e.g. in the block's 6-dot menu) moves the selected block between sections
+  with **zero loss**, including custom blocks (Media Gallery images preserved).
+- **Notes.** Implement **atomically in our own code** — do NOT re-enable BlockNote's
+  cross-editor DnD. The reliable shape: read the source block (type + props +
+  content), `insertBlocks` a clone into the **target** zone's editor (BlockNote
+  assigns a fresh ID), then `removeBlocks([sourceBlock])` from the **source** editor
+  by the exact block reference/ID — two controlled transactions, no PM move-drop
+  racing. The two editors are already discoverable via `EditorContext`'s
+  register/unregister, so one command can drive both. See the F5g diagnosis
+  (cross-editor move root cause) and `crossZoneDragGuard.js`.
+- **Dependencies.** F5g (cross-section drag disabled) — shipped. None blocking.
+- **Size:** M.
+
+---
+
 ## Foundational Progress
 
 > All items in this section target **V1** unless otherwise noted. Order

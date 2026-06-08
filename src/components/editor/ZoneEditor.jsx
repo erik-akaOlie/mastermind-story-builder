@@ -220,18 +220,25 @@ export default function ZoneEditor({ initialContent, onSave }) {
   }, [editor, registerEditor, unregisterEditor])
 
   return (
-    // `sideMenu={false}` disables BlockNote's built-in side menu so our custom
-    // CenteredSideMenu (above) is the only one (F4): default buttons, 4px gap,
-    // and first-line vertical centering via a live-measured per-block offset.
-    // `slashMenu={false}` disables BlockNote's DEFAULT "/" menu so our tailored
-    // one below is the only one (F5b) — the approved 7 types with "Callout".
-    <BlockNoteView
-      editor={editor}
-      onChange={handleChange}
-      theme="light"
-      sideMenu={false}
-      slashMenu={false}
-    >
+    // `.mm-zone-editor` marks this editor's DOM subtree (incl. its side-menu portal
+    // inside bn-container) as ONE zone for crossZoneDragGuard (F5g): the guard reads
+    // closest('.mm-zone-editor') on dragstart/drop to tell within-zone reorder
+    // (same wrapper) from a cross-zone move (different wrapper → blocked).
+    // `display:contents` keeps the wrapper out of layout while staying in the DOM
+    // tree, so it changes nothing visually.
+    <div className="mm-zone-editor" style={{ display: 'contents' }}>
+      {/* `sideMenu={false}` disables BlockNote's built-in side menu so our custom
+          CenteredSideMenu (below) is the only one (F4): default buttons, 4px gap,
+          and first-line vertical centering via a live-measured per-block offset.
+          `slashMenu={false}` disables BlockNote's DEFAULT "/" menu so our tailored
+          one below is the only one (F5b) — the approved 7 types with "Callout". */}
+      <BlockNoteView
+        editor={editor}
+        onChange={handleChange}
+        theme="light"
+        sideMenu={false}
+        slashMenu={false}
+      >
       {/* Tailored "/" slash menu (F5b): the approved 7 block types with "Callout",
           derived from blockTypes.js via the shared adapter — no second list. The
           default slash menu is off (slashMenu={false} above) so this is the only one. */}
@@ -256,6 +263,7 @@ export default function ZoneEditor({ initialContent, onSave }) {
           (F4), plus the reorganized 6-dot menu via dragHandleMenu (F5a). `editor`
           is threaded through so the menu can convert/duplicate/delete the block. */}
       <SideMenuController sideMenu={(props) => <CenteredSideMenu {...props} editor={editor} />} />
-    </BlockNoteView>
+      </BlockNoteView>
+    </div>
   )
 }
