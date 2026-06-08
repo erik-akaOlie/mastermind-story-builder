@@ -29,6 +29,7 @@ import { useEditorContext } from './EditorContext.jsx'
 import { insertNodeLink, searchNodes } from './editorLinks.js'
 import { BlockControlMenu, ControlTooltip } from './blockControls.jsx'
 import { getSlashMenuItems } from './blockTypeAdapters.jsx'
+import { uniqueBlockIds } from './uniqueBlockIdsExtension.js'
 
 const SAVE_DEBOUNCE_MS = 600
 
@@ -146,6 +147,11 @@ export default function ZoneEditor({ initialContent, onSave }) {
     // An empty array is not valid initial content; let BlockNote seed a default
     // empty paragraph instead.
     initialContent: initialContent && initialContent.length ? initialContent : undefined,
+    // F5f Layer 1: live duplicate block-ID repair. Closes the gap in BlockNote's
+    // built-in ID plugin (which only de-dupes within a single edit) so a pasted /
+    // dragged / cross-section-moved block can't collide with an existing block's ID
+    // and silently drop one. Repairs by position; see uniqueBlockIdsExtension.js.
+    extensions: [uniqueBlockIds],
   })
 
   const {
