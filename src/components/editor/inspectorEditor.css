@@ -202,12 +202,33 @@
    `data-test="colors"`. We hide it with CSS rather than a custom
    FormattingToolbarController (which is a suspected cause of the F5a editor
    crash), so the toolbar keeps every default behavior except color. To restore
-   color later: delete this rule (and the matching note in blockControls.jsx).
-   NOTE: the toolbar's block-type dropdown still shows BlockNote's DEFAULT labels;
-   relabeling it to the MasterMind list (via blockTypeAdapters.jsx + a custom
-   BlockTypeSelect) is deferred to F5c as risk sequencing — wiring a custom
-   FormattingToolbarController is the suspected F5a-crash mechanism, so it gets its
-   own chunk + isolated browser verification. The slash menu was relabeled in F5b. */
+   color later: delete this rule (and the matching note in blockControls.jsx). */
 .inspector-editor [data-test="colors"] {
+  display: none !important;
+}
+
+/* 11 — Remove the block-type CONTROL from the floating formatting toolbar (F5d —
+   Erik's call). The floating toolbar is intentionally a TEXT-FORMATTING-only
+   surface now; changing a block's TYPE already has two dedicated homes (the 6-dot
+   "Turn into" menu and the "/" slash menu, both fed from blockTypes.js). Removing
+   the third, redundant control kills duplication and keeps block-level vs.
+   text-formatting actions cleanly separated.
+
+   WHY CSS, not a custom toolbar: removing the control via BlockNote's supported API
+   needs a custom FormattingToolbarController — the suspected F5a-crash mechanism
+   (see rule 10). So we hide instead, mirroring rule 10, for zero controller + zero
+   crash risk.
+
+   HOW we target ONLY the block-type control (not a fragile positional selector):
+   every real toolbar button (bold, align, link, …) renders through BlockNote's
+   ToolbarButton, which stamps a `data-test` attribute (derived from its tooltip even
+   when not passed explicitly). The block-type SELECT trigger is the one control that
+   renders a raw button with NO `data-test`, so `> button:not([data-test])` hits it
+   and nothing else. Unlike `:first-child`, this stays correct even when BlockNote
+   unmounts the select for an unsupported block type (it returns null rather than
+   leaving an empty first slot). The second selector hides the now-unreachable
+   dropdown popup for completeness. To bring block-type back, delete this rule. */
+.inspector-editor .bn-formatting-toolbar > button:not([data-test]),
+.inspector-editor .bn-formatting-toolbar .bn-select {
   display: none !important;
 }

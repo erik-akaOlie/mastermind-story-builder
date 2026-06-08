@@ -5,8 +5,10 @@
 // ONE source of truth, consumed by every surface where a user changes a block's
 // type, so the list + labels stay identical everywhere (decision F5a-1):
 //   • the 6-dot menu's "Turn into ▶" submenu        (blockControls.jsx, F5a)
-//   • the floating formatting toolbar's type select  (blockControls.jsx, F5a)
 //   • the "/" slash menu                             (relabeled to match in F5b)
+//
+// The floating formatting toolbar is NOT a consumer: F5d removed its block-type
+// control (inspectorEditor.css rule 11), making it a text-formatting-only surface.
 //
 // `type` / `props` are BlockNote's native primitives; `label` is MasterMind's
 // product language. Note "Callout" maps to the native `quote` block via
@@ -23,8 +25,8 @@
 // converts into. Array order = display order.
 //
 // CONSUMED VIA blockTypeAdapters.jsx — the shared layer that maps this one list
-// into each surface's item shape (6-dot "Turn into", slash menu, and the F5c
-// toolbar dropdown). Add/remove a block type HERE and every surface follows.
+// into each surface's item shape (6-dot "Turn into" and the slash menu). Add/remove
+// a block type HERE and every surface follows.
 // ============================================================================
 
 import {

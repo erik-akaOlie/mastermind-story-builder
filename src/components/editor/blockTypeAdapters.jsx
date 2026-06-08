@@ -9,14 +9,15 @@
 // because the surfaces do semantically different things:
 //   • Slash menu ("/")        → INSERT-or-convert the current block   (this file, F5b)
 //   • 6-dot "Turn into"        → CONVERT the current block             (blockControls.jsx)
-//   • Toolbar Block Type Select→ CONVERT the current block            (sibling adapter, F5c)
 //
-// The toolbar adapter is deferred to F5c purely as RISK SEQUENCING (wiring a custom
-// FormattingToolbarController is the suspected F5a-crash mechanism — see
-// blockControls.jsx). It is NOT a separate architecture: when it lands it derives
-// from BLOCK_TYPES through this same layer. BlockNote 0.51 supports it via
-// `BlockTypeSelect`'s `blockTypeSelectItems` prop (verified), so F5c is a small
-// plug-in, not a rebuild.
+// There are exactly TWO block-type surfaces, and both derive from BLOCK_TYPES through
+// this layer. The floating formatting toolbar is deliberately NOT a third: F5d removed
+// its block-type control entirely (inspectorEditor.css rule 11), positioning the toolbar
+// as a TEXT-FORMATTING-only surface. The F5d spike confirmed relabeling or removing that
+// control via the supported API would have required a custom FormattingToolbarController
+// (the suspected F5a-crash mechanism — see blockControls.jsx); a CSS hide killed the
+// duplication AND the risk instead. So "every block-type surface derives from
+// blockTypes.js" now holds by subtraction, not by adding a fourth adapter.
 //
 // HARD RULE: never hand-list block types here. Add/remove a type in blockTypes.js
 // ONLY; this layer follows. A second list would reintroduce the split this file
