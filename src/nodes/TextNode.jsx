@@ -9,6 +9,8 @@ import { useCanvasOps } from '../lib/CanvasOpsContext.jsx'
 import { useWorkspace } from '../lib/WorkspaceContext.jsx'
 import { useUndoStore } from '../store/useUndoStore'
 import { ACTION_TYPES } from '../lib/undo/index.js'
+import { useZoomInvariantScale } from '../hooks/useZoomInvariantScale.js'
+import { CanvasToolbar, ToolbarDivider, TOOLBAR_GAP_PX } from '../components/CanvasToolbar.jsx'
 
 const DEFAULT_WIDTH = 240
 const MIN_WIDTH     = 80
@@ -75,6 +77,9 @@ export default function TextNode({ id, data, xPos, yPos }) {
   const { setNodes, getViewport } = useReactFlow()
   const { onDeleteNode } = useCanvasOps()
   const { activeWorkspaceId } = useWorkspace()
+  // Counter-scale the in-canvas formatting toolbar so it stays a constant
+  // on-screen size at any zoom (it lives inside the zoomable node layer).
+  const invZoom = useZoomInvariantScale()
 
   const width    = data.width    ?? DEFAULT_WIDTH
   const height   = data.height   ?? null
@@ -374,11 +379,17 @@ export default function TextNode({ id, data, xPos, yPos }) {
   return (
     <div style={{ position: 'relative', width }}>
 
-      {/* Floating toolbar */}
+      {/* Floating toolbar — lives inside the zoomable node, so it counter-scales
+          (1/zoom) to hold a constant on-screen size. The wrapper anchors its
+          bottom-center at the node's top-center; the toolbar scales about that
+          point and floats TOOLBAR_GAP_PX above. */}
       {editing && (
-        <div
-          className="absolute flex items-center gap-0.5 bg-white border border-gray-200 rounded-lg shadow-lg px-2 py-1.5"
-          style={{ bottom: 'calc(100% + 8px)', left: '50%', transform: 'translateX(-50%)', whiteSpace: 'nowrap', zIndex: 20 }}
+        <div className="absolute" style={{ left: '50%', bottom: '100%', zIndex: 20 }}>
+        <CanvasToolbar
+          style={{
+            transform: `translate(-50%, -${TOOLBAR_GAP_PX}px) scale(${invZoom})`,
+            transformOrigin: 'bottom center',
+          }}
           onMouseDown={(e) => { e.stopPropagation(); e.preventDefault() }}
         >
           {/* Grip handle — drag this to move the text block */}
@@ -399,7 +410,7 @@ export default function TextNode({ id, data, xPos, yPos }) {
             >{label}</NativeButton>
           ))}
 
-          <div className="w-px h-4 bg-gray-200 mx-1" />
+          <ToolbarDivider />
 
           <NativeButton
             className={`p-1 rounded transition-colors ${align === 'left'   ? 'bg-gray-100 text-gray-800' : 'text-gray-400 hover:bg-gray-50'}`}
@@ -414,7 +425,7 @@ export default function TextNode({ id, data, xPos, yPos }) {
             onAction={() => update({ align: 'right' })}
           ><TextAlignRight size={14} weight="bold" /></NativeButton>
 
-          <div className="w-px h-4 bg-gray-200 mx-1" />
+          <ToolbarDivider />
 
           <NativeButton
             className={`p-1 rounded transition-colors ${isBold   ? 'bg-gray-100 text-gray-800' : 'text-gray-400 hover:bg-gray-50'}`}
@@ -425,12 +436,13 @@ export default function TextNode({ id, data, xPos, yPos }) {
             onAction={execItalic}
           ><TextItalic size={14} weight="bold" /></NativeButton>
 
-          <div className="w-px h-4 bg-gray-200 mx-1" />
+          <ToolbarDivider />
 
           <NativeButton
             className="p-1 rounded text-red-400 hover:bg-red-50 hover:text-red-500 transition-colors"
             onAction={deleteNode}
           ><Trash size={14} weight="bold" /></NativeButton>
+        </CanvasToolbar>
         </div>
       )}
 
