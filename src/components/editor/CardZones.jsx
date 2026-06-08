@@ -19,7 +19,7 @@ import ZoneEditor from './ZoneEditor.jsx'
 import ConnectionsView from './ConnectionsBlock.jsx'
 import InspectorSectionHeader from '../InspectorSectionHeader.jsx'
 import { EditorErrorBoundary } from './EditorErrorBoundary.jsx'
-import { loadBlockZones, saveBlockZones } from '../../lib/blockZones.js'
+import { loadBlockZones, saveBlockZones, DEFAULT_GM_ZONE } from '../../lib/blockZones.js'
 
 // Strip any legacy `connections` block — connections live in the fixed panel now.
 function stripConnections(blocks) {
@@ -74,8 +74,11 @@ export default function CardZones({ nodeId }) {
         {/* ── GM's Eyes Only ── */}
         <section className="flex flex-col gap-4">
           <InspectorSectionHeader label="GM&rsquo;s Eyes Only" />
+          {/* New cards (no gm_only row yet → null) seed the default GM doc:
+              H1 "Inspiration" + an empty Media Gallery (F5e). Migrated/edited cards
+              use their stored content. Card View is intentionally never seeded. */}
           <ZoneEditor
-            initialContent={zones.gm_only}
+            initialContent={zones.gm_only ?? DEFAULT_GM_ZONE}
             onSave={(doc) => saveBlockZones(nodeId, { gm_only: doc }).catch(console.error)}
           />
         </section>

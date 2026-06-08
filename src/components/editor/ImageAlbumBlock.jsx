@@ -74,9 +74,8 @@ export default function ImageAlbumView({ block, editor }) {
       contentEditable={false}
       className="w-full rounded-[0.5rem] border border-[#e5e7eb] bg-[#fafafa] p-3 my-1"
     >
-      <div className="text-[0.6875rem] uppercase tracking-wider font-semibold text-[#6b7280] mb-2">
-        Image Album
-      </div>
+      {/* No in-block header (F5e — Erik's call): the gallery is just the add tile
+          + thumbnails. The block's identity is carried by its menu label / icon. */}
       <div className="flex flex-wrap gap-2">
         <button
           className="w-[6rem] h-[6rem] border border-dashed border-[#9ca3af] rounded-[0.25rem] flex flex-col items-center justify-center gap-0.5 text-[#6b7280] hover:border-gray-400 hover:text-gray-500 transition-colors flex-shrink-0"

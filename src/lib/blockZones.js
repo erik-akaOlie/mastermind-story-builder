@@ -17,6 +17,17 @@ import { persistWrite } from './errorReporting.js'
 
 export const ZONE_KINDS = ['card_view', 'gm_only']
 
+// Default content seeded into a NEW card's GM ("GM's Eyes Only") zone: an H1
+// "Inspiration" heading + one empty Media Gallery (F5e — Erik's call). Used by
+// CardZones when the gm_only zone has no row yet (loadBlockZones returns null) —
+// which, post-migration, reliably means a brand-new card. Card View is NOT seeded.
+// It only persists once the user edits (consistent with the lazy zone-create
+// pattern); an untouched card simply re-shows this default on next open.
+export const DEFAULT_GM_ZONE = [
+  { type: 'heading', props: { level: 1 }, content: [{ type: 'text', text: 'Inspiration', styles: {} }] },
+  { type: 'imageAlbum', props: { images: '[]' } },
+]
+
 // Stable per-zone sort order so independent saves don't reshuffle the rows.
 const ZONE_SORT = { card_view: 0, gm_only: 1 }
 

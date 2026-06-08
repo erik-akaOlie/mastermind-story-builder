@@ -27,7 +27,43 @@
 //     `start` on a resumed item is honored via the seeding above).
 // ============================================================================
 
-import { Square, CheckSquare } from '@phosphor-icons/react'
+import { Square, CheckSquare, Images } from '@phosphor-icons/react'
+import { useImageUrl } from '../lib/useImageUrl'
+
+// Parse the Image Album block's `props.images` (a JSON string of {path,...} or
+// legacy string entries). Mirrors ImageAlbumBlock's parse; preview-only.
+function parseImages(raw) {
+  try {
+    const v = JSON.parse(raw || '[]')
+    return Array.isArray(v) ? v : []
+  } catch {
+    return []
+  }
+}
+
+// Media Gallery preview (F5e): first image as a small thumbnail + a count, per
+// Erik's call. Lives in its own component so the useImageUrl hook is called
+// unconditionally (rules of hooks). Only Card View galleries reach the preview,
+// and those are opt-in, so the per-card signed-URL load stays bounded.
+function GalleryPreview({ block }) {
+  const images = parseImages(block?.props?.images)
+  const url = useImageUrl(images[0] ?? null, 'thumb')
+  const n = images.length
+  return (
+    <div className="flex items-center gap-2 mt-1">
+      <div className="w-8 h-8 rounded-[0.25rem] overflow-hidden border border-gray-200 bg-gray-100 flex items-center justify-center flex-shrink-0">
+        {url ? (
+          <img src={url} alt="" className="w-full h-full object-cover" draggable={false} />
+        ) : (
+          <Images size={14} weight="fill" className="text-gray-400" />
+        )}
+      </div>
+      <span className="text-gray-500 text-xs">
+        {n} image{n === 1 ? '' : 's'}
+      </span>
+    </div>
+  )
+}
 
 function renderInline(content, keyPrefix) {
   if (typeof content === 'string') return content
@@ -107,6 +143,9 @@ function BlockLine({ block, idx, number }) {
       // upright text, via the shared .mm-callout class. The 2px bar (vs the
       // inspector's 4px) comes from the .mm-block-preview scope override.
       return <div className="mm-callout text-xs text-gray-700 leading-snug">{inline}</div>
+    case 'imageAlbum':
+      // Media Gallery — first-image thumbnail + count (F5e).
+      return <GalleryPreview block={block} />
     case 'paragraph':
     default:
       return <p className="text-gray-500 text-xs leading-snug">{inline}</p>

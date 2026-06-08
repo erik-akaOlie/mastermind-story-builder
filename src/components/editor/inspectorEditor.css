@@ -232,3 +232,15 @@
 .inspector-editor .bn-formatting-toolbar .bn-select {
   display: none !important;
 }
+
+/* 12 — Disabled block-type menu item (F5e — Media Gallery in "Turn into"). The
+   generic Menu.Item has no native `disabled` prop, so blockControls.jsx tags the
+   media item with `mm-menu-item-disabled` when the target block has text (converting
+   text → a text-less gallery would discard it). Greyed + inert: `pointer-events:none`
+   makes it un-clickable AND stops the menu from closing on a stray click. Like
+   `.mm-danger-item`/`.mm-menu-scroll`, this is NOT scoped under `.inspector-editor`
+   because the drag-handle menu portals to <body>; the unique name self-scopes it. */
+.mm-menu-item-disabled {
+  opacity: 0.4 !important;
+  pointer-events: none !important;
+}

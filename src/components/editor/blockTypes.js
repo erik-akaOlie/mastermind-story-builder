@@ -21,12 +21,21 @@
 //
 // Heading levels are intentionally limited to H1/H2 (the levels F2 styles);
 // H3–H6 are slated to be hidden in F6, so offering them here would contradict
-// that. Image Album / Connections are excluded — they aren't text blocks a user
-// converts into. Array order = display order.
+// that. Connections is excluded — it isn't a content block. Array order = display
+// order.
 //
-// CONSUMED VIA blockTypeAdapters.jsx — the shared layer that maps this one list
+// MEDIA BLOCKS (F5e): non-text blocks the user can INSERT but not "convert text
+// into" live in MEDIA_BLOCKS below, kept SEPARATE from BLOCK_TYPES on purpose.
+// BLOCK_TYPES = text blocks you convert between; MEDIA_BLOCKS = media blocks you
+// insert. Every menu renders MEDIA_BLOCKS after BLOCK_TYPES under a divider; the
+// "Turn into" menu disables a media block when the target block has text (converting
+// would discard it), while the slash menu always offers it (slash insert is
+// non-destructive — empty block converts, a block with text gets the media block
+// inserted BELOW it). See blockTypeAdapters.jsx + blockControls.jsx.
+//
+// CONSUMED VIA blockTypeAdapters.jsx — the shared layer that maps these two lists
 // into each surface's item shape (6-dot "Turn into" and the slash menu). Add/remove
-// a block type HERE and every surface follows.
+// a block type in the RIGHT list HERE and every surface follows.
 // ============================================================================
 
 import {
@@ -37,6 +46,7 @@ import {
   ListNumbers,
   ListChecks,
   AlignLeftSimple,
+  Images,
 } from '@phosphor-icons/react'
 import { CALLOUT_BLOCK_TYPE } from './blockSchema.jsx'
 
@@ -48,4 +58,10 @@ export const BLOCK_TYPES = [
   { key: 'numbered', label: 'Numbered List', type: 'numberedListItem', props: {}, icon: ListNumbers, aliases: ['numbered', 'ordered', 'ol', 'list'] },
   { key: 'check', label: 'Check List', type: 'checkListItem', props: {}, icon: ListChecks, aliases: ['check', 'todo', 'task', 'checkbox'] },
   { key: 'callout', label: 'Callout', type: CALLOUT_BLOCK_TYPE, props: {}, icon: AlignLeftSimple, aliases: ['callout', 'quote', 'aside', 'note', 'info'] },
+]
+
+// Media blocks: insert-only, non-text. `type` is the registered schema block id
+// ('imageAlbum' — see blockSchema.jsx). Kept separate from BLOCK_TYPES (see header).
+export const MEDIA_BLOCKS = [
+  { key: 'mediaGallery', label: 'Media Gallery', type: 'imageAlbum', props: { images: '[]' }, icon: Images, aliases: ['media gallery', 'gallery', 'images', 'album', 'photos'] },
 ]

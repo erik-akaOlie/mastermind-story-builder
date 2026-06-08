@@ -28,7 +28,18 @@ import { useRef, useState, useCallback, useEffect, useLayoutEffect } from 'react
 import { createPortal } from 'react-dom'
 import { DragHandleMenu, useComponentsContext, useExtensionState } from '@blocknote/react'
 import { SideMenuExtension } from '@blocknote/core'
-import { BLOCK_TYPES } from './blockTypes.js'
+import { BLOCK_TYPES, MEDIA_BLOCKS } from './blockTypes.js'
+
+// A block counts as "having text" if any inline run carries visible text or a
+// [[node]] link. Used to DISABLE media-block conversion in "Turn into" (F5e):
+// converting a text block into a text-less media block would discard its content,
+// so the media option is greyed + inert (inspectorEditor.css rule 12) unless the
+// block is empty. The slash menu has no such guard — slash insert is non-destructive.
+function blockHasText(block) {
+  const c = block?.content
+  if (!Array.isArray(c)) return false
+  return c.some((it) => (it?.type === 'text' && (it.text ?? '').trim().length > 0) || it?.type === 'nodeLink')
+}
 
 // ── ControlTooltip — viewport-aware hover tooltip for the side-menu controls ──
 // (F5a) BlockNote gives the +/6-dot buttons only an aria-label (no visible
@@ -128,6 +139,25 @@ export function BlockControlMenu({ editor }) {
                 key={bt.key}
                 icon={<Icon size={16} />}
                 onClick={() => editor.updateBlock(block, { type: bt.type, props: bt.props })}
+              >
+                {bt.label}
+              </Menu.Item>
+            )
+          })}
+
+          {/* Media blocks (F5e) — separated by a rule, below the text blocks.
+              Disabled (greyed + inert) when the block has text, since converting
+              would discard it; enabled only on an empty block. */}
+          <Menu.Divider />
+          {MEDIA_BLOCKS.map((bt) => {
+            const Icon = bt.icon
+            const disabled = blockHasText(block)
+            return (
+              <Menu.Item
+                key={bt.key}
+                className={disabled ? 'mm-menu-item-disabled' : undefined}
+                icon={<Icon size={16} />}
+                onClick={disabled ? undefined : () => editor.updateBlock(block, { type: bt.type, props: bt.props })}
               >
                 {bt.label}
               </Menu.Item>
