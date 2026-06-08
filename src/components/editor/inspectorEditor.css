@@ -73,27 +73,15 @@
    heading for attention. So: upright text (drop F5a's italic), a quiet left
    accent bar, and a faint surface tint — no bold, no large type.
 
-   TOKENIZED so values are tuned in-browser by editing a token, NEVER the selector
-   ("make the bar 4px", "darken the surface", "try a different neutral"). Two KINDS:
-     • COLOR tokens are SEMANTIC + theme-swappable. A future dark theme overrides
-       just these two, in one place; the selector never names a literal color.
-       Defaults are TRANSLUCENT black overlays — they read as a subtle gray over
-       the pale Inspector surface WITHOUT hardcoding a light-only hex (this is the
-       first intentional color rule here; the translucent form keeps the dark-mode
-       guardrail — see guardrail 2 at the top of this file — intact).
-     • GEOMETRY tokens are descriptive iteration knobs (bar width / padding).
-       Defaults are grid-clean per the 8pt rule (bar 4, padding 8); explore
-       off-grid values live via the tokens, but COMMIT on-grid unless there's
-       written justification. The box is fully square (no radius token). */
-.inspector-editor {
-  --mm-callout-surface: rgba(0, 0, 0, 0.04);
-  --mm-callout-accent: rgba(0, 0, 0, 0.16);
-  --mm-callout-bar-width: 4px;
-  --mm-callout-padding-x: 8px;
-  --mm-callout-padding-y: 8px;
-}
-/* The Callout box: surface tint + accent bar + radius + padding on the block
-   wrapper. */
+   TOKENIZED so values are tuned by editing a token, NEVER the selector. The token
+   DEFINITIONS were lifted to :root in index.css (F5c) so the always-loaded canvas
+   card preview shares them — see that file for the full token rationale (semantic
+   color tokens + geometry knobs, and the scope-override variation pattern). This
+   rule just CONSUMES them to style BlockNote's generated quote DOM (which can't
+   use the shared .mm-callout class). The inspector uses the :root 4px bar default;
+   the card preview overrides it to 2px via .mm-block-preview. */
+/* The Callout box: surface tint + accent bar + square corners + padding on the
+   block wrapper. */
 .inspector-editor .bn-block-content[data-content-type="quote"] {
   background: var(--mm-callout-surface);
   border-left: var(--mm-callout-bar-width) solid var(--mm-callout-accent);

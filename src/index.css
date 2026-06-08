@@ -171,3 +171,49 @@ input[type="password"]::-ms-clear {
   to   { transform: translateX(0); }
 }
 
+/* ============================================================================
+   Callout block — semantic design tokens (F5c)
+   ----------------------------------------------------------------------------
+   ONE source of truth for the Callout (= BlockNote's `quote`) look, consumed by
+   BOTH surfaces that render card content:
+     • the Inspector editor — its .bn-block-content[data-content-type="quote"]
+       rule in inspectorEditor.css reads these vars (it styles BlockNote's own
+       generated DOM, so it can't use the .mm-callout class below).
+     • the canvas card preview — BlockPreview applies the .mm-callout class.
+   Lifted here (global, always loaded) from inspectorEditor.css (lazy) so the
+   always-on card preview never renders before the tokens exist.
+
+   COLOR tokens are SEMANTIC + theme-swappable (translucent neutrals so a future
+   dark theme overrides them at :root / [data-theme] without unpicking hardcoded
+   hexes). GEOMETRY tokens are iteration knobs; grid-clean 8pt defaults.
+
+   PER-CONTEXT VARIATION is done with SCOPE OVERRIDES, not modifier classes — the
+   card is a different DENSITY context, not a semantic Callout variant (there's no
+   "info"/"warning"/"compact" Callout; it's the same Callout rendered denser). See
+   .mm-block-preview below: it overrides only the bar width.
+   NOTE: if more components start varying between the inspector and card contexts,
+   graduate bar-width (etc.) into a broader density-token layer (e.g. --mm-space-*)
+   rather than accumulating per-component overrides here. */
+:root {
+  --mm-callout-surface: rgba(0, 0, 0, 0.04);
+  --mm-callout-accent: rgba(0, 0, 0, 0.16);
+  --mm-callout-bar-width: 4px; /* inspector default */
+  --mm-callout-padding-x: 8px;
+  --mm-callout-padding-y: 8px;
+}
+
+/* Shared Callout box — upright text + faint surface + solid square-left accent
+   bar. Applied by BlockPreview; the Inspector mirrors it via its own selector. */
+.mm-callout {
+  background: var(--mm-callout-surface);
+  border-left: var(--mm-callout-bar-width) solid var(--mm-callout-accent);
+  border-radius: 0;
+  padding: var(--mm-callout-padding-y) var(--mm-callout-padding-x);
+}
+
+/* Card-view density variation: a thinner 2px accent bar (vs the inspector's 4px),
+   scaled for the small glanceable card. Surface / padding stay shared. */
+.mm-block-preview {
+  --mm-callout-bar-width: 2px;
+}
+
