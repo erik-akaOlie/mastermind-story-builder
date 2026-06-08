@@ -28,6 +28,7 @@ import { schema } from './blockSchema.jsx'
 import { useEditorContext } from './EditorContext.jsx'
 import { insertNodeLink, searchNodes } from './editorLinks.js'
 import { BlockControlMenu, ControlTooltip } from './blockControls.jsx'
+import { getSlashMenuItems } from './blockTypeAdapters.jsx'
 
 const SAVE_DEBOUNCE_MS = 600
 
@@ -216,12 +217,23 @@ export default function ZoneEditor({ initialContent, onSave }) {
     // `sideMenu={false}` disables BlockNote's built-in side menu so our custom
     // CenteredSideMenu (above) is the only one (F4): default buttons, 4px gap,
     // and first-line vertical centering via a live-measured per-block offset.
+    // `slashMenu={false}` disables BlockNote's DEFAULT "/" menu so our tailored
+    // one below is the only one (F5b) — the approved 7 types with "Callout".
     <BlockNoteView
       editor={editor}
       onChange={handleChange}
       theme="light"
       sideMenu={false}
+      slashMenu={false}
     >
+      {/* Tailored "/" slash menu (F5b): the approved 7 block types with "Callout",
+          derived from blockTypes.js via the shared adapter — no second list. The
+          default slash menu is off (slashMenu={false} above) so this is the only one. */}
+      <SuggestionMenuController
+        triggerCharacter="/"
+        getItems={async (query) => getSlashMenuItems(editor, query)}
+      />
+
       {/* [[Node]] autocomplete. Triggers on "[" (the measured workaround);
           choosing a node inserts the inline link and declares the connection. */}
       <SuggestionMenuController

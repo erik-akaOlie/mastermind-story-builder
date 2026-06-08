@@ -23,8 +23,9 @@
    BELOW the 24px node title (nothing in the Inspector should be larger than
    the title) yet read as a heading above the 16px H2/body. 24 and 16 are
    adjacent 8pt steps with no 8pt value between, so the top heading takes the
-   justified 4pt value 20px. H2 = 16px (8pt) at weight 900 — same size as body
-   but set firmly apart by a heavier weight than the default heading 700.
+   justified 4pt value 20px. Both H1 and H2 use weight 900 (Erik, F5b): H1 reads
+   as the larger heading via SIZE (20 vs 16), and H2 is set apart from the same-size
+   16px body purely by its heavier weight (vs BlockNote's default heading 700).
    ============================================================================ */
 
 /* 1 — Transparent surface (theme-neutral; inherits the Inspector body). */
@@ -45,6 +46,10 @@
 .inspector-editor .bn-block-content[data-content-type="heading"]:not([data-level]),
 .inspector-editor .bn-block-content[data-content-type="heading"][data-level="1"] {
   --level: 20px;
+  /* Weight 900 (Erik, F5b). In the Inspector H1 reads as the larger heading via
+     SIZE (20 vs H2's 16); both share weight 900. `!important` defeats BlockNote's
+     higher-specificity 700 pin, same rationale as the H2 rule below. */
+  font-weight: 900 !important;
 }
 .inspector-editor .bn-block-content[data-content-type="heading"][data-level="2"] {
   --level: 16px;
@@ -61,10 +66,53 @@
   font-size: 16px;
 }
 
-/* 4 — Quote: italic only for now. The colored left-accent border is a color
-   decision and is deferred to F5 (hover/focus + accents), per guardrail 2. */
+/* 4 — Callout (F5b). "Callout" is MasterMind's product name for BlockNote's
+   native `quote` block (CALLOUT_BLOCK_TYPE = 'quote'; see blockSchema.jsx + the
+   ADR-0016 addendum). Design goal: VISUAL SEPARATION, NOT EMPHASIS — a Callout
+   should read as integrated with the surrounding content, never compete with a
+   heading for attention. So: upright text (drop F5a's italic), a quiet left
+   accent bar, and a faint surface tint — no bold, no large type.
+
+   TOKENIZED so values are tuned in-browser by editing a token, NEVER the selector
+   ("make the bar 4px", "darken the surface", "try a different neutral"). Two KINDS:
+     • COLOR tokens are SEMANTIC + theme-swappable. A future dark theme overrides
+       just these two, in one place; the selector never names a literal color.
+       Defaults are TRANSLUCENT black overlays — they read as a subtle gray over
+       the pale Inspector surface WITHOUT hardcoding a light-only hex (this is the
+       first intentional color rule here; the translucent form keeps the dark-mode
+       guardrail — see guardrail 2 at the top of this file — intact).
+     • GEOMETRY tokens are descriptive iteration knobs (bar width / padding).
+       Defaults are grid-clean per the 8pt rule (bar 4, padding 8); explore
+       off-grid values live via the tokens, but COMMIT on-grid unless there's
+       written justification. The box is fully square (no radius token). */
+.inspector-editor {
+  --mm-callout-surface: rgba(0, 0, 0, 0.04);
+  --mm-callout-accent: rgba(0, 0, 0, 0.16);
+  --mm-callout-bar-width: 4px;
+  --mm-callout-padding-x: 8px;
+  --mm-callout-padding-y: 8px;
+}
+/* The Callout box: surface tint + accent bar + radius + padding on the block
+   wrapper. */
 .inspector-editor .bn-block-content[data-content-type="quote"] {
-  font-style: italic;
+  background: var(--mm-callout-surface);
+  border-left: var(--mm-callout-bar-width) solid var(--mm-callout-accent);
+  /* Fully square — no rounded corners (Erik, F5b): the box reads as a crisp
+     rectangle with a solid accent bar down the left. */
+  border-radius: 0;
+  padding: var(--mm-callout-padding-y) var(--mm-callout-padding-x);
+}
+/* Neutralize BlockNote's default inner <blockquote> styling (muted gray text, its
+   own 2px left border, padding-left:1em, and our removed F5a italic) so ONLY the
+   Callout box above shows and the text reads in normal color, upright — integrated,
+   not a de-emphasized quote. Specificity (.inspector-editor + attr + type) beats
+   BlockNote's `[data-content-type=quote] blockquote`. */
+.inspector-editor .bn-block-content[data-content-type="quote"] blockquote {
+  border-left: none;
+  padding-left: 0;
+  margin: 0;
+  color: inherit;
+  font-style: normal;
 }
 
 /* 5 — Content column (F3). Indent block text so it left-aligns with the node
@@ -168,9 +216,10 @@
    crash), so the toolbar keeps every default behavior except color. To restore
    color later: delete this rule (and the matching note in blockControls.jsx).
    NOTE: the toolbar's block-type dropdown still shows BlockNote's DEFAULT labels;
-   relabeling it to the MasterMind list ("Callout", H1/H2 only) is deferred to F5b
-   alongside the slash menu, where the React override can be added + browser-
-   verified carefully in isolation. */
+   relabeling it to the MasterMind list (via blockTypeAdapters.jsx + a custom
+   BlockTypeSelect) is deferred to F5c as risk sequencing — wiring a custom
+   FormattingToolbarController is the suspected F5a-crash mechanism, so it gets its
+   own chunk + isolated browser verification. The slash menu was relabeled in F5b. */
 .inspector-editor [data-test="colors"] {
   display: none !important;
 }

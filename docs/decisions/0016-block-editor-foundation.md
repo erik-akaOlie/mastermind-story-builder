@@ -181,6 +181,54 @@ connections. That core is reinforced here, not changed.
   can't resolve cleanly (consider the Tiptap fallback).
 - When the Markdown export feature is scheduled.
 
+## Addendum (2026-06-07) — "Callout" is a UI alias for the native `quote` block
+
+During the Inspector visual-alignment work (Chunk F5b) we introduced **"Callout"**
+as a MasterMind block type. It is **not** a custom BlockNote block — it is the
+native `quote` block, relabeled.
+
+**Decision.** The stored document JSON keeps BlockNote's standard `quote` type;
+we only relabel it "Callout" everywhere users and maintainers see it. A single
+constant, `CALLOUT_BLOCK_TYPE = 'quote'` ([src/components/editor/blockSchema.jsx](../../src/components/editor/blockSchema.jsx)),
+is referenced wherever we mean the Callout block, so the intent is explicit and a
+future promotion to a real custom type is a one-symbol change.
+
+**Why alias, not a custom block.** A Callout today is *a quote with different
+styling and labeling* — it has no unique behavior or structure. A custom schema
+type would add schema complexity, a data migration, export handling, and ongoing
+maintenance while delivering **zero** additional user value. Aliasing keeps the
+stored shape standard (no migration, Markdown export stays clean per §2) and is
+trivially reversible.
+
+**Trigger to promote to a real custom `callout` type.** Only when a Callout needs
+callout-*specific structure* the `quote` block can't carry — e.g. a per-callout
+icon, a title slot, or color/severity variants (info / warning / danger). At that
+point the unique structure justifies the migration cost; until then, alias.
+
+**Single source of truth for block-type surfaces.** The supported user-facing
+block types and their labels live in **one** list,
+[src/components/editor/blockTypes.js](../../src/components/editor/blockTypes.js)
+(Text, Heading 1, Heading 2, Bullet List, Numbered List, Check List, Callout).
+Every surface that lets a user pick or change a block type derives from it through
+the shared adapter layer
+([src/components/editor/blockTypeAdapters.jsx](../../src/components/editor/blockTypeAdapters.jsx)):
+the 6-dot "Turn into" menu, the "/" slash menu (F5b), and the toolbar Block Type
+dropdown (F5c). Labels/types/icons are shared; only the per-surface *action* lives
+in the adapter. **No surface may hand-list block types** — adding or removing a
+type happens in `blockTypes.js` only. The toolbar dropdown is sequenced into F5c
+purely for risk (a custom `FormattingToolbarController` is the suspected F5a-crash
+mechanism); that is a sequencing decision, not a separate architecture — when it
+lands it consumes the same list via the same adapter.
+
+**Callout styling is tokenized.** The visual treatment (faint surface tint + quiet
+left accent bar — separation, not emphasis) is driven by CSS tokens, not values
+buried in a selector ([inspectorEditor.css](../../src/components/editor/inspectorEditor.css)
+rule 4): semantic, theme-swappable **color** tokens (`--mm-callout-surface`,
+`--mm-callout-accent`, translucent neutrals so a future dark theme overrides two
+values in one place) and descriptive **geometry** tokens (`--mm-callout-bar-width`,
+`--mm-callout-padding-x/y`, grid-clean defaults). Values are tuned by editing a
+token, never the selector.
+
 ## References / Related decisions
 
 - Spike findings: `src/spike/FINDINGS.md` (spike to be removed; patterns captured here).
