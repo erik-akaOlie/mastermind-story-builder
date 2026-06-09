@@ -6,11 +6,10 @@ import {
   Columns, Rows,
 } from '@phosphor-icons/react'
 import { useCanvasUiStore } from '../store/useCanvasUiStore'
-import { CanvasToolbar, ToolbarDivider, TOOLBAR_GAP_PX } from './CanvasToolbar.jsx'
+import { CanvasToolbar, ToolbarDivider, placeFloatingToolbar } from './CanvasToolbar.jsx'
 
 // Canonical fallback dimensions when React Flow hasn't measured a node yet.
 const CARD_W = 256, CARD_H = 180, TEXT_W = 256, TEXT_H = 96
-const VIEWPORT_MARGIN = 8
 
 // Icon ↔ action mapping uses the intuitive "line orientation = movement axis"
 // reading (deliberately inverted from Phosphor's literal naming, which follows
@@ -70,17 +69,10 @@ export default function AlignmentToolbar({ onAlign }) {
   }
   const tl = rf.flowToScreenPosition({ x: minX, y: minY })
   const br = rf.flowToScreenPosition({ x: maxX, y: maxY })
-  const centerX = (tl.x + br.x) / 2
 
-  // Default: centered above the selection, a fixed gap off its top edge.
-  // Edge-aware: flip below if it would clip the top; clamp into the window.
-  const m = VIEWPORT_MARGIN
-  const vw = window.innerWidth, vh = window.innerHeight
-  let left = centerX - size.w / 2
-  let top  = tl.y - TOOLBAR_GAP_PX - size.h
-  if (top < m) top = br.y + TOOLBAR_GAP_PX
-  left = Math.min(Math.max(left, m), vw - size.w - m)
-  top  = Math.min(Math.max(top,  m), vh - size.h - m)
+  // Edge-aware placement (centered above, flips below / clamps in-window).
+  const anchorRect = { left: tl.x, top: tl.y, bottom: br.y, width: br.x - tl.x }
+  const { left, top } = placeFloatingToolbar(anchorRect, size)
 
   const canDistribute = selected.length >= 3
   // suppress unused-var lint for the viewport values we depend on for re-render

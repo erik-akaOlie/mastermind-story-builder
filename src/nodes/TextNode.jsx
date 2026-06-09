@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
 import { useReactFlow } from 'reactflow'
 import {
   TextAlignLeft, TextAlignCenter, TextAlignRight,
-  TextB, TextItalic, Trash, DotsSixVertical,
+  TextB, TextItalic, Trash, DotsSixVertical, CaretDown,
 } from '@phosphor-icons/react'
 import { updateTextNode as dbUpdateTextNode } from '../lib/textNodes.js'
 import { useCanvasOps } from '../lib/CanvasOpsContext.jsx'
@@ -10,18 +10,17 @@ import { useWorkspace } from '../lib/WorkspaceContext.jsx'
 import { useUndoStore } from '../store/useUndoStore'
 import { ACTION_TYPES } from '../lib/undo/index.js'
 import { useZoomInvariantScale } from '../hooks/useZoomInvariantScale.js'
-import { CanvasToolbar, ToolbarDivider, TOOLBAR_GAP_PX } from '../components/CanvasToolbar.jsx'
+import { CanvasToolbar, ToolbarDivider, placeFloatingToolbar } from '../components/CanvasToolbar.jsx'
 
 const DEFAULT_WIDTH = 240
 const MIN_WIDTH     = 80
 const MIN_HEIGHT    = 32
 
-const FONT_SIZES = [
-  { label: 'S',  px: 13 },
-  { label: 'M',  px: 18 },
-  { label: 'L',  px: 24 },
-  { label: 'XL', px: 36 },
-]
+// Standard 8pt-scale presets offered in the font-size dropdown. The field also
+// accepts any custom value the user types (clamped to FONT_MIN..FONT_MAX).
+const FONT_SIZE_PRESETS = [12, 16, 24, 32, 48, 64, 96, 128]
+const FONT_MIN = 8
+const FONT_MAX = 400
 
 // ax/ay: which edge this handle moves ('left'|'right'|null, 'top'|'bottom'|null)
 const HANDLES = [
@@ -89,10 +88,19 @@ export default function TextNode({ id, data, xPos, yPos }) {
   const [editing,   setEditing]   = useState(data.editing ?? false)
   const [isBold,    setIsBold]    = useState(false)
   const [isItalic,  setIsItalic]  = useState(false)
+  const [sizeMenuOpen, setSizeMenuOpen] = useState(false)
 
-  const editorRef = useRef(null)
-  const boxRef    = useRef(null)
-  const dragRef   = useRef(null)
+  const editorRef   = useRef(null)
+  const boxRef      = useRef(null)
+  const toolbarRef  = useRef(null)
+  const fontInputRef = useRef(null)
+  const dragRef     = useRef(null)
+  // Edge-aware placement for the in-canvas formatting toolbar, expressed as a
+  // node-local translate (canvas px). Computed from the node's screen rect +
+  // the toolbar's measured screen size via the shared placeFloatingToolbar
+  // helper (same logic the alignment toolbar uses), then mapped back through
+  // zoom so it lands at the target screen position. null until first measured.
+  const [tbPlace, setTbPlace] = useState(null)
   // Phase 8: snapshot the editor's HTML on focus so the blur diff can fire
   // exactly one editTextNode entry per session (matching ADR-0006 §7's
   // text-edit session model). Toolbar clicks and resize gestures record
@@ -223,6 +231,65 @@ export default function TextNode({ id, data, xPos, yPos }) {
   const deleteNode = useCallback(() => {
     onDeleteNode(id)
   }, [id, onDeleteNode])
+
+  // ── Font-size field (px input + preset dropdown) ───────────────────────────
+  // Parse + clamp a raw input value and apply it. Reflect the clamped value
+  // back into the (uncontrolled) input so a rejected/clamped entry is visible.
+  const commitFontSize = useCallback((raw) => {
+    const el = fontInputRef.current
+    const n = parseInt(raw, 10)
+    if (!Number.isFinite(n)) { if (el) el.value = String(fontSize); return }
+    const clamped = Math.min(FONT_MAX, Math.max(FONT_MIN, n))
+    if (el) el.value = String(clamped)
+    if (clamped !== fontSize) update({ fontSize: clamped })
+  }, [fontSize, update])
+
+  const pickFontSize = useCallback((px) => {
+    setSizeMenuOpen(false)
+    if (fontInputRef.current) fontInputRef.current.value = String(px)
+    if (px !== fontSize) update({ fontSize: px })
+  }, [fontSize, update])
+
+  // The editor's blur ends the edit session — but blurring INTO the toolbar
+  // (e.g. clicking the font-size input) must NOT end it. Guard on relatedTarget.
+  const onEditorBlur = useCallback((e) => {
+    if (e.relatedTarget && toolbarRef.current?.contains(e.relatedTarget)) return
+    save()
+  }, [save])
+
+  // Keep the uncontrolled font input in sync with external value changes while
+  // it isn't being edited (preset pick, undo, realtime update).
+  useEffect(() => {
+    const el = fontInputRef.current
+    if (el && document.activeElement !== el) el.value = String(fontSize)
+  }, [fontSize, editing])
+
+  // Native listeners on the font input — React synthetic events can drop on
+  // controls inside a selected RF node (same reason NativeButton exists).
+  useEffect(() => {
+    const el = fontInputRef.current
+    if (!el) return
+    const onKeyDown = (e) => {
+      if (e.key === 'Enter')  { e.preventDefault(); commitFontSize(el.value); editorRef.current?.focus() }
+      else if (e.key === 'Escape') { e.preventDefault(); el.value = String(fontSize); editorRef.current?.focus() }
+    }
+    const onBlur = (e) => {
+      commitFontSize(el.value)
+      setSizeMenuOpen(false)
+      // Focus left the field entirely (not into the toolbar, not back to the
+      // editor) → the user clicked away, so end the edit session.
+      const next = e.relatedTarget
+      const stayingInSession =
+        next && (toolbarRef.current?.contains(next) || editorRef.current?.contains(next))
+      if (!stayingInSession) save()
+    }
+    el.addEventListener('keydown', onKeyDown)
+    el.addEventListener('blur', onBlur)
+    return () => {
+      el.removeEventListener('keydown', onKeyDown)
+      el.removeEventListener('blur', onBlur)
+    }
+  }, [commitFontSize, fontSize, save, editing])
 
   const syncSelectionState = () => {
     setIsBold(document.queryCommandState('bold'))
@@ -375,22 +442,51 @@ export default function TextNode({ id, data, xPos, yPos }) {
     wordBreak:  'break-word',
   }
 
+  // Edge-aware placement: measure the node box + toolbar in screen space, run
+  // the shared placement helper (centered above → flip below / clamp in-window),
+  // then map the target screen position back into a node-local translate. Runs
+  // after every render (the node re-renders on viewport / move / resize); the
+  // setState guard keeps it from looping. Cheap — only one node edits at a time.
+  useLayoutEffect(() => {
+    if (!editing) { if (tbPlace) setTbPlace(null); return }
+    const box = boxRef.current, tb = toolbarRef.current
+    if (!box || !tb) return
+    const boxRect = box.getBoundingClientRect()
+    const tbRect  = tb.getBoundingClientRect()
+    const target  = placeFloatingToolbar(boxRect, { w: tbRect.width, h: tbRect.height })
+    // node-local canvas px = screen delta ÷ zoom (= × invZoom).
+    const Tx = (target.left - boxRect.left) * invZoom
+    const Ty = (target.top  - boxRect.top)  * invZoom
+    setTbPlace((prev) =>
+      prev && Math.abs(prev.Tx - Tx) < 0.5 && Math.abs(prev.Ty - Ty) < 0.5 ? prev : { Tx, Ty },
+    )
+  })
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div style={{ position: 'relative', width }}>
 
       {/* Floating toolbar — lives inside the zoomable node, so it counter-scales
-          (1/zoom) to hold a constant on-screen size. The wrapper anchors its
-          bottom-center at the node's top-center; the toolbar scales about that
-          point and floats TOOLBAR_GAP_PX above. */}
+          (1/zoom) to hold a constant on-screen size. The wrapper sits at the
+          node's top-left; the toolbar is translated to the edge-aware target
+          (tbPlace) and scales about its top-left. Hidden until first measured. */}
       {editing && (
-        <div className="absolute" style={{ left: '50%', bottom: '100%', zIndex: 20 }}>
+        <div className="absolute" style={{ left: 0, top: 0, zIndex: 20 }}>
         <CanvasToolbar
+          ref={toolbarRef}
           style={{
-            transform: `translate(-50%, -${TOOLBAR_GAP_PX}px) scale(${invZoom})`,
-            transformOrigin: 'bottom center',
+            transform: tbPlace
+              ? `translate(${tbPlace.Tx}px, ${tbPlace.Ty}px) scale(${invZoom})`
+              : `scale(${invZoom})`,
+            transformOrigin: 'top left',
+            visibility: tbPlace ? 'visible' : 'hidden',
           }}
-          onMouseDown={(e) => { e.stopPropagation(); e.preventDefault() }}
+          onMouseDown={(e) => {
+            e.stopPropagation()
+            // preventDefault keeps the editor focused on button clicks, but the
+            // font-size input needs to take focus — let it.
+            if (!(e.target instanceof HTMLInputElement)) e.preventDefault()
+          }}
         >
           {/* Grip handle — drag this to move the text block */}
           <div
@@ -402,13 +498,40 @@ export default function TextNode({ id, data, xPos, yPos }) {
             <DotsSixVertical size={14} weight="bold" />
           </div>
 
-          {FONT_SIZES.map(({ label, px }) => (
+          {/* Font size — editable px field + preset dropdown. The field is the
+              one focusable control in the toolbar; its blur logic and the
+              editor's relatedTarget guard keep the edit session alive while the
+              user interacts with it (see onEditorBlur + the input listeners). */}
+          <div className="relative flex items-center">
+            <input
+              ref={fontInputRef}
+              type="text"
+              inputMode="numeric"
+              defaultValue={String(fontSize)}
+              title="Font size (px)"
+              className="w-9 text-center text-xs font-semibold text-gray-700 bg-gray-100 rounded-l px-1 py-0.5 outline-none focus:ring-1 focus:ring-gray-400"
+            />
             <NativeButton
-              key={label}
-              className={`px-1.5 py-0.5 rounded text-xs font-semibold transition-colors ${fontSize === px ? 'bg-gray-800 text-white' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-700'}`}
-              onAction={() => update({ fontSize: px })}
-            >{label}</NativeButton>
-          ))}
+              className="px-1 py-0.5 rounded-r text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors border-l border-gray-200"
+              title="Font size presets"
+              onAction={() => setSizeMenuOpen((o) => !o)}
+            ><CaretDown size={12} weight="bold" /></NativeButton>
+
+            {sizeMenuOpen && (
+              <div
+                className="absolute top-full left-0 mt-1 z-30 bg-white border border-gray-200 rounded-lg shadow-lg py-1 max-h-48 overflow-y-auto"
+                style={{ minWidth: '3rem' }}
+              >
+                {FONT_SIZE_PRESETS.map((px) => (
+                  <NativeButton
+                    key={px}
+                    className={`block w-full text-left px-3 py-1 text-xs font-semibold transition-colors ${fontSize === px ? 'bg-gray-800 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                    onAction={() => pickFontSize(px)}
+                  >{px}</NativeButton>
+                ))}
+              </div>
+            )}
+          </div>
 
           <ToolbarDivider />
 
@@ -494,7 +617,7 @@ export default function TextNode({ id, data, xPos, yPos }) {
             onMouseUp={syncSelectionState}
             onSelect={syncSelectionState}
             onMouseDown={(e) => e.stopPropagation()}
-            onBlur={save}
+            onBlur={onEditorBlur}
             onKeyDown={(e) => {
               if (e.key === 'Escape') { e.preventDefault(); save() }
             }}
