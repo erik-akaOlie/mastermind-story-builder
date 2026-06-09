@@ -950,14 +950,18 @@ export default function App() {
   }, [activeWorkspaceId, setNodes, setEdges])
 
   // ── Duplicate (DB-backed) ───────────────────────────────────────────────
-  const onDuplicate = useCallback(async (nodeId) => {
-    const source = nodes.find((n) => n.id === nodeId)
-    if (!source) return
+  // Build ONE duplicate node (DB-create included) without touching canvas state
+  // or selection — returns the new React Flow node, or null on failure /
+  // unsupported type. Copies NO connections for cards (a duplicate enters the
+  // graph unconnected by design). Not undoable yet — see BACKLOG ("Undo support
+  // for duplicate"). Shared by single- and multi-duplicate.
+  const buildDuplicateNode = useCallback(async (source) => {
+    if (!source) return null
 
     if (source.type === 'textNode') {
       try {
-        const duplicate = await dbCreateTextNode({
-          workspaceId:  activeWorkspaceId,
+        return await dbCreateTextNode({
+          workspaceId: activeWorkspaceId,
           contentHtml: source.data.text,
           positionX:   source.position.x + 40,
           positionY:   source.position.y + 40,
@@ -966,44 +970,89 @@ export default function App() {
           fontSize:    source.data.fontSize,
           align:       source.data.align,
         })
-        setNodes((nds) => [...nds, duplicate])
       } catch (err) {
         console.error('Failed to duplicate text node:', err)
+        return null
       }
-      return
     }
 
-    if (source.type !== 'campaignNode') return
+    if (source.type !== 'campaignNode') return null
     const typeId = useTypeStore.getState().idByKey[source.data.type]
     if (!typeId) {
       console.error(`No type_id for key: ${source.data.type}`)
-      return
+      return null
     }
     try {
       // If the source card is open in the inspector with unsaved edits, flush
       // its block editors so the copy includes the latest content (mirrors E1).
-      if (inspectorNodeRef.current?.topicNodeId === nodeId) {
+      if (inspectorNodeRef.current?.topicNodeId === source.id) {
         try { await editorFlushApiRef.current?.() } catch (err) { console.error(err) }
       }
       // duplicateCard copies the new block zones (and any legacy rows) straight
-      // from the DB — kind-agnostic — and copies NO connections (a duplicate
-      // enters the graph unconnected by design).
-      const duplicate = await duplicateCard({
-        sourceId: nodeId,
+      // from the DB — kind-agnostic — and copies NO connections.
+      return await duplicateCard({
+        sourceId:    source.id,
         workspaceId: activeWorkspaceId,
         typeId,
-        typeKey: source.data.type,
-        label: source.data.label,
-        summary: source.data.summary,
-        avatarUrl: source.data.avatar,
-        positionX: source.position.x + 40,
-        positionY: source.position.y + 40,
+        typeKey:     source.data.type,
+        label:       source.data.label,
+        summary:     source.data.summary,
+        avatarUrl:   source.data.avatar,
+        positionX:   source.position.x + 40,
+        positionY:   source.position.y + 40,
       })
-      setNodes((nds) => [...nds, duplicate])
     } catch (err) {
       console.error('Failed to duplicate card:', err)
+      return null
     }
-  }, [activeWorkspaceId, nodes, setNodes])
+  }, [activeWorkspaceId])
+
+  // Single-card duplicate (context menu on one node). Appends the copy; leaves
+  // selection unchanged.
+  const onDuplicate = useCallback(async (nodeId) => {
+    const dup = await buildDuplicateNode(nodes.find((n) => n.id === nodeId))
+    if (dup) setNodes((nds) => [...nds, dup])
+  }, [nodes, buildDuplicateNode, setNodes])
+
+  // Duplicate every selected card/text node at once. Each copy is offset +40/+40
+  // from its own source (relative layout preserved), and the new copies BECOME
+  // the selection so they can be dragged away as a group.
+  const duplicateSelectedNodes = useCallback(async () => {
+    const selectedIds = useCanvasUiStore.getState().selectedNodeIds
+    if (selectedIds.size === 0) return
+    const sources = nodesRef.current.filter(
+      (n) => selectedIds.has(n.id) && (n.type === 'campaignNode' || n.type === 'textNode'),
+    )
+    if (sources.length === 0) return
+
+    const dups = (await Promise.all(sources.map(buildDuplicateNode))).filter(Boolean)
+    if (dups.length === 0) return
+
+    const newIds = new Set(dups.map((d) => d.id))
+    setNodes((nds) => [
+      ...nds.map((n) => (n.selected ? { ...n, selected: false } : n)),
+      ...dups.map((d) => ({ ...d, selected: true })),
+    ])
+    // Mirror the selection into the UI store explicitly (programmatic selection
+    // changes don't reliably fire RF's onSelectionChange).
+    useCanvasUiStore.getState().setSelectedNodeIds(newIds)
+    useCanvasUiStore.getState().setAnySelected(true)
+  }, [buildDuplicateNode, setNodes])
+
+  // Ctrl/Cmd+D — duplicate the current selection. Left to the browser (bookmark)
+  // while typing in a field or when nothing is selected.
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.key?.toLowerCase() !== 'd' || !(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) return
+      const t = e.target
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return
+      if (useCanvasUiStore.getState().selectedNodeIds.size === 0) return
+      e.preventDefault()
+      duplicateSelectedNodes()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [duplicateSelectedNodes])
 
   // ── Lock toggle — in-memory only (feature scoped out of V1) ─────────────
   const onLockToggle = useCallback((nodeId) => {
@@ -1323,7 +1372,11 @@ export default function App() {
             y={contextMenu.y}
             node={node}
             onEdit={() => openEdit(contextMenu.nodeId)}
-            onDuplicate={() => onDuplicate(contextMenu.nodeId)}
+            onDuplicate={() => {
+              const sel = useCanvasUiStore.getState().selectedNodeIds
+              if (sel.size > 1 && sel.has(contextMenu.nodeId)) duplicateSelectedNodes()
+              else onDuplicate(contextMenu.nodeId)
+            }}
             onLockToggle={() => onLockToggle(contextMenu.nodeId)}
             onDelete={() => onDeleteNode(contextMenu.nodeId)}
             onClose={closeContextMenu}

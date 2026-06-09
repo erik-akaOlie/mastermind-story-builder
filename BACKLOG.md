@@ -95,6 +95,26 @@ They reorder relative to each other based on what #1 + #2 reveal.
 
 ## Quick Win
 
+### Undo support for duplicate (single + multi)
+- **Problem.** Duplicating a card or text node — whether one (context menu →
+  Duplicate) or many (Ctrl/Cmd+D, or context-menu Duplicate on a multi-select)
+  — creates the copies but records **no undo entry**, so Ctrl+Z can't remove
+  them. Every other mutating action (create, edit, move, delete, connect) is
+  undoable; duplicate is the lone gap. With multi-duplicate now shipped, an
+  accidental "duplicate 20 cards" can't be reversed in one step.
+- **Success.** A single Ctrl+Z removes the copies from the last duplicate
+  action (one entry for the whole batch, mirroring the grouped MOVE_CARD /
+  BATCH_DELETE shape); redo re-creates them. Works for single and multi,
+  cards and text nodes. Conflict-aware like the other handlers.
+- **Notes.** Cleanest as a `BATCH_CREATE` (or reuse/extend CREATE_CARD +
+  CREATE_TEXT_NODE under a batch wrapper) so inverse = delete-all, forward =
+  re-create-all. Pairs naturally with the BATCH_DELETE work (same batch-entry
+  pattern). Deferred deliberately when multi-duplicate shipped to keep that a
+  true quick win.
+- **Dependencies.** None hard; shares the batch-entry pattern with multi-delete.
+- **Size:** S–M (one undo handler + recordAction wiring at the two duplicate
+  call sites + tests).
+
 ### Drop deprecated card-media bucket + helper function
 - **Problem.** The 2026-05-18 campaign → workspace rename (ADR-0012)
   introduced a new Storage bucket (`workspace-media`) and a renamed RLS
