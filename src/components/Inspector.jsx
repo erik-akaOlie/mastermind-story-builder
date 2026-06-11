@@ -79,6 +79,7 @@ export default function Inspector({
   getCloseRect,
   commitApiRef,
   editorFlushApiRef,
+  connectionsApiRef,
   onUpdate,
   onClose,
 }) {
@@ -361,6 +362,30 @@ export default function Inspector({
     commitApiRef.current = commitSession
     return () => { if (commitApiRef.current === commitSession) commitApiRef.current = null }
   }, [commitApiRef, commitSession])
+
+  // Expose addExternalConnection to App so a canvas quick-connect involving
+  // this card shows up as a chip immediately. The connection is ALREADY
+  // created and undo-recorded by App, so it must enter this session as
+  // settled state, not as a user edit: pre-marking syncedConnsRef keeps
+  // auto-save from re-creating it, and writing prevLocalConnsRef inside the
+  // updater keeps the session's connection log (and therefore the close-time
+  // undo emission) from double-recording it.
+  useEffect(() => {
+    if (!connectionsApiRef) return
+    const api = {
+      addExternalConnection: ({ id, nodeId, label, type }) => {
+        syncedConnsRef.current.set(id, nodeId)
+        setLocalConns((prev) => {
+          if (prev.some((c) => c.id === id || c.nodeId === nodeId)) return prev
+          const next = [...prev, { id, nodeId, label, type, isNew: false }]
+          prevLocalConnsRef.current = next
+          return next
+        })
+      },
+    }
+    connectionsApiRef.current = api
+    return () => { if (connectionsApiRef.current === api) connectionsApiRef.current = null }
+  }, [connectionsApiRef])
 
   const handleClose = useCallback(() => {
     commitSession()

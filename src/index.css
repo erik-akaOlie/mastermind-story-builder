@@ -217,3 +217,20 @@ input[type="password"]::-ms-clear {
   --mm-callout-bar-width: 2px;
 }
 
+
+/* ── Quick-connect buttons (QuickConnectButtons.jsx) ─────────────────────────
+   Appear after the hover dwell on a selected card. Quick fade/scale-in so
+   their arrival reads as a response to the dwell, not a pop; slight grow on
+   hover as the press affordance. Transform composes with the inline
+   positioning (no translate is used there, so scale is safe to animate). */
+@keyframes quick-connect-in {
+  from { opacity: 0; transform: scale(0.5); }
+  to   { opacity: 1; transform: scale(1); }
+}
+.quick-connect-btn {
+  animation: quick-connect-in 128ms ease-out;
+  transition: transform 128ms ease;
+}
+.quick-connect-btn:hover {
+  transform: scale(1.15);
+}

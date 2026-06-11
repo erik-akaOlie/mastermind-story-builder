@@ -2,6 +2,8 @@ import { useState, useRef, useEffect, useMemo } from 'react'
 import { Handle, Position, useViewport } from 'reactflow'
 import { useNodeTypes } from '../store/useTypeStore'
 import { useCanvasUiStore, selectIsEdgeHighlighted } from '../store/useCanvasUiStore'
+import { useCanvasOps } from '../lib/CanvasOpsContext.jsx'
+import QuickConnectButtons from './QuickConnectButtons.jsx'
 import { useImageUrl } from '../lib/useImageUrl'
 import { useLightbox } from '../components/Lightbox'
 import { labelInitial } from '../utils/labelUtils'
@@ -20,6 +22,16 @@ function getMeasureCtx() {
 }
 
 const BASE_TITLE_SIZE = 1  // rem — 16px at default browser zoom; ÷8 ✓; this is the minimum
+
+// Hover dwell before the quick-connect buttons appear on a selected card.
+// Long enough that ordinary mousing across a selected card doesn't sprout
+// buttons; short enough to feel responsive when the user parks deliberately.
+const QUICK_CONNECT_DWELL_MS = 800
+// Linger after hover ends before the buttons hide. The buttons float 8px off
+// the card edge, and that gap belongs to no element — crossing it fires
+// mouseleave. The linger keeps the buttons alive while the cursor crosses;
+// same hover-intent pattern (and duration) as CanvasContextMenu's submenu.
+const QUICK_CONNECT_LINGER_MS = 200
 
 // Inline styles beat React Flow's class-based selection/focus box-shadow rules
 // (specificity 1-0-0-0 vs 0-2-0), so these always win without needing !important.
@@ -581,6 +593,33 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
     if (store.expandedNode?.id === data.id) store.setExpandedNode(null)
   }, [data.id])
 
+  // ── Quick-connect buttons (selected + hover dwell) ────────────────────────
+  // After the cursor rests on a SELECTED card for QUICK_CONNECT_DWELL_MS, the
+  // four per-side connect buttons appear. The dwell condition uses the local
+  // `hovered` state (driven by the root div's mouseenter/leave), which stays
+  // true while the cursor is over the buttons themselves — they're DOM
+  // children — so moving from card to button never dismisses them.
+  // Works at ANY altitude (per Erik, 2026-06-11): in Bead View a hovered
+  // node is by definition hover-expanded into its card form, so by the time
+  // the dwell elapses the buttons attach to the expanded card's layout box —
+  // never to a raw bead. Suppressed while this node is dragging.
+  const { beginQuickConnect } = useCanvasOps()
+  const [quickConnectReady, setQuickConnectReady] = useState(false)
+  const quickConnectEligible =
+    hovered && selected && !isBead && !isDraggingThisNode
+  useEffect(() => {
+    if (quickConnectEligible) {
+      const t = setTimeout(() => setQuickConnectReady(true), QUICK_CONNECT_DWELL_MS)
+      return () => clearTimeout(t)
+    }
+    if (!quickConnectReady) return
+    // Hover just ended while the buttons are up: linger so the cursor can
+    // cross the gap onto a button (which re-enters the node's DOM subtree
+    // and restores eligibility) instead of yanking the target away.
+    const t = setTimeout(() => setQuickConnectReady(false), QUICK_CONNECT_LINGER_MS)
+    return () => clearTimeout(t)
+  }, [quickConnectEligible, quickConnectReady])
+
   return (
     <div
       className={`relative ${lifted ? 'is-lifted' : ''} ${isExpanded ? 'is-expanded' : ''}`}
@@ -705,6 +744,19 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
           />
         )
       })}
+      {/* Quick-connect buttons — outside the clip wrapper so they can sit
+          beyond the card's box. Positioned against the card's CSS layout box
+          (cardWidth × layoutHeight), which is what the cursor actually
+          interacts with in card mode. */}
+      {quickConnectReady && (
+        <QuickConnectButtons
+          compensation={compensation}
+          cardWidth={cardWidth}
+          cardHeight={layoutHeight}
+          onBeginConnect={(e) => beginQuickConnect?.(data.id, e)}
+        />
+      )}
+
       {/* Invisible center handles — floating edges compute their own border points */}
       <Handle type="source" position={Position.Top} className="opacity-0" style={{ top: '50%', left: '50%' }} />
       <Handle type="target" position={Position.Top} className="opacity-0" style={{ top: '50%', left: '50%' }} />

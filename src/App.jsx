@@ -26,6 +26,8 @@ import {
   deleteTextNode as dbDeleteTextNode,
 } from './lib/textNodes.js'
 import { buildBatchDeleteSnapshot, deleteBatch } from './lib/batchDelete.js'
+import { findNodeIdAtPoint, validateQuickConnectTarget, connectionExists } from './lib/quickConnect.js'
+import QuickConnectLine from './components/QuickConnectLine.jsx'
 import { useSpacebarPan } from './hooks/useSpacebarPan'
 import { useWorkspaceData } from './hooks/useWorkspaceData'
 import { useEdgeGeometry } from './hooks/useEdgeGeometry'
@@ -115,6 +117,10 @@ export default function App() {
   // always reads the current array without stale-closure issues.
   const nodesRef = useRef(nodes)
   useEffect(() => { nodesRef.current = nodes }, [nodes])
+  // Edge mirror for callbacks that need fresh edges without re-binding
+  // (quick-connect's window listeners read it for duplicate checks).
+  const edgesRef = useRef(edges)
+  useEffect(() => { edgesRef.current = edges }, [edges])
 
   // Register the camera-pan implementation that ChipToast click handlers
   // will invoke when the user clicks an undo/redo toast. Lives outside
@@ -165,6 +171,10 @@ export default function App() {
   // (debounced) save and await it — used before deleting the card the inspector
   // is open on, so the delete snapshot reads the latest content (ADR-0016 E1).
   const editorFlushApiRef = useRef(null)
+  // Lets App push an externally-created connection (canvas quick-connect)
+  // into the open inspector's Connection Manager as a chip. Inspector
+  // registers { addExternalConnection } here while mounted.
+  const inspectorConnsApiRef = useRef(null)
   // Mirror of inspectorNode for stable reads inside onDeleteNode (which is
   // memoized without inspectorNode in its deps).
   const inspectorNodeRef = useRef(null)
@@ -937,6 +947,12 @@ export default function App() {
     }
 
     addConnections.forEach(({ id, nodeId: targetId }) => {
+      // One-line-per-pair invariant: skip creates whose pair already has a
+      // line (e.g. the pair was connected from the canvas while this
+      // Inspector session was open). The DB's unique-pair index (migration
+      // 009) backstops any race this local check can't see; dbCreateConnection
+      // returns null for those, so the .then guard covers both layers.
+      if (connectionExists(edgesRef.current, nodeId, targetId)) return
       dbCreateConnection({
         id,
         workspaceId: activeWorkspaceId,
@@ -944,6 +960,7 @@ export default function App() {
         targetNodeId: targetId,
       })
         .then((edge) => {
+          if (!edge) return   // pair already connected (unique-pair no-op)
           setEdges((eds) => (eds.some((e) => e.id === edge.id) ? eds : [...eds, edge]))
         })
         .catch(console.error)
@@ -1286,6 +1303,159 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [deleteSelectedNodes])
 
+  // ── Quick-connect: drag from a card-side button to another card ──────────
+  // CampaignNode shows four per-side buttons after a hover dwell on a
+  // selected card; pressing one calls beginQuickConnect (via CanvasOpsContext)
+  // and the window listeners below own the rest of the gesture. Releasing
+  // over a valid card creates the connection through the SAME machinery the
+  // Inspector's Connection Manager uses (same dbCreateConnection shape, same
+  // ADD_CONNECTION undo entry); releasing anywhere else cancels silently.
+  const [quickConnect, setQuickConnect] = useState(null) // { sourceId, cursorScreen, targetId }
+  const quickConnectRef = useRef(null)
+  quickConnectRef.current = quickConnect
+
+  const beginQuickConnect = useCallback((sourceId, e) => {
+    track('connection_started', { via: 'quick_connect' })
+    setQuickConnect({
+      sourceId,
+      cursorScreen: { x: e.clientX, y: e.clientY },
+      targetId: null,
+    })
+  }, [])
+
+  // One connection, created the canvas way: optimistic edge (geometry fills
+  // in the endpoints next pass), immediate undo entry, fire-and-forget
+  // persist with entry rollback on failure — then mirror a chip into the
+  // open Inspector if it's showing either endpoint.
+  const createQuickConnection = useCallback((sourceId, targetId) => {
+    // Final one-line-per-pair gate at the moment of creation (validation also
+    // ran during the drag, but this closes the window between gesture end and
+    // state flush). The DB's unique-pair index (migration 009) backstops any
+    // race no client check can see.
+    if (connectionExists(edgesRef.current, sourceId, targetId)) return
+
+    const id = crypto.randomUUID()
+    setEdges((eds) => (connectionExists(eds, sourceId, targetId) ? eds : [
+      ...eds,
+      { id, source: sourceId, target: targetId, type: 'floating' },
+    ]))
+
+    useUndoStore.getState().recordAction({
+      type: ACTION_TYPES.ADD_CONNECTION,
+      workspaceId: activeWorkspaceId,
+      label: 'Add connection',
+      timestamp: new Date().toISOString(),
+      connectionId: id,
+      sourceNodeId: sourceId,
+      targetNodeId: targetId,
+    })
+
+    const target = nodesRef.current.find((n) => n.id === targetId)
+    track('connection_completed', { targetType: target?.data?.type, via: 'quick_connect' })
+
+    dbCreateConnection({
+      id,
+      workspaceId: activeWorkspaceId,
+      sourceNodeId: sourceId,
+      targetNodeId: targetId,
+    }).catch((err) => {
+      console.error(err)
+      useUndoStore.getState().popLastAction()
+    })
+
+    // Live-update the open Inspector's Connection Manager. localConns is
+    // seeded on mount, so without this the new chip would only show up on
+    // the next open. The bridge pre-marks the connection as synced inside
+    // the Inspector so its auto-save doesn't re-create it and its session
+    // log doesn't emit a duplicate undo entry.
+    const insp = inspectorNodeRef.current
+    const api = inspectorConnsApiRef.current
+    if (insp && api) {
+      const otherId =
+        insp.topicNodeId === sourceId ? targetId :
+        insp.topicNodeId === targetId ? sourceId : null
+      if (otherId) {
+        const other = nodesRef.current.find((n) => n.id === otherId)
+        if (other) {
+          api.addExternalConnection({
+            id,
+            nodeId: otherId,
+            label: other.data.label,
+            type: other.data.type,
+          })
+        }
+      }
+    }
+  }, [activeWorkspaceId, setEdges])
+
+  // Window listeners for the active drag. Dep is the BOOLEAN so the
+  // listeners bind once per gesture, not on every cursor move; handlers
+  // read the live session from quickConnectRef.
+  const quickConnectActive = quickConnect !== null
+  useEffect(() => {
+    if (!quickConnectActive) return
+
+    const onPointerMove = (e) => {
+      const qc = quickConnectRef.current
+      if (!qc) return
+      // Hit-test as we move so the line can snap to a valid target.
+      const underCursor = findNodeIdAtPoint(e.clientX, e.clientY)
+      const valid = validateQuickConnectTarget({
+        nodes: nodesRef.current,
+        edges: edgesRef.current,
+        sourceId: qc.sourceId,
+        targetId: underCursor,
+      })
+      setQuickConnect({
+        ...qc,
+        cursorScreen: { x: e.clientX, y: e.clientY },
+        targetId: valid.ok ? underCursor : null,
+      })
+    }
+
+    const onPointerUp = (e) => {
+      const qc = quickConnectRef.current
+      // Null the ref SYNCHRONOUSLY (not just the state): the ref is refreshed
+      // at render time, so a second pointerup arriving before React re-renders
+      // would otherwise see the session still live and create a second
+      // connection for one gesture.
+      quickConnectRef.current = null
+      setQuickConnect(null)
+      if (!qc) return
+      const targetId = findNodeIdAtPoint(e.clientX, e.clientY)
+      const valid = validateQuickConnectTarget({
+        nodes: nodesRef.current,
+        edges: edgesRef.current,
+        sourceId: qc.sourceId,
+        targetId,
+      })
+      if (!valid.ok) {
+        track('connection_abandoned', { via: 'quick_connect' })
+        return
+      }
+      createQuickConnection(qc.sourceId, targetId)
+    }
+
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        track('connection_abandoned', { via: 'quick_connect' })
+        quickConnectRef.current = null   // same sync-cancel as pointerup
+        setQuickConnect(null)
+      }
+    }
+
+    document.body.style.cursor = 'crosshair'
+    window.addEventListener('pointermove', onPointerMove)
+    window.addEventListener('pointerup', onPointerUp)
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.body.style.cursor = ''
+      window.removeEventListener('pointermove', onPointerMove)
+      window.removeEventListener('pointerup', onPointerUp)
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [quickConnectActive, createQuickConnection])
+
   // ── Altitude trigger (per ADR-0010) ──────────────────────────────────────
   // onMove fires throughout pan/zoom gestures, giving Bead View an
   // immediate flip the moment the user crosses the grid-gap threshold — no
@@ -1409,7 +1579,7 @@ export default function App() {
 
   return (
     <LightboxProvider>
-    <CanvasOpsProvider value={{ onDeleteNode }}>
+    <CanvasOpsProvider value={{ onDeleteNode, beginQuickConnect }}>
     <div
       style={{ width: '100vw', height: '100vh' }}
       className={isPanning ? 'is-panning' : ''}
@@ -1469,6 +1639,7 @@ export default function App() {
       </ReactFlow>
 
       <MarqueeRect marquee={marqueeOverlay} rfInstanceRef={rfInstanceRef} />
+      <QuickConnectLine quickConnect={quickConnect} rfInstanceRef={rfInstanceRef} />
       <AltitudeRail onZoomTo={onZoomToFromRail} />
 
       {contextMenu && (() => {
@@ -1528,6 +1699,7 @@ export default function App() {
           getCloseRect={() => getNodeOriginRect(inspectorNode.topicNodeId)}
           commitApiRef={inspectorCommitRef}
           editorFlushApiRef={editorFlushApiRef}
+          connectionsApiRef={inspectorConnsApiRef}
           onUpdate={onUpdateNode}
           onClose={() => {
             track('card_edit_closed', { typeKey: inspectorNode.node.data?.type })
