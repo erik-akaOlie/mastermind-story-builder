@@ -1,6 +1,8 @@
 import { useEffect } from 'react'
 
-export default function ContextMenu({ x, y, node, onEdit, onDuplicate, onLockToggle, onDelete, onClose }) {
+// `selectedCount` > 1 means the clicked node is part of a multi-selection and
+// Duplicate / Delete will act on the WHOLE selection — the labels say so.
+export default function ContextMenu({ x, y, node, selectedCount = 1, onEdit, onDuplicate, onLockToggle, onDelete, onClose }) {
   // Close on Escape
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose() }
@@ -39,15 +41,22 @@ export default function ContextMenu({ x, y, node, onEdit, onDuplicate, onLockTog
         style={{ left, top }}
         onContextMenu={(e) => e.preventDefault()}
       >
-        <MenuItem label="Edit"      onClick={onEdit} />
-        <MenuItem label="Duplicate" onClick={onDuplicate} />
+        <MenuItem label="Edit" onClick={onEdit} />
+        <MenuItem
+          label={selectedCount > 1 ? `Duplicate ${selectedCount} items` : 'Duplicate'}
+          onClick={onDuplicate}
+        />
         <div className="my-1 border-t border-gray-100" />
         <MenuItem
           label={node?.data?.locked ? 'Unlock' : 'Lock'}
           onClick={onLockToggle}
         />
         <div className="my-1 border-t border-gray-100" />
-        <MenuItem label="Delete" onClick={onDelete} danger />
+        <MenuItem
+          label={selectedCount > 1 ? `Delete ${selectedCount} items` : 'Delete'}
+          onClick={onDelete}
+          danger
+        />
       </div>
     </>
   )

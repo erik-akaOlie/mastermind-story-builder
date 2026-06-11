@@ -27,16 +27,19 @@ describe('undo dispatcher — exports + catalog', () => {
     expect(typeof applyForward).toBe('function')
   })
 
-  it('catalogs the ten action types from ADR-0006 §1', () => {
+  it('catalogs the ADR-0006 §1 baseline ten plus batchDelete', () => {
     expect(KNOWN).toEqual(
       expect.arrayContaining([
         // ADR §1 baseline ten
         'createCard', 'editCardField', 'moveCard', 'deleteCard',
         'addConnection', 'removeConnection',
         'createTextNode', 'editTextNode', 'moveTextNode', 'deleteTextNode',
+        // Multi-delete (2026-06-11): one entry restores a whole deleted
+        // selection — cards + text nodes + deduped shared connections.
+        'batchDelete',
       ]),
     )
-    expect(KNOWN).toHaveLength(10)
+    expect(KNOWN).toHaveLength(11)
     // The phase-7c list-item families (add/remove/edit/reorderListItem) were
     // retired in E5 (ADR-0016) along with the legacy fielded editor.
     expect(KNOWN).not.toContain('addListItem')

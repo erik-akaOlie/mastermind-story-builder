@@ -25,6 +25,7 @@ import {
   updateTextNode as dbUpdateTextNode,
   deleteTextNode as dbDeleteTextNode,
 } from './lib/textNodes.js'
+import { buildBatchDeleteSnapshot, deleteBatch } from './lib/batchDelete.js'
 import { useSpacebarPan } from './hooks/useSpacebarPan'
 import { useWorkspaceData } from './hooks/useWorkspaceData'
 import { useEdgeGeometry } from './hooks/useEdgeGeometry'
@@ -1184,6 +1185,107 @@ export default function App() {
     }
   }, [nodes, edges, activeWorkspaceId, setNodes, setEdges, closeInspectorForDelete])
 
+  // ── Multi-delete: remove the whole selection as ONE undo entry ───────────
+  // A single-item selection routes through onDeleteNode so the existing
+  // per-type labels ("Delete \"Strahd\"", "Delete text") stay intact. For 2+,
+  // the batchDelete entry restores everything on one Ctrl+Z — connections
+  // shared between two deleted cards are de-duplicated at capture time (see
+  // lib/batchDelete.js).
+  const batchDeletingRef = useRef(false)
+  const deleteSelectedNodes = useCallback(async () => {
+    const selectedIds = useCanvasUiStore.getState().selectedNodeIds
+    if (selectedIds.size === 0) return
+    if (selectedIds.size === 1) {
+      for (const id of selectedIds) return onDeleteNode(id)
+    }
+    if (batchDeletingRef.current) return   // guard double-trigger
+    batchDeletingRef.current = true
+    try {
+      // 1. If the open Inspector's card is in the doomed set, flush its
+      //    pending editor saves and tear it down first (same invariant as
+      //    single delete — ADR-0016 Chunk E1).
+      const openId = inspectorNodeRef.current?.topicNodeId
+      if (openId && selectedIds.has(openId)) {
+        try { await editorFlushApiRef.current?.() } catch (err) { console.error(err) }
+        closeInspectorForDelete()
+      }
+
+      // 2. Capture the full restore snapshot. Fails closed: if any card's
+      //    section content can't be fetched, nothing is removed.
+      let snapshot
+      try {
+        snapshot = await buildBatchDeleteSnapshot(selectedIds, {
+          nodes,
+          edges,
+          workspaceId: activeWorkspaceId,
+          typeIdByKey: useTypeStore.getState().idByKey,
+        })
+      } catch (err) {
+        console.error('Delete aborted — could not capture content', err)
+        toastDeleteCaptureFailed()
+        return
+      }
+      if (!snapshot) return   // selection vanished between trigger and capture
+
+      const doomed = new Set([
+        ...snapshot.cards.map((c) => c.dbCardRow.id),
+        ...snapshot.textNodes.map((t) => t.textNodeId),
+      ])
+
+      // 3. Optimistic removal + selection cleanup.
+      setNodes((nds) => nds.filter((n) => !doomed.has(n.id)))
+      setEdges((eds) => eds.filter((e) => !doomed.has(e.source) && !doomed.has(e.target)))
+      useCanvasUiStore.getState().setSelectedNodeIds(new Set())
+      useCanvasUiStore.getState().setAnySelected(false)
+
+      // 4. Record undo — the snapshot is now provably complete.
+      useUndoStore.getState().recordAction({
+        type: ACTION_TYPES.BATCH_DELETE,
+        workspaceId: activeWorkspaceId,
+        label: `Delete ${doomed.size} items`,
+        timestamp: new Date().toISOString(),
+        cards:       snapshot.cards,
+        connections: snapshot.connections,
+        textNodes:   snapshot.textNodes,
+      })
+
+      track('batch_deleted', {
+        cardCount:     snapshot.cards.length,
+        textNodeCount: snapshot.textNodes.length,
+      })
+
+      // 5. Persist; rollback the undo entry if the write fails.
+      deleteBatch({
+        cardIds:     snapshot.cards.map((c) => c.dbCardRow.id),
+        textNodeIds: snapshot.textNodes.map((t) => t.textNodeId),
+      }).catch((err) => {
+        console.error(err)
+        useUndoStore.getState().popLastAction()
+      })
+    } finally {
+      batchDeletingRef.current = false
+    }
+  }, [nodes, edges, activeWorkspaceId, setNodes, setEdges, onDeleteNode, closeInspectorForDelete])
+
+  // Delete / Backspace — delete the current selection. Left alone while
+  // typing in a field; no-op when nothing is selected. React Flow's own
+  // built-in Backspace delete is disabled (deleteKeyCode={null} below): it
+  // only removed nodes from local state — no DB delete, no undo entry — so
+  // "deleted" items resurrected on refresh.
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return
+      if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return
+      const t = e.target
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return
+      if (useCanvasUiStore.getState().selectedNodeIds.size === 0) return
+      e.preventDefault()
+      deleteSelectedNodes()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [deleteSelectedNodes])
+
   // ── Altitude trigger (per ADR-0010) ──────────────────────────────────────
   // onMove fires throughout pan/zoom gestures, giving Bead View an
   // immediate flip the moment the user crosses the grid-gap threshold — no
@@ -1354,6 +1456,11 @@ export default function App() {
         selectionKeyCode={null}
         selectionMode="partial"
         multiSelectionKeyCode="Shift"
+        // RF's built-in delete (default key: Backspace) is disabled — it only
+        // removes nodes from local state (no DB delete, no undo entry), so
+        // they'd resurrect on refresh. Our own Delete/Backspace listener owns
+        // the gesture and routes through the undoable delete paths.
+        deleteKeyCode={null}
         fitView
       >
         <Background color="#1f2937" />
@@ -1366,22 +1473,31 @@ export default function App() {
 
       {contextMenu && (() => {
         const node = nodes.find((n) => n.id === contextMenu.nodeId)
-        return node ? (
+        if (!node) return null
+        // Right-clicking a node that's part of a multi-selection targets the
+        // whole selection (same rule as Duplicate); right-clicking outside
+        // the selection targets just the clicked node.
+        const sel = selectedNodeIdsForExp
+        const targetsSelection = sel.size > 1 && sel.has(contextMenu.nodeId)
+        return (
           <ContextMenu
             x={contextMenu.x}
             y={contextMenu.y}
             node={node}
+            selectedCount={targetsSelection ? sel.size : 1}
             onEdit={() => openEdit(contextMenu.nodeId)}
             onDuplicate={() => {
-              const sel = useCanvasUiStore.getState().selectedNodeIds
-              if (sel.size > 1 && sel.has(contextMenu.nodeId)) duplicateSelectedNodes()
+              if (targetsSelection) duplicateSelectedNodes()
               else onDuplicate(contextMenu.nodeId)
             }}
             onLockToggle={() => onLockToggle(contextMenu.nodeId)}
-            onDelete={() => onDeleteNode(contextMenu.nodeId)}
+            onDelete={() => {
+              if (targetsSelection) deleteSelectedNodes()
+              else onDeleteNode(contextMenu.nodeId)
+            }}
             onClose={closeContextMenu}
           />
-        ) : null
+        )
       })()}
 
       {canvasMenu && (

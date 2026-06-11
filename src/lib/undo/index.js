@@ -27,6 +27,7 @@ import * as createCard       from './createCard.js'
 import * as editCardField    from './editCardField.js'
 import * as moveCard         from './moveCard.js'
 import * as deleteCard       from './deleteCard.js'
+import * as batchDelete      from './batchDelete.js'
 import * as addConnection    from './addConnection.js'
 import * as removeConnection from './removeConnection.js'
 import * as createTextNode   from './createTextNode.js'
@@ -41,6 +42,7 @@ export const ACTION_TYPES = Object.freeze({
   EDIT_CARD_FIELD:     'editCardField',
   MOVE_CARD:           'moveCard',
   DELETE_CARD:         'deleteCard',
+  BATCH_DELETE:        'batchDelete',
   ADD_CONNECTION:      'addConnection',
   REMOVE_CONNECTION:   'removeConnection',
   CREATE_TEXT_NODE:    'createTextNode',
@@ -54,6 +56,7 @@ const handlers = new Map([
   [ACTION_TYPES.EDIT_CARD_FIELD,    editCardField],
   [ACTION_TYPES.MOVE_CARD,          moveCard],
   [ACTION_TYPES.DELETE_CARD,        deleteCard],
+  [ACTION_TYPES.BATCH_DELETE,       batchDelete],
   [ACTION_TYPES.ADD_CONNECTION,     addConnection],
   [ACTION_TYPES.REMOVE_CONNECTION,  removeConnection],
   [ACTION_TYPES.CREATE_TEXT_NODE,   createTextNode],
