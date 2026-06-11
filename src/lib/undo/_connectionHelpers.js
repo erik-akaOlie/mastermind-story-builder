@@ -54,7 +54,9 @@ export async function restoreConnectionImpl(entry, { setEdges } = {}) {
   }
 
   // Persist with the original id so any later undo entry referring to this
-  // connection still finds it. createConnection returns the React Flow edge.
+  // connection still finds it. createConnection returns the React Flow edge,
+  // or null when the pair is already connected (unique-pair index, migration
+  // 009) — in that case there's nothing to add locally either.
   const edge = await createConnection({
     id: connectionId,
     workspaceId,
@@ -62,7 +64,7 @@ export async function restoreConnectionImpl(entry, { setEdges } = {}) {
     targetNodeId,
   })
 
-  if (typeof setEdges === 'function') {
+  if (edge && typeof setEdges === 'function') {
     setEdges((eds) => (eds.some((e) => e.id === connectionId) ? eds : [...eds, edge]))
   }
 }

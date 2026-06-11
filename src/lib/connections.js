@@ -27,12 +27,20 @@ export async function loadConnections(workspaceId) {
 }
 
 // ----------------------------------------------------------------------------
-// Create a new connection. Returns the React Flow edge.
+// Create a new connection. Returns the React Flow edge, or NULL when the two
+// nodes are already connected.
 //
 // `id` is optional. Pass it to recreate a connection at a known UUID — used
 // by the undo system when redoing addConnection (after the connection was
 // removed via undo) or undoing removeConnection. Without `id`, Postgres
 // assigns a fresh one.
+//
+// One-line-per-pair invariant (migration 009): the DB has a unique index on
+// the unordered (source, target) pair. An insert that violates it (Postgres
+// error 23505) means the desired end state — "these two cards are connected"
+// — already holds, so it's treated as a benign no-op rather than an error.
+// Returning early (instead of throwing) keeps persistWrite from retrying a
+// write that can never succeed and from raising the save-failure overlay.
 // ----------------------------------------------------------------------------
 export async function createConnection({ id, workspaceId, sourceNodeId, targetNodeId }) {
   return persistWrite(async () => {
@@ -48,7 +56,10 @@ export async function createConnection({ id, workspaceId, sourceNodeId, targetNo
       .insert(insertRow)
       .select()
       .single()
-    if (error) throw error
+    if (error) {
+      if (error.code === '23505') return null   // pair already connected
+      throw error
+    }
 
     return {
       id:     data.id,
