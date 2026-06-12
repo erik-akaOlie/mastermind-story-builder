@@ -17,7 +17,7 @@
 - **Search** — fast retrieval as campaigns grow past a few dozen cards
 - **Tailor Card Types** (Medium scope) — per-type section structure (Character cards have alignment / motivations / voice; Location cards have geography / population). Schema-flexible enough to keep the door open to richer per-section field types in V2+
 - **Manage Card Templates** — system-level CRUD on card types: create, rename, color, icon, duplicate, delete
-- **Nest component** — FigJam-section-style containers grouping cards / connections / text into thematic units. Recursive (nests inside nests). Move-the-nest-moves-the-contents.
+- **Nesting** — representing the world's emergent structure (towns, factions, families, arcs) as first-class groupings. Discovery (2026-06-12, [grouping-discovery.md](../research/grouping-discovery.md)) reshaped the original FigJam-section-container concept into the current leading hypothesis, pending the outcome of the design/architecture spike: nesting as a *capability of cards* (any card can optionally contain a child graph), scoped to world structure. Gated behind a design/architecture spike, then an ADR, before any build.
 - **Background images V1** — single static image filling the canvas without stretch or tile, fixed to window not canvas zoom
 - **Markdown export** — one-click "download my campaign as markdown" for data ownership
 - **Polish accumulating throughout** — paste-image-from-clipboard, dynamic card width, branding, edit timestamps, character alignment field, canvas-drag connection creation, relationship-type popup on connection creation
