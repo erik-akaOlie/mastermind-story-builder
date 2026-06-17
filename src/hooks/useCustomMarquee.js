@@ -103,6 +103,13 @@ export function useCustomMarquee({ rfInstanceRef, nodes, setNodes, isPanning }) 
       currentRef.current = startScreen
       setMarquee({ startScreen, current: startScreen, _tick: 0 })
 
+      // Kill any stray text selection the moment the marquee opens. Without
+      // this (plus the selectstart blocker below), the browser drags a native
+      // text selection across the canvas and into card BlockNote editors —
+      // which logs "TextSelection endpoint not pointing into a node with
+      // inline content" and feeds the browser's selection pop-up menu.
+      window.getSelection()?.removeAllRanges()
+
       // Non-additive: clear the existing selection up front so cards visibly
       // deselect the moment the marquee starts (matches React Flow's behavior).
       if (!additive) {
@@ -125,6 +132,25 @@ export function useCustomMarquee({ rfInstanceRef, nodes, setNodes, isPanning }) 
     document.addEventListener('pointerdown', onPointerDown)
     return () => document.removeEventListener('pointerdown', onPointerDown)
   }, [rfInstanceRef])
+
+  // ── Block native text selection WHILE a marquee is in flight ────────────
+  // The browser's default response to a click-drag is to start a text
+  // selection, sweeping it across whatever DOM lies between the drag's start
+  // and end — including the BlockNote editors inside cards. That selection is
+  // a pure side effect of the marquee (the user is selecting NODES, not text)
+  // and it both trips a BlockNote console warning and triggers the browser's
+  // selection-activated pop-up menu.
+  //
+  // Gated on sessionRef (set only when a drag started on the empty canvas
+  // pane), so intentional text selection while EDITING a card — where the
+  // pointerdown landed on a node, sessionRef stays null — is never blocked.
+  useEffect(() => {
+    function onSelectStart(e) {
+      if (sessionRef.current) e.preventDefault()
+    }
+    document.addEventListener('selectstart', onSelectStart)
+    return () => document.removeEventListener('selectstart', onSelectStart)
+  }, [])
 
   // ── While a marquee is in flight: track move/up + auto-pan via RAF ──────
   // Effect dep is the boolean "is marquee active?" so we don't re-attach
