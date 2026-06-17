@@ -2,64 +2,88 @@
 // WorkspaceContext
 // ----------------------------------------------------------------------------
 // Tracks which workspace is currently "active" (the one whose canvas is being
-// edited). Persists the active workspace ID to localStorage so refreshes
-// don't bounce the user back to the picker.
+// edited).
+//
+// The active workspace is encoded in the URL QUERY STRING as `?w=<id>`. This
+// is the single source of truth, which gives us three things for free:
+//   - A bare load (no `?w=…`) lands on the picker ("home") instead of
+//     auto-reopening the last workspace. (This intentionally drops the prior
+//     localStorage auto-reopen behavior — see #1B.)
+//   - A bookmark / deep link to `?w=<id>` opens that workspace directly,
+//     even across a fresh sign-in.
+//   - Refresh and browser back/forward Just Work.
+//
+// Why the query string and not the hash: the hash is already in use for
+// overlay routes (#profile, #migrate, …) in main.jsx. Putting the workspace
+// in `?w` keeps the two axes independent, so opening #profile over a workspace
+// doesn't drop the workspace from the URL. `/?w=<id>#profile` composes cleanly.
 //
 // Also fetches the active workspace's row when the id changes, so the rest
 // of the UI can reach for data.name without re-querying Supabase.
-//
-// "Workspace" replaces the prior "campaign" terminology (see ADR-0012). The
-// localStorage key was also renamed; readActiveKey() below transparently
-// migrates the legacy key on first read so existing testers don't bounce
-// back to the picker after the rename ships.
 // ============================================================================
 
 import { createContext, useContext, useEffect, useState } from 'react'
 import { getWorkspace } from './workspaces.js'
 
-const ACTIVE_KEY = 'mastermind:activeWorkspaceId'
-const LEGACY_ACTIVE_KEY = 'mastermind:activeCampaignId'
+const WORKSPACE_PARAM = 'w'
 
-// One-time migration shim: if the legacy key holds a value and the new key
-// is empty, copy the value across and delete the legacy key. Subsequent
-// reads see only the new key. Removed once we're confident no existing
-// tester still has the legacy key set in localStorage.
-function readActiveKey() {
+// Abandoned localStorage keys from the prior persist-and-auto-reopen model.
+// Cleared once on mount so they don't linger; nothing reads them anymore.
+const LEGACY_KEYS = ['mastermind:activeWorkspaceId', 'mastermind:activeCampaignId']
+
+function readWorkspaceFromUrl() {
   try {
-    const existing = localStorage.getItem(ACTIVE_KEY)
-    if (existing) return existing
-    const legacy = localStorage.getItem(LEGACY_ACTIVE_KEY)
-    if (legacy) {
-      localStorage.setItem(ACTIVE_KEY, legacy)
-      localStorage.removeItem(LEGACY_ACTIVE_KEY)
-      return legacy
-    }
-    return null
+    return new URLSearchParams(window.location.search).get(WORKSPACE_PARAM) || null
   } catch {
     return null
+  }
+}
+
+// Reflect the active id into `?w=…` while preserving the hash (overlay routes)
+// and any other query params. pushState (not replace) so browser back returns
+// to wherever the user came from — e.g. the picker.
+function writeWorkspaceToUrl(id) {
+  try {
+    const url = new URL(window.location.href)
+    if (id) url.searchParams.set(WORKSPACE_PARAM, id)
+    else url.searchParams.delete(WORKSPACE_PARAM)
+    if (url.href !== window.location.href) {
+      window.history.pushState(null, '', url.toString())
+    }
+  } catch {
+    // URL/history can throw in exotic environments — non-fatal; state still set.
   }
 }
 
 const WorkspaceContext = createContext(null)
 
 export function WorkspaceProvider({ children }) {
-  const [activeWorkspaceId, setActiveWorkspaceIdState] = useState(() => readActiveKey())
-
+  const [activeWorkspaceId, setActiveWorkspaceIdState] = useState(() => readWorkspaceFromUrl())
   const [activeWorkspace, setActiveWorkspace] = useState(null)
 
-  // Wrap the setter to also mirror into localStorage. Always remove the
-  // legacy key alongside the new one so a stale legacy entry can't shadow
-  // a cleared active workspace on next read.
+  // One-time cleanup of the abandoned localStorage keys.
+  useEffect(() => {
+    try { LEGACY_KEYS.forEach((k) => localStorage.removeItem(k)) } catch { /* ignore */ }
+  }, [])
+
+  // Public setter: update state AND reflect into the URL so the active
+  // workspace is bookmarkable and survives refresh. Signature unchanged, so
+  // all existing callers (picker, UserMenu) work as-is.
   const setActiveWorkspaceId = (id) => {
     setActiveWorkspaceIdState(id)
-    try {
-      if (id) localStorage.setItem(ACTIVE_KEY, id)
-      else localStorage.removeItem(ACTIVE_KEY)
-      localStorage.removeItem(LEGACY_ACTIVE_KEY)
-    } catch {
-      // localStorage can throw in private mode / quota-exceeded — ignore.
-    }
+    writeWorkspaceToUrl(id)
   }
+
+  // React to browser back/forward (popstate fires only for those, not for our
+  // own pushState calls). Re-read `?w` and re-sync state on a real change.
+  useEffect(() => {
+    const onPopState = () => {
+      const fromUrl = readWorkspaceFromUrl()
+      setActiveWorkspaceIdState((cur) => (cur === fromUrl ? cur : fromUrl))
+    }
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [])
 
   // Fetch the active workspace row whenever the id changes.
   useEffect(() => {
