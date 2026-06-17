@@ -15,8 +15,14 @@
 // the user had hovered any edge once.
 // ============================================================================
 
-import { useCallback } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { useCanvasUiStore } from '../store/useCanvasUiStore'
+
+// Dwell on a connection line this long before its two endpoint nodes light up.
+// An intent filter: without it, sweeping the cursor across a dense graph flashes
+// node highlights on every line the pointer grazes. Long enough to require a
+// deliberate pause, short enough to feel responsive once parked.
+const EDGE_HOVER_DELAY_MS = 200
 
 export function useNodeHoverSelection() {
   const setAnySelected = useCanvasUiStore((s) => s.setAnySelected)
@@ -40,13 +46,32 @@ export function useNodeHoverSelection() {
     setHoveredNodeId(null)
   }, [setAnyHovered, setHoveredNodeId])
 
+  // 400ms enter-delay so a glancing pass over a line doesn't flash its nodes.
+  // The pending timer lives in a ref; each enter cancels any prior timer, and
+  // leave cancels + clears immediately (snappy off, deliberate on).
+  const edgeHoverTimerRef = useRef(null)
+
   const onEdgeMouseEnter = useCallback((_event, edge) => {
-    setHoveredEdgeNodeIds(new Set([edge.source, edge.target]))
+    if (edgeHoverTimerRef.current) clearTimeout(edgeHoverTimerRef.current)
+    const ids = new Set([edge.source, edge.target])
+    edgeHoverTimerRef.current = setTimeout(() => {
+      edgeHoverTimerRef.current = null
+      setHoveredEdgeNodeIds(ids)
+    }, EDGE_HOVER_DELAY_MS)
   }, [setHoveredEdgeNodeIds])
 
   const onEdgeMouseLeave = useCallback(() => {
+    if (edgeHoverTimerRef.current) {
+      clearTimeout(edgeHoverTimerRef.current)
+      edgeHoverTimerRef.current = null
+    }
     setHoveredEdgeNodeIds(null)
   }, [setHoveredEdgeNodeIds])
+
+  // Clear a pending enter-timer if the component unmounts mid-dwell.
+  useEffect(() => () => {
+    if (edgeHoverTimerRef.current) clearTimeout(edgeHoverTimerRef.current)
+  }, [])
 
   return {
     onSelectionChange,

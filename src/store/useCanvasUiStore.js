@@ -226,15 +226,20 @@ export function selectIsEdgeHighlighted(nodeId) {
   return (state) => state.hoveredEdgeNodeIds?.has(nodeId) ?? false
 }
 
-// Helper for edges: returns true if either of the edge's endpoints is
-// currently "active" — hovered, selected, or part of a hovered edge.
-// Edges subscribe to this so they only re-render when their own active
-// status flips, not on every unrelated hover event.
+// Helper for edges: returns true if this edge should render "active" (full
+// opacity) rather than dimmed. Active when:
+//   - one of its endpoints is hovered (node hover lights all its edges), OR
+//   - it IS the hovered edge — BOTH endpoints are in hoveredEdgeNodeIds, OR
+//   - one of its endpoints is selected.
+// The edge-hover clause requires BOTH endpoints (not either) so that hovering
+// a line lights only THAT line, while the other lines coming off its two
+// endpoint nodes dim. Edges subscribe to this so they only re-render when
+// their own active status flips, not on every unrelated hover event.
 export function selectIsEdgeActive(sourceId, targetId) {
   return (state) => {
     const { hoveredNodeId, hoveredEdgeNodeIds, selectedNodeIds } = state
     if (hoveredNodeId === sourceId || hoveredNodeId === targetId) return true
-    if (hoveredEdgeNodeIds?.has(sourceId) || hoveredEdgeNodeIds?.has(targetId)) return true
+    if (hoveredEdgeNodeIds?.has(sourceId) && hoveredEdgeNodeIds?.has(targetId)) return true
     if (selectedNodeIds?.has(sourceId) || selectedNodeIds?.has(targetId)) return true
     return false
   }
