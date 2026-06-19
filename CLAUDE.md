@@ -59,6 +59,7 @@ Do not confuse visible salience with structural invariance. Recommendations shou
 |---|---|---|
 | Framework | React 18 + Vite | |
 | Canvas | React Flow v11.11.4 | both `reactflow` and `@reactflow/core` are installed; use `reactflow` |
+| Canvas → image | **html-to-image** | renders the React Flow viewport to a PNG for workspace auto-snapshots (`lib/workspaceSnapshot.js`) |
 | Styling | Tailwind CSS v3 | rem units throughout; `html { font-size: 100% }` |
 | Icons | **Phosphor Icons** (`@phosphor-icons/react`) | design doc says Lucide — **ignore that, we use Phosphor** |
 | Drag-to-reorder | `@dnd-kit/core`, `@dnd-kit/sortable`, `@dnd-kit/utilities` | used in the Inspector for bullets and images |
@@ -110,14 +111,30 @@ src/
     AuthContext.jsx                session + signIn/signUp/signOut context. signOut calls
                                    useUndoStore.clearAllForUser(userId) before Supabase clears the session
                                    so a different next user can't inherit prior undo history.
-    WorkspaceContext.jsx            active-workspace-id context; persists to localStorage
+    WorkspaceContext.jsx            active-workspace-id context (URL ?w=); also exposes
+                                   leaveWorkspace(nextId)/registerBeforeLeave(fn): App registers a
+                                   canvas-snapshot capture, run behind a "Saving changes…" spinner
+                                   overlay while the canvas is still mounted before navigating away.
+                                   UserMenu's Home + switcher route leaves through leaveWorkspace.
     ProfileContext.jsx             single source of truth for the signed-in user's public.profiles row
                                    (avatar_path, display_name, future user-level metadata). Loaded once
                                    per user, exposed via useProfile() with { profile, loading, error,
                                    updateProfile, refresh }. Mirrors AuthProvider / WorkspaceProvider.
     profile.js                     CRUD for the public.profiles row: getProfile, setAvatarPath,
                                    clearAvatar (nulls column + best-effort storage delete), setDisplayName.
-    workspaces.js                  CRUD for workspaces + listNodeTypes
+    workspaces.js                  CRUD for workspaces + listNodeTypes. listWorkspacesWithActivity()
+                                   calls the list_workspaces_with_activity() RPC (migration 011) →
+                                   each workspace + last_activity_at (true newest edit across content)
+                                   for the picker's "Last modified" sort.
+    canvasColor.js                 single source of truth for the canvas background color
+                                   (DEFAULT_CANVAS_COLOR #031a15 + getWorkspaceCanvasColor(workspace),
+                                   ready for per-workspace colors). Used by the snapshot background and
+                                   the picker's empty-state tile.
+    workspaceSnapshot.js           captureGraphSnapshot(nodes): renders the WHOLE React Flow graph (all
+                                   nodes, not just the viewport) to a PNG via html-to-image, for the
+                                   auto-generated fallback cover. App registers it as a before-leave hook.
+    workspaceSort.js               pure client-side workspace sort + localStorage persistence (3 single-
+                                   choice options); unit-tested in workspaceSort.test.js.
     nodes.js                       CRUD for nodes + node_sections; shape-marshaling. Includes
                                    buildDeleteCardSnapshot + restoreCardWithDependents for undo's delete-card
                                    round-trip.
@@ -221,7 +238,16 @@ src/
 
   components/
     Login.jsx                      email+password auth form
-    CampaignPicker.jsx             post-login landing; list/create/rename/delete workspaces
+    CampaignPicker.jsx             post-login landing; responsive GALLERY GRID of workspaces (open/
+                                   create/rename/delete + per-tile cover via "…" menu). Top row has a
+                                   "Sort by" control (left) + a New-workspace control (right) that
+                                   container-morphs from a secondary button into a "name your workspace"
+                                   frame. Wrapped in UploadImageProvider for cover uploads.
+    WorkspaceThumbnail.jsx         canonical workspace cover image; one place owns the render precedence
+                                   cover_image_url → snapshot_path → bare canvas color. Used by the picker
+                                   tiles (16:9) and the UserMenu switcher (circle).
+    WorkspaceSortMenu.jsx          picker sort dropdown: Alphabetical / Date created / Last modified
+                                   (single choice each). Pure presentation over lib/workspaceSort.js.
     UserAvatar.jsx                 circular profile button with dropdown (sign-out, etc.)
     UserMenu.jsx                   top-left breadcrumb chip + UserAvatar overlay on the canvas; the
                                    breadcrumb home button uses HoverReveal to expand circle→pill on hover
@@ -331,7 +357,7 @@ docs/
 |---|---|
 | `auth.users` | Supabase-managed; referenced by `workspaces.owner_id` and `profiles.id` |
 | `profiles` | one row per user — canonical home for app-level user metadata (`avatar_path`, `display_name`, `is_test_user`, future fields). Auto-created by an `auth.users` INSERT trigger; backfilled in migration 003. `is_test_user` added in migration 004; default flipped to `true` in migration 005 for the invite-only stage (revert before public launch). Gates whether PostHog loads for that user (ADR-0009) |
-| `workspaces` | one row per workspace; owned by a user |
+| `workspaces` | one row per workspace; owned by a user. `cover_image_url` = user-supplied custom cover (display `.full` path); `snapshot_path` = auto-generated canvas snapshot used as the fallback cover (migration 010). A workspace-specific `updated_at` trigger bumps only on name/description/cover changes, so snapshot writes don't count as "modified." `list_workspaces_with_activity()` (migration 011) returns each row + `last_activity_at` for the picker's "Last modified" sort. |
 | `node_types` | card types per user (built-in five + any custom); `is_system` flags the built-ins. Per-user scope was introduced in migration 001 — every workspace a user owns shares the same set of types. |
 | `nodes` | cards on the canvas (label, summary, avatar_url, position, type_id) |
 | `node_sections` | modular sections inside each card: `kind` ∈ `narrative` \| `hidden_lore` \| `dm_notes` \| `media` \| `custom`; `content` is JSONB |
@@ -737,6 +763,7 @@ Custom user-created types are persisted per-user as rows in the `node_types` tab
 - [x] **Behavioral analytics + session replay** — PostHog Cloud wired (per ADR-0009). Loads only when `profile.is_test_user === true` via dynamic import (separate Vite chunk; non-testers download zero bytes of `posthog-js`). 16 named events fire at action sites across `App.jsx`, `ConnectionsSection`, `TypePicker`, and `useUndoShortcuts`. `AuthContext.signOut` resets the session so it doesn't bleed across users on the same browser. Three safety guards (conditional load, try/catch on every public call, early bail) ensure non-testers see zero behavioral or performance impact. Password fields are protected by a `.ph-mask` class + PostHog's default `type=password` masking + the fact that the login screen renders pre-init. Migration 004 adds the `is_test_user` boolean column.
 - [x] **Altitude rail** — Left-edge instrument that reads navigation state (current zoom, threshold, dynamic minZoom, altitude) and writes back exactly one value (`thresholdGridGapMm`). Two visual states: ambient line at rest, expanded controls (icons + draggable thumb + label + bar-chevron marker) on hover. The thumb's vertical extent IS the hysteresis dead-band; dragging it retunes the Card↔Bead threshold and morphs the canvas in real time (App.jsx subscribes to `thresholdGridGapMm` and re-runs the shared `evaluateAltitude` helper). Highlight semantics differ by state — active reads as "threshold structure," rest reads as "current altitude" — so the rail never lies about which side of the dead-band the user is on. Hue-matched dark scrim behind the UI scales wider when active. See [ADR-0010 addendum (2026-05-15)](./docs/decisions/0010-zoom-progressive-disclosure.md).
 - [x] **Block-editor content migration (Phase 1)** — Card content is moving from fixed form fields to a BlockNote block editor (ADR-0016). Phase 1 ships the data migration only (not the editor UI yet): a pure converter (`migrateCardToBlocks`) turns each card's Summary / Story Notes / Hidden Lore / DM Notes / Image Section images into two new `node_sections` kinds — `card_view` (Summary + "Discoverable Lore") and `gm_only` ("Notes" = Hidden Lore + DM Notes merged, + Image Album + a live-reading Connections block). The `#migrate-blocks` one-shot tool (`MigrateBlocks.jsx`) runs it: dry-run preview by default, explicit apply that writes idempotently (only the two new kinds) then reads back and verifies zero loss. No DB migration needed (the `kind` column is unconstrained). **Connections are NOT copied into block content** — they stay first-class rows; the block reads them live. **Legacy section rows are never modified or deleted** — removing them is a future, separate tool + ADR gated on the new editor reading migrated data + manual review. No-loss is proven test-first (`migrateCardToBlocks.test.js`) and the verifier is proven to catch loss (`blockMigration.test.js`); real run migrated + verified all 108 cards in Erik's campaign, 0 failures.
+- [x] **Workspace picker overhaul** — CampaignPicker is now a responsive gallery grid. (1) **New-workspace control**: a secondary-button frame (top-right) that container-morphs (grows width + height) into a full-width "name your workspace" frame with the input + Cancel + Create materializing inside; sits in a fixed-height band so the grid never shifts. (2) **Custom covers**: per-tile Set/Change/Remove via the "…" menu, uploaded through `UploadImageModal` in the `workspace-cover` cropper mode (16:9, 1536×864) → `workspaceCoverPipeline` (thumb/full WebP), stored in `cover_image_url` (no migration; the column pre-existed). (3) **Auto-snapshot fallback cover**: on leaving a workspace, the WHOLE canvas graph is captured (html-to-image, all nodes) behind a "Saving changes…" spinner and stored in `snapshot_path` (migration 010 + a workspace-only `updated_at` trigger so snapshots don't count as edits). Render precedence cover → snapshot → bare canvas color (no more letter placeholder). Circular thumbnails added to the UserMenu workspace switcher (shared `WorkspaceThumbnail`). (4) **Sort**: Alphabetical / Date created / Last modified, client-side + localStorage; "Last modified" uses the real newest-edit timestamp from `list_workspaces_with_activity()` (migration 011). **Requires migrations 010 + 011.**
 
 ## What Is NOT Built (roadmap)
 
