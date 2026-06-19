@@ -18,7 +18,7 @@ import { SortableContext, useSortable, arrayMove, rectSortingStrategy } from '@d
 import { CSS } from '@dnd-kit/utilities'
 import { DotsSixVertical } from '@phosphor-icons/react'
 import { useImageUrl } from '../lib/useImageUrl'
-import { cardImagePipeline } from '../lib/imageStorage'
+import { contentImagePipeline } from '../lib/imageStorage'
 import { useLightbox } from './Lightbox'
 import { useUploadImage } from './UploadImageProvider'
 import SectionLabel from './SectionLabel'
@@ -78,9 +78,11 @@ export default function MediaSection({
     if (!workspaceId) return
     upload.open({
       mode: 'image-section',
-      pipeline: cardImagePipeline({ workspaceId, cardId, section: 'inspiration', slug }),
-      onSave: (path) => {
-        const entry = { path, alt: '', uploaded_at: new Date().toISOString() }
+      pipeline: contentImagePipeline({ workspaceId, cardId, section: 'inspiration', slug }),
+      // Content uploads resolve to a structured object carrying the display
+      // path plus the printable_* fields — spread it into the stored entry.
+      onSave: (result) => {
+        const entry = { ...result, alt: '', uploaded_at: new Date().toISOString() }
         const insertPosition = items.length
         onChange([...items, { id: crypto.randomUUID(), src: entry }])
         onAddItem?.({ item: entry, position: insertPosition })

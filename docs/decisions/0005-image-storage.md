@@ -305,3 +305,136 @@ privileges and resolves correctly.
 **Apply this pattern to any future Storage bucket whose ownership check
 needs to read a `public` table.** The naive inlined version reads as if
 it should work but doesn't.
+
+## Amendment (2026-06-18): tiered variants — UI-identity vs content/handout images, and the `printable` variant
+
+Section 3 above shipped exactly two variants for every image and explicitly
+flagged "adding a third variant later (e.g., `xl` at 4096px) is trivial."
+This amendment does that, and adds a *category* distinction the original ADR
+didn't have.
+
+### Why
+
+A tester, on first seeing image upload in the Inspector, said: *"Oh cool, so
+player handouts can be kept here."* That reframes some images as **artifacts**
+— handouts, maps, letters, clues — that a DM may want to **print or share**,
+not just view in-app. The original blanket cap (1920×1080 at crop time, then a
+1920px/0.8 `full` variant) throws away ~75% of a 300-DPI Letter-sized scan,
+which destroys that value. But storing *everything* at full resolution would
+bloat storage and risk bogging down the canvas and lightbox.
+
+Resolution: **tier the variants by purpose, and make the tier depend on the
+image's category.**
+
+### Two categories
+
+- **UI-identity images** — node thumbnail, profile avatar, future workspace
+  cover. Display-optimized only; no printable. Fixed crop output sizes
+  (thumbnail 560×448, avatar 512×512). These never need print resolution.
+- **Content/handout images** — Image Section + Image Album. Display variants
+  PLUS a high-resolution `printable` artifact.
+
+### Variant model
+
+| Variant | Format | Long-edge cap | Quality | Role | Paywall |
+|---|---|---|---|---|---|
+| `thumb` | WebP | 256px | 0.4 | grids, canvas | always free |
+| `full` | WebP | 1600px | 0.82 | lightbox / on-screen display | always free |
+| `printable` | **JPEG** (opaque) / **PNG** (real transparency) | **4096px** | 0.92 (JPEG; PNG lossless) | download / share / print | **future gate** |
+
+> **Update (2026-06-18b): transparency drives the whole format family.**
+> Originally only the `printable` switched on transparency while display
+> variants stayed WebP. WebP *does* preserve alpha, but a transparent upload
+> producing WebP display + PNG printable was surprising ("I pasted a
+> transparent image, why isn't it PNG?"). So the rule is now uniform per
+> source: a **transparent** source → **PNG** for `thumb`, `full`, AND
+> `printable`; an **opaque** source → **WebP** `thumb`/`full` + **JPEG**
+> `printable`. Consequence: `pathForVariant` swaps the display token
+> (full ↔ thumb) while **preserving the actual extension** (`.webp` or
+> `.png`) — it no longer hardcodes `.webp`. The printable path keeps its own
+> explicit, variable extension and is never derived by swap. Cost: transparent
+> images carry larger PNG display variants on the hot path, but transparent
+> assets are typically simple graphics (tokens, logos, overlays) that compress
+> well, so the trade is acceptable.
+
+- `full` dropped from 1920→1600px: with `printable` covering high-res needs,
+  the display tier can be smaller. Minor; affects new uploads only.
+- **`printable` is "printable quality," NOT an archival original.** It is a
+  crop and may be re-encoded at reduced quality. The name was chosen
+  deliberately over "master" (overstates fidelity) and "print-ready"
+  (overpromises DPI / color profile / bleed guarantees).
+- **4096px** comfortably exceeds A4/Letter at 300 DPI; a bounded cap keeps a
+  20 MP phone photo from ballooning storage for no print benefit.
+
+### Format selection: auto by transparency
+
+JPEG cannot represent transparency and softens crisp text/line edges; PNG is
+lossless but a 4096px *photo* as PNG is ~15× the size of JPEG. The reliable,
+frictionless signal is **transparency**, not subject matter (a scanned letter
+and a photo are both opaque — classifying "document vs photo" is fragile).
+
+- Source has real transparent pixels → **PNG**.
+- Otherwise → **JPEG** at ~0.92.
+
+Detection fast-paths on source MIME (a `image/jpeg` source can't carry alpha →
+skip the scan) and otherwise scans the decoded alpha channel. A manual
+"preserve as PNG (line-art/document)" override is a documented future option if
+text-softening complaints arise; not built now (avoids upload-time friction —
+data-entry friction is the product's #1 failure signal).
+
+### Storage path + JSONB shape — still no DB migration
+
+The path scheme gains a variable extension: `…{variant}.{ext}` where `ext`
+defaults to `webp` and the printable overrides it with `jpg`/`png`. Because the
+printable extension varies per image, **it cannot be derived from the `.full.webp`
+path by suffix swap** — so the printable path is stored **explicitly** on the
+content image's JSONB entry, alongside lightweight metadata for future storage /
+download-UI / paywall decisions:
+
+```jsonc
+{
+  "path": "c8a.../card/inspiration-...-castle.full.webp",   // display identity (unchanged)
+  "alt": "",
+  "uploaded_at": "2026-06-18T...Z",
+  "printable_path": "c8a.../card/inspiration-...-castle.printable.jpg",
+  "printable_format": "jpeg",      // 'jpeg' | 'png'
+  "printable_width": 4096,
+  "printable_height": 2731,
+  "printable_bytes": 1843200
+}
+```
+
+`path` stays the `.full.webp` display path, so all existing render sites,
+the lightbox, and marshaling are untouched. **Legacy entries lacking the
+`printable_*` fields render and delete correctly** — deletion collects
+full + thumb (+ printable only when present). UI-identity images store no
+printable at all.
+
+### Paywall-readiness (not built)
+
+Keeping `printable` as a **distinct named variant** (rather than enlarging
+`full`) is what makes a future subscription gate clean: a later tier can skip
+*generating* it at upload or skip *serving* it at download, with zero impact on
+`thumb`/`full`. Had we just enlarged `full`, gating later would require
+re-processing every image. No gate is implemented now; the architecture
+preserves the option.
+
+### Where this lives
+
+- [`src/lib/imageStorage.js`](../../src/lib/imageStorage.js): `DISPLAY_VARIANTS`
+  + printable constants; `uploadContentImage()` (display + printable);
+  `contentImagePipeline()`; transparency helpers (`hasAlphaInImageData`,
+  `canTypeHaveAlpha`, `imageHasAlpha`) and format helpers
+  (`selectPrintableFormat`, `printableExtension`, `printableMimeType`);
+  `collectImagePathsToDelete()` (legacy-safe). UI-identity images keep
+  `uploadCardImage()` / `cardImagePipeline()`.
+- Consumers: [`MediaSection.jsx`](../../src/components/MediaSection.jsx) and
+  [`ImageAlbumBlock.jsx`](../../src/components/editor/ImageAlbumBlock.jsx) now
+  use `contentImagePipeline` and spread the structured upload result into the
+  stored entry.
+- Pure helpers unit-tested in
+  [`imageStorage.test.js`](../../src/lib/imageStorage.test.js).
+
+The matching **cropper rewrite** (static image + movable crop box, and the
+per-mode output sizes that feed these variants) is tracked separately under
+Option B; this amendment covers the storage tier only.

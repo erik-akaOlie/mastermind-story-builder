@@ -7,13 +7,16 @@
 // BlockNote props are primitives only) — that IS the block's persisted content,
 // so editing it through editor.updateBlock flows into the zone's debounced save.
 //
-// Uploads go to workspace-media via the existing cardImagePipeline and are
-// stored as { path, alt, uploaded_at } — the same shape the legacy media used,
-// so signed-URL rendering and the lightbox work unchanged.
+// Uploads go to workspace-media via contentImagePipeline (display variants +
+// a high-res printable artifact) and are stored as
+// { path, alt, uploaded_at, printable_path, printable_format, printable_width,
+//   printable_height, printable_bytes }. Display rendering and the lightbox
+// read `path` and so work unchanged; legacy entries lacking printable_* fields
+// still render fine.
 // ============================================================================
 
 import { useImageUrl } from '../../lib/useImageUrl'
-import { cardImagePipeline } from '../../lib/imageStorage'
+import { contentImagePipeline } from '../../lib/imageStorage'
 import { useUploadImage } from '../UploadImageProvider'
 import { useLightbox } from '../Lightbox'
 import { useEditorContext } from './EditorContext.jsx'
@@ -62,8 +65,10 @@ export default function ImageAlbumView({ block, editor }) {
     if (!workspaceId) return
     upload.open({
       mode: 'image-section',
-      pipeline: cardImagePipeline({ workspaceId, cardId, section: 'inspiration', slug }),
-      onSave: (path) => setImages([...images, { path, alt: '', uploaded_at: new Date().toISOString() }]),
+      pipeline: contentImagePipeline({ workspaceId, cardId, section: 'inspiration', slug }),
+      // Content uploads resolve to a structured object (display path +
+      // printable_* fields) — spread it into the stored entry.
+      onSave: (result) => setImages([...images, { ...result, alt: '', uploaded_at: new Date().toISOString() }]),
     })
   }
 

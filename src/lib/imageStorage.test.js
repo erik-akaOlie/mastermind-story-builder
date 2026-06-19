@@ -17,6 +17,12 @@ import {
   pathForVariant,
   isBase64DataUri,
   isStoragePath,
+  hasAlphaInImageData,
+  canTypeHaveAlpha,
+  selectPrintableFormat,
+  printableExtension,
+  printableMimeType,
+  collectImagePathsToDelete,
 } from './imageStorage.js'
 
 describe('slugify', () => {
@@ -58,6 +64,127 @@ describe('buildImagePath', () => {
     })
     expect(path).toBe('c8a/strahd-uuid/avatar-1714247531000-strahd-von-zarovich.full.webp')
   })
+
+  it('defaults the extension to webp for display variants', () => {
+    const path = buildImagePath({
+      workspaceId: 'c8a', cardId: 'card', section: 'inspiration',
+      slug: 'castle', timestamp: 1714247612482, variant: 'thumb',
+    })
+    expect(path).toBe('c8a/card/inspiration-1714247612482-castle.thumb.webp')
+  })
+
+  it('honors an explicit ext for the printable variant (jpg / png)', () => {
+    const base = {
+      workspaceId: 'c8a', cardId: 'card', section: 'inspiration',
+      slug: 'castle', timestamp: 1714247612482, variant: 'printable',
+    }
+    expect(buildImagePath({ ...base, ext: 'jpg' }))
+      .toBe('c8a/card/inspiration-1714247612482-castle.printable.jpg')
+    expect(buildImagePath({ ...base, ext: 'png' }))
+      .toBe('c8a/card/inspiration-1714247612482-castle.printable.png')
+  })
+})
+
+// rgba(...counts) builds a flat RGBA byte array: pairs of [count, alpha]
+// produce `count` pixels each at the given alpha (rgb left at 0).
+function rgbaWithAlphas(...alphas) {
+  const out = []
+  for (const a of alphas) out.push(0, 0, 0, a)
+  return new Uint8ClampedArray(out)
+}
+
+describe('hasAlphaInImageData (transparency detection)', () => {
+  it('returns false when every pixel is fully opaque', () => {
+    expect(hasAlphaInImageData(rgbaWithAlphas(255, 255, 255))).toBe(false)
+  })
+
+  it('returns true when any pixel is non-opaque', () => {
+    expect(hasAlphaInImageData(rgbaWithAlphas(255, 255, 0))).toBe(true)
+    expect(hasAlphaInImageData(rgbaWithAlphas(254))).toBe(true)
+  })
+
+  it('returns false for empty / missing data', () => {
+    expect(hasAlphaInImageData(new Uint8ClampedArray([]))).toBe(false)
+    expect(hasAlphaInImageData(null)).toBe(false)
+    expect(hasAlphaInImageData(undefined)).toBe(false)
+  })
+})
+
+describe('canTypeHaveAlpha (scan fast-path)', () => {
+  it('returns false for types that cannot carry alpha', () => {
+    expect(canTypeHaveAlpha('image/jpeg')).toBe(false)
+    expect(canTypeHaveAlpha('image/jpg')).toBe(false)
+  })
+
+  it('returns true for alpha-capable types', () => {
+    expect(canTypeHaveAlpha('image/png')).toBe(true)
+    expect(canTypeHaveAlpha('image/webp')).toBe(true)
+    expect(canTypeHaveAlpha('image/gif')).toBe(true)
+  })
+
+  it('returns true (scan to be safe) for unknown / empty type', () => {
+    expect(canTypeHaveAlpha('')).toBe(true)
+    expect(canTypeHaveAlpha(undefined)).toBe(true)
+    expect(canTypeHaveAlpha(null)).toBe(true)
+  })
+})
+
+describe('printable format selection', () => {
+  it('selects PNG when transparent, JPEG when opaque', () => {
+    expect(selectPrintableFormat(true)).toBe('png')
+    expect(selectPrintableFormat(false)).toBe('jpeg')
+  })
+
+  it('maps format → file extension', () => {
+    expect(printableExtension('png')).toBe('png')
+    expect(printableExtension('jpeg')).toBe('jpg')
+  })
+
+  it('maps format → MIME type', () => {
+    expect(printableMimeType('png')).toBe('image/png')
+    expect(printableMimeType('jpeg')).toBe('image/jpeg')
+  })
+})
+
+describe('collectImagePathsToDelete', () => {
+  const full = 'c8a/card/inspiration-1-castle.full.webp'
+  const thumb = 'c8a/card/inspiration-1-castle.thumb.webp'
+
+  it('legacy / UI-identity string path → removes full + thumb', () => {
+    expect(collectImagePathsToDelete(full)).toEqual([full, thumb])
+  })
+
+  it('derives full + thumb even when handed the thumb path', () => {
+    expect(collectImagePathsToDelete(thumb)).toEqual([full, thumb])
+  })
+
+  it('content entry WITH printable → removes full + thumb + printable', () => {
+    const printable = 'c8a/card/inspiration-1-castle.printable.jpg'
+    expect(collectImagePathsToDelete({ path: full, printable_path: printable }))
+      .toEqual([full, thumb, printable])
+  })
+
+  it('content entry WITHOUT printable → removes full + thumb only (no break)', () => {
+    expect(collectImagePathsToDelete({ path: full })).toEqual([full, thumb])
+    expect(collectImagePathsToDelete({ path: full, printable_path: null })).toEqual([full, thumb])
+  })
+
+  it('transparent (PNG) entry → derives .png display variants + PNG printable', () => {
+    const fullPng = 'c8a/card/inspiration-1-logo.full.png'
+    const thumbPng = 'c8a/card/inspiration-1-logo.thumb.png'
+    const printablePng = 'c8a/card/inspiration-1-logo.printable.png'
+    expect(collectImagePathsToDelete({ path: fullPng, printable_path: printablePng }))
+      .toEqual([fullPng, thumbPng, printablePng])
+  })
+
+  it('returns nothing for garbage / empty input', () => {
+    expect(collectImagePathsToDelete(null)).toEqual([])
+    expect(collectImagePathsToDelete(undefined)).toEqual([])
+    expect(collectImagePathsToDelete('')).toEqual([])
+    expect(collectImagePathsToDelete({})).toEqual([])
+    expect(collectImagePathsToDelete({ printable_path: 'x.printable.png' }))
+      .toEqual(['x.printable.png'])
+  })
 })
 
 describe('pathForVariant', () => {
@@ -73,6 +200,20 @@ describe('pathForVariant', () => {
     expect(pathForVariant(thumb, 'full')).toBe(
       'c8a/strahd-uuid/avatar-1714247531000-strahd.full.webp'
     )
+  })
+
+  it('preserves a .png extension when swapping display variants (transparent images)', () => {
+    const full = 'c8a/card/inspiration-1-logo.full.png'
+    expect(pathForVariant(full, 'thumb')).toBe('c8a/card/inspiration-1-logo.thumb.png')
+    expect(pathForVariant('c8a/card/inspiration-1-logo.thumb.png', 'full'))
+      .toBe('c8a/card/inspiration-1-logo.full.png')
+  })
+
+  it('does NOT rewrite a printable path (explicit, variable extension)', () => {
+    expect(pathForVariant('c8a/card/inspiration-1-logo.printable.jpg', 'full'))
+      .toBe('c8a/card/inspiration-1-logo.printable.jpg')
+    expect(pathForVariant('c8a/card/inspiration-1-logo.printable.png', 'thumb'))
+      .toBe('c8a/card/inspiration-1-logo.printable.png')
   })
 
   it('returns null when given null', () => {
