@@ -149,36 +149,42 @@ They reorder relative to each other based on what #1 + #2 reveal.
 - **Size:** S (15–30 minutes — two manual actions, one commit to
   update docs).
 
-### Campaign thumbnail images
-- **Problem.** Campaigns are currently text-only on both surfaces where
-  users pick between them — the CampaignPicker home screen and the
-  UserMenu breadcrumb dropdown. As a tester or DM accumulates campaigns,
-  scanning by name alone is slower than scanning visually. The pattern
-  is well-trodden: every comparable tool (Notion, Roll20, Kanka) uses
-  campaign / workspace thumbnails for the same reason.
-- **Success.** Each campaign carries an optional thumbnail image. Two
-  render sites:
-  - **CampaignPicker** — thumbnail visible on each campaign card/tile;
-    "Edit thumbnail" affordance per campaign.
-  - **UserMenu breadcrumb dropdown** — small circular crop next to each
-    campaign name in the in-place switcher (the §7.6 surface).
-  Images upload via the existing UploadImageModal (reuse
-  `profile-avatar` cropper mode for 256×256 square — circular crop on
-  the dropdown is CSS-only). New `campaignThumbnailPipeline()` factory
-  in `imageStorage.js` mirroring `profileAvatarPipeline()`. New
-  `thumbnail_path` column on `campaigns` table via migration.
-- **Notes.** Architecture pattern from migration 003 (profile avatars)
-  carries directly. Storage bucket decision is settled by ADR-0012:
-  workspace-scoped assets go in `workspace-media` (not `card-media`,
-  which is deprecated, and not `profile-media`, which is user-scoped).
-  Use the exported `BUCKET_WORKSPACE` constant from `imageStorage.js`
-  rather than a string literal.
-- **Dependencies.** None — strictly additive.
-- **Sequencing.** Deliberately deferred from the 2026-05-16 session
-  after surfacing as a candidate alongside Zoom v2 / invites. Slot
-  alongside Zoom v2 or just after; should land before invites if
-  schedule allows.
-- **Size:** S+ (4-8 hours focused).
+### Workspace cover images
+- **Problem.** Workspaces were text-only on the surfaces where users
+  pick between them — the CampaignPicker home screen and the UserMenu
+  breadcrumb dropdown. As a DM accumulates workspaces, scanning by name
+  alone is slower than scanning visually. The pattern is well-trodden:
+  every comparable tool (Notion, Roll20, Kanka) uses cover/thumbnail
+  images for the same reason.
+- **Custom cover — SHIPPED (2026-06-19).** Each workspace carries an
+  optional custom cover. CampaignPicker tiles render `cover_image_url`
+  (the existing column — no migration was needed; the brief's
+  `thumbnail_path` note was stale) via `useImageUrl`, with a Set /
+  Change / Remove cover affordance in each tile's "…" menu. Uploads go
+  through the shared UploadImageModal in the `workspace-cover` cropper
+  mode (16:9, 1536×864) wired to `workspaceCoverPipeline()` in
+  `imageStorage.js` (thumb/full WebP, no printable; path
+  `{workspaceId}/cover/…`). Replace/remove cleans up the old variants
+  (modal `pipeline.delete` on replace; menu Remove deletes directly).
+- **Auto-snapshot default — TODO (next step).** When a workspace has no
+  custom cover (or the user removes one), the tile should fall back to
+  an auto-generated snapshot of the canvas (the knowledge graph),
+  crammed to fit; readability not required, just a reflection of
+  contents. Precedence: custom cover → auto-snapshot → letter
+  placeholder. Approach (confirmed 2026-06-19): the canvas only exists
+  while a workspace is open, so capture the snapshot in-app (e.g. on
+  leaving the workspace) and save it; needs (a) a canvas-to-image step
+  (React Flow viewport → image via a library such as html-to-image),
+  (b) a NEW column to store the snapshot path separately from the
+  custom cover, so removing a custom cover falls back automatically,
+  (c) capture trigger + fallback render. **Risk to spike first:** card
+  avatars load from signed URLs — some DOM-to-image tools taint the
+  canvas / drop cross-origin images; verify a ~30-min capture test
+  before committing.
+- **Notes.** Bucket is `workspace-media` (ADR-0012); use `BUCKET_WORKSPACE`.
+  The UserMenu breadcrumb dropdown thumbnail is a separate fast-follow
+  (reuse the proven cover render path).
+- **Size:** custom cover was M; auto-snapshot adds ~M + the spike.
 
 ### MigrateImages post-completion UX
 - **Problem.** [`src/components/MigrateImages.jsx`](./src/components/MigrateImages.jsx)

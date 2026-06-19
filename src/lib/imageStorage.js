@@ -97,6 +97,13 @@ export function buildImagePath({ workspaceId, cardId, section, slug, timestamp, 
   return `${workspaceId}/${cardId}/${section}-${timestamp}-${slug}.${variant}.${ext}`
 }
 
+// Storage path for a workspace cover image. Workspace-scoped (no card), so it
+// lives under `${workspaceId}/cover/`. Ends in `.full.webp` / `.thumb.webp` so
+// pathForVariant can swap the display token like any other UI-identity image.
+export function buildCoverPath({ workspaceId, timestamp, variant }) {
+  return `${workspaceId}/cover/cover-${timestamp}.${variant}.webp`
+}
+
 // Recognise a value as a base64 data URI (legacy storage shape).
 export function isBase64DataUri(value) {
   return typeof value === 'string' && value.startsWith('data:')
@@ -297,6 +304,24 @@ export async function uploadCardImageBlob({ workspaceId, cardId, section, slug, 
   return uploadCardImage({ workspaceId, cardId, section, slug, file: blob, timestamp })
 }
 
+// Upload a workspace cover: thumb + full WebP display variants (UI-identity,
+// no printable). Returns the .full display path to store in
+// workspaces.cover_image_url.
+export async function uploadWorkspaceCover({ workspaceId, file, timestamp = Date.now() }) {
+  const variants = await transcodeImage(file)
+  const paths = {}
+  for (const [variant, blob] of Object.entries(variants)) {
+    const path = buildCoverPath({ workspaceId, timestamp, variant })
+    const { error } = await supabase.storage.from(BUCKET_WORKSPACE).upload(path, blob, {
+      contentType: 'image/webp',
+      upsert: false,
+    })
+    if (error) throw error
+    paths[variant] = path
+  }
+  return paths.full
+}
+
 // Internal: PUT one blob to workspace-media. Throws on error.
 async function putWorkspaceObject(path, blob, contentType) {
   const { error } = await supabase.storage.from(BUCKET_WORKSPACE).upload(path, blob, {
@@ -481,6 +506,17 @@ export function cardImagePipeline({ workspaceId, cardId, section, slug }) {
 // entry OBJECT (not a bare path) — the caller spreads it into its stored JSONB
 // image entry. delete() accepts that same object so the printable is cleaned
 // up too.
+// Workspace cover images (CampaignPicker tiles): display variants only, like
+// card images, but workspace-scoped (no card). upload() resolves to the
+// .full.webp path stored in workspaces.cover_image_url.
+export function workspaceCoverPipeline({ workspaceId }) {
+  return {
+    upload: (blob)  => uploadWorkspaceCover({ workspaceId, file: blob }),
+    delete: (input) => deleteCardImage(input),
+    getUrl: (input) => getImageUrl(toDisplayPath(input), 'full', BUCKET_WORKSPACE),
+  }
+}
+
 export function contentImagePipeline({ workspaceId, cardId, section, slug }) {
   return {
     upload: (blob)  => uploadContentImage({ workspaceId, cardId, section, slug, file: blob }),

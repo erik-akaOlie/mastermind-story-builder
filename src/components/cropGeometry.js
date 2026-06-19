@@ -19,7 +19,7 @@
 // Per-mode output policy.
 export const THUMBNAIL_OUT = { w: 560, h: 448 }   // UI-identity, 5:4 (2× legacy 280×224)
 export const PROFILE_OUT   = { w: 512, h: 512 }   // UI-identity, 1:1 (2× legacy 256²)
-export const COVER_OUT     = { w: 1536, h: 864 }  // future workspace-cover, 16:9 (not wired yet)
+export const COVER_OUT     = { w: 1536, h: 864 }  // workspace-cover, 16:9
 
 // Content/handout long-edge cap. Matches PRINTABLE_MAX_EDGE in imageStorage.js
 // (kept independent so this module stays DOM/network-free). The cropper caps

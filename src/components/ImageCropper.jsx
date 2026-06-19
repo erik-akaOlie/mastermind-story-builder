@@ -12,7 +12,7 @@
 //                    the high-res `printable` variant (ADR-0005 amendment).
 //   thumbnail      — locked to 5:4; saved at exactly 560×448.
 //   profile-avatar — locked to 1:1; saved at exactly 512×512.
-//   workspace-cover— locked to 16:9 (reserved; not wired into the UI yet).
+//   workspace-cover— locked to 16:9; saved at exactly 1536×864.
 //
 // HANDLES: every mode has four corner handles. Free-aspect content mode also
 // gets four mid-edge handles (single-axis resize) since its ratio is flexible.

@@ -22,8 +22,8 @@ const isMac = typeof navigator !== 'undefined' &&
 const PASTE_KEY_LABEL = isMac ? 'Cmd+V' : 'Ctrl+V'
 
 export default function UploadImageModal({
-  // mode: 'image-section' | 'thumbnail' | 'profile-avatar' — drives the
-  // cropper's frame-shape and output-size behavior.
+  // mode: 'image-section' | 'thumbnail' | 'profile-avatar' | 'workspace-cover'
+  // — drives the cropper's frame-shape and output-size behavior.
   mode,
   // pipeline: { upload(blob) → path, delete(path) → void, getUrl(path) →
   // signedUrl }. Bind via cardImagePipeline() or profileAvatarPipeline()

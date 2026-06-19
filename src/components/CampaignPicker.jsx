@@ -21,11 +21,21 @@ import {
   Trash,
   WarningCircle,
   DotsThree,
+  Image as ImageIcon,
+  X,
 } from '@phosphor-icons/react'
 import { useWorkspace } from '../lib/WorkspaceContext.jsx'
 import { useImageUrl } from '../lib/useImageUrl.js'
 import { labelInitial } from '../utils/labelUtils.js'
 import UserAvatar from './UserAvatar.jsx'
+import { UploadImageProvider, useUploadImage } from './UploadImageProvider.jsx'
+import { workspaceCoverPipeline, deleteCardImage } from '../lib/imageStorage.js'
+import {
+  listWorkspaces,
+  createWorkspace,
+  updateWorkspace,
+  deleteWorkspace,
+} from '../lib/workspaces.js'
 
 // System CTA blue (Tailwind sky-600), per CLAUDE.md's hard rule that all
 // card-type-agnostic action buttons use this exact value. The Figma mockup
@@ -37,15 +47,20 @@ const CTA_COLOR = '#0284C7'
 // from this fixed width to 100% when it opens (auto width can't transition).
 // 8pt grid: 152 / 8 = 19.
 const NEW_BTN_WIDTH = 152
-import {
-  listWorkspaces,
-  createWorkspace,
-  updateWorkspace,
-  deleteWorkspace,
-} from '../lib/workspaces.js'
 
+// Public entry: wrap the picker in UploadImageProvider so per-tile cover
+// uploads can open the shared Upload Image modal (mirrors Profile.jsx).
 export default function CampaignPicker() {
+  return (
+    <UploadImageProvider>
+      <CampaignPickerInner />
+    </UploadImageProvider>
+  )
+}
+
+function CampaignPickerInner() {
   const { setActiveWorkspaceId } = useWorkspace()
+  const upload = useUploadImage()
 
   const [workspaces, setWorkspaces] = useState([])
   const [loading, setLoading] = useState(true)
@@ -142,6 +157,55 @@ export default function CampaignPicker() {
     setMenuOpenId(null)
     setRenamingId(c.id)
     setRenameValue(c.name)
+  }
+
+  // Open the shared Upload Image modal in workspace-cover mode (16:9). The
+  // modal handles all storage I/O via the injected pipeline, including
+  // deleting the previous cover's variants on replace. We only patch the
+  // cover_image_url column and refresh the list.
+  function openCoverModal(c) {
+    setMenuOpenId(null)
+    upload.open({
+      mode: 'workspace-cover',
+      pipeline: workspaceCoverPipeline({ workspaceId: c.id }),
+      existingImage: c.cover_image_url ?? undefined,
+      onSave: async (newPath) => {
+        try {
+          await updateWorkspace(c.id, { cover_image_url: newPath })
+          await refresh()
+        } catch (err) {
+          setError(err.message)
+        }
+      },
+      onRemove: async () => {
+        try {
+          await updateWorkspace(c.id, { cover_image_url: null })
+          await refresh()
+        } catch (err) {
+          setError(err.message)
+        }
+      },
+    })
+  }
+
+  // One-click cover removal straight from the menu (no modal). Null the column
+  // first so the tile falls back to its placeholder immediately, then
+  // best-effort delete the storage variants (orphan cleanup reaps any leftover).
+  async function removeCover(c) {
+    setMenuOpenId(null)
+    if (!c.cover_image_url) return
+    setError(null)
+    try {
+      await updateWorkspace(c.id, { cover_image_url: null })
+      await refresh()
+      try {
+        await deleteCardImage(c.cover_image_url)
+      } catch (err) {
+        console.error('Failed to delete old cover', err)
+      }
+    } catch (err) {
+      setError(err.message)
+    }
   }
 
   const isEmpty = !loading && workspaces.length === 0
@@ -278,6 +342,8 @@ export default function CampaignPicker() {
                 onCloseMenu={() => setMenuOpenId(null)}
                 onOpen={() => setActiveWorkspaceId(c.id)}
                 onStartRename={() => startRename(c)}
+                onSetCover={() => openCoverModal(c)}
+                onRemoveCover={() => removeCover(c)}
                 onDelete={() => {
                   setMenuOpenId(null)
                   handleDelete(c.id, c.name)
@@ -313,9 +379,12 @@ function WorkspaceTile({
   onCloseMenu,
   onOpen,
   onStartRename,
+  onSetCover,
+  onRemoveCover,
   onDelete,
 }) {
   const coverUrl = useImageUrl(c.cover_image_url, { variant: 'thumb' })
+  const hasCover = !!c.cover_image_url
 
   // Shared cover visual — used in both the clickable and rename states so the
   // tile doesn't visually jump when it flips into rename mode.
@@ -394,7 +463,23 @@ function WorkspaceTile({
             <>
               {/* Click-outside backdrop. */}
               <div className="fixed inset-0 z-10" onClick={onCloseMenu} />
-              <div className="absolute right-0 top-9 z-20 w-36 rounded-lg border border-gray-200 bg-white shadow-lg py-1">
+              <div className="absolute right-0 top-9 z-20 w-40 rounded-lg border border-gray-200 bg-white shadow-lg py-1">
+                <button
+                  onClick={onSetCover}
+                  className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  <ImageIcon size={14} weight="bold" />
+                  {hasCover ? 'Change cover' : 'Set cover'}
+                </button>
+                {hasCover && (
+                  <button
+                    onClick={onRemoveCover}
+                    className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                  >
+                    <X size={14} weight="bold" />
+                    Remove cover
+                  </button>
+                )}
                 <button
                   onClick={onStartRename}
                   className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
