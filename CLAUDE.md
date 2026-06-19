@@ -64,7 +64,7 @@ Do not confuse visible salience with structural invariance. Recommendations shou
 | Drag-to-reorder | `@dnd-kit/core`, `@dnd-kit/sortable`, `@dnd-kit/utilities` | used in the Inspector for bullets and images |
 | State management | Zustand v5 | Several focused in-memory stores under `src/store/` — see the File Map. All are caches over Supabase, not persistence layers. Workspace data lives in React state hydrated from Supabase. |
 | Auth + Database | **Supabase** (Postgres + Auth + RLS) | `@supabase/supabase-js` client; schema in `supabase/schema.sql` |
-| Image storage | **Supabase Storage** (`workspace-media` + `profile-media` buckets) | both private; clients request signed URLs per render. workspace-media holds card avatars + inspiration images (two variants per upload). profile-media holds user profile avatars (single 256×256 variant). See ADR-0005 (workspace-media) and migration 003 (profile-media). |
+| Image storage | **Supabase Storage** (`workspace-media` + `profile-media` buckets) | both private; clients request signed URLs per render. workspace-media holds card avatars + content images. **Content images get tiered variants** — `thumb`/`full` (WebP) for display + a high-res `printable` artifact (JPEG opaque / PNG transparent, ≤4096px); UI-identity images (node thumbnails) get `thumb`/`full` only. **Transparency drives the whole format family** (transparent → PNG everywhere). profile-media holds user profile avatars (single 256×256 variant). See ADR-0005 + its 2026-06-18 amendment (tiered variants), and migration 003 (profile-media). |
 | Behavioral analytics | **PostHog Cloud** (`posthog-js`) | session replay + named events, scoped to `is_test_user=true` users only. Loaded via dynamic import (Vite splits into its own chunk; non-testers never download it). See ADR-0009. |
 
 Firebase was previously installed but never wired; it has been uninstalled. Do not reintroduce.
@@ -124,12 +124,23 @@ src/
     connections.js                 CRUD for connections (edges)
     textNodes.js                   CRUD for text annotations; includes restoreTextNode for undo's delete-text
                                    round-trip.
-    imageStorage.js                Storage helpers for both image domains. Card images: transcode → two
-                                   WebP variants → upload to workspace-media. Profile avatars: single 256×256
-                                   WebP variant → upload to profile-media. getImageUrl(path, variant,
-                                   bucket) is bucket-aware. Two pipeline factories — cardImagePipeline()
-                                   and profileAvatarPipeline() — bundle {upload, delete, getUrl} so
-                                   UploadImageModal stays domain-agnostic.
+    imageStorage.js                Storage helpers for all image domains. UI-identity card images
+                                   (node thumbnail): thumb/full WebP → workspace-media (uploadCardImage,
+                                   cardImagePipeline). Content/handout images (Image Section + Album):
+                                   thumb/full display + a high-res `printable` artifact → workspace-media
+                                   (uploadContentImage, contentImagePipeline). Profile avatars: single
+                                   256×256 WebP → profile-media. Transparency is auto-detected (imageHasAlpha)
+                                   and drives format: transparent → PNG (display + printable), opaque → WebP
+                                   display + JPEG printable. pathForVariant swaps the display token while
+                                   preserving the .webp/.png ext; the printable path is stored explicitly.
+                                   getImageUrl(path, variant, bucket) is bucket-aware. Pure helpers
+                                   (hasAlphaInImageData, collectImagePathsToDelete, etc.) are unit-tested.
+    clipboardImage.js              Higher-fidelity paste resolver. On paste, gathers every image candidate
+                                   (clipboardData files/items, text/html data: URIs, navigator.clipboard.read())
+                                   inspects each for alpha + dimensions, and picks the best (prefer real
+                                   transparency, then resolution). Pure chooseBestImageCandidate is unit-tested.
+                                   Used by UploadImageModal so a paste keeps transparency when the clipboard
+                                   actually carries it (Photoshop "Copy" flattens; drag/file-pick preserves).
     useImageUrl.js                 hook resolving avatar/media values to renderable URLs (handles base64,
                                    external https, and Storage paths). Signature: useImageUrl(input,
                                    {variant, bucket}); a string second arg is treated as {variant} for
@@ -490,7 +501,13 @@ const flowPos = rfInstance.project({ x: event.clientX, y: event.clientY })
 >
 > **Deprecated bucket: `card-media`.** Retained only as a temporary rollback artifact from the 2026-05-18 campaign → workspace rename. **No new code should read from or write to `card-media`.** Its policies were dropped in migration 007; clients can't access it. Scheduled for permanent deletion after 1–2 weeks of stable usage of the new bucket (see BACKLOG: "Drop deprecated card-media bucket + helper function").
 
-Card avatars and inspiration images live in the **`workspace-media` Supabase Storage bucket**, not as base64 inside the database. Two variants per upload (`.thumb.webp` 256px / 40% q, `.full.webp` 1920px / 80% q), generated client-side via Canvas at upload time. The DB stores only the path string (avatars) or `{path, alt, uploaded_at}` object (inspiration entries) — see the React shape above.
+Card avatars and content images live in the **`workspace-media` Supabase Storage bucket**, not as base64 inside the database, generated client-side via Canvas at upload time. Per ADR-0005's **2026-06-18 amendment (tiered variants)**, the variant set depends on the image's category:
+
+- **UI-identity images** (node thumbnail): `thumb` (256px) + `full` (1600px) display variants only. WebP.
+- **Content/handout images** (Image Section + Album): the same `thumb`/`full` display variants **plus a high-res `printable` artifact** (≤4096px long edge) for download/print. Future paywall gates the printable variant only.
+- **Transparency drives the whole format family** (auto-detected via `imageHasAlpha`): a transparent source → **PNG** for all variants; an opaque source → **WebP** display + **JPEG** printable (~0.92).
+
+The DB stores the display path string (avatars) or, for content entries, `{path, alt, uploaded_at, printable_path, printable_format, printable_width, printable_height, printable_bytes}` (JSONB; no migration — `path` stays the `.full` display path so rendering is unchanged). `pathForVariant` swaps the display token (`full`↔`thumb`) while preserving the actual `.webp`/`.png` extension; the printable path has a variable `.jpg`/`.png` ext and is **stored explicitly, never derived**. `deleteCardImage` accepts a string (legacy/UI) or an entry object and removes all present variants (legacy-safe).
 
 - `src/lib/imageStorage.js` owns transcode + upload + delete. Exports `BUCKET_WORKSPACE` and `BUCKET_PROFILE` as the single source of truth for bucket names.
 - `src/lib/useImageUrl.js` is the hook every renderer uses; it accepts a value of any shape and returns either a signed URL, a base64 string passthrough, or null. Defaults to `BUCKET_WORKSPACE`.
@@ -506,8 +523,12 @@ User profile avatars live in a **separate `profile-media` Supabase Storage bucke
 - `src/lib/profile.js` is the data-access layer: `getProfile`, `setAvatarPath`, `clearAvatar`, `setDisplayName`. `clearAvatar` updates the DB column first, then best-effort deletes the storage object — the user-visible state is correct even if the storage delete fails (orphan-cleanup per ADR-0005 §7).
 - `src/lib/ProfileContext.jsx` is the shared store. One `getProfile()` per signed-in user, exposed via `useProfile() → { profile, loading, error, updateProfile, refresh }`. Profile.jsx and UserAvatar.jsx both subscribe so an avatar change on the Profile page propagates to the top-left chip immediately, without a reload.
 - **The `profile-media` bucket does NOT need a SECURITY DEFINER helper** because its RLS check is same-schema: `(storage.foldername(name))[1] = auth.uid()::text`. The cross-schema gymnastics that `workspace-media` needs only kick in when storage policies have to JOIN against tables in `public`. Profile-bucket policies live entirely against the path prefix and `auth.uid()` — pure storage, no cross-schema lookups.
-- The same `UploadImageModal` handles both card images and profile avatars. Domain switching is via the `pipeline` prop — built by `cardImagePipeline({...})` or `profileAvatarPipeline({...})` from `imageStorage.js`. The modal does not know what kind of image it is editing. New image domains in the future drop in by adding a third factory.
-- `ImageCropper` adds a `profile-avatar` mode alongside the existing `image-section` and `thumbnail` modes. Behavior is identical to thumbnail (image-corner handles, no frame reshape, cover-fit on entry, fixed-pixel save) but with a 256×256 square frame and 256×256 saved output.
+- The same `UploadImageModal` handles card images and profile avatars. Domain switching is via the `pipeline` prop — `cardImagePipeline` (UI-identity card), `contentImagePipeline` (content/handout, emits the printable + a structured entry object), or `profileAvatarPipeline`, all from `imageStorage.js`. The modal doesn't know the domain. Its **paste** path uses `clipboardImage.js`'s resolver to pick the highest-fidelity clipboard representation (preferring real transparency); it also supports **drag-and-drop** of a file (preserves alpha, like the file picker) and shows a non-blocking note when a pasted content image arrives flattened.
+- **`ImageCropper` uses a crop-box interaction model** (Option B rewrite, 2026-06-18): the image is drawn **static** (fit-contain) and the user **moves/resizes a crop box** over it — the inverse of the old "fixed frame, drag the image" model. All geometry is pure + unit-tested in [`src/components/cropGeometry.js`](src/components/cropGeometry.js).
+  - Per-mode output: `image-section` (content) = free aspect, source crop ≤4096px; `thumbnail` = 5:4 locked, 560×448; `profile-avatar` = 1:1 locked, 512×512.
+  - Handles: four corners every mode; **four mid-edge handles in free-aspect (content) mode only**. Modifiers (all modes): **Ctrl/Alt** scales from the box center, **Shift** locks the ratio while scaling (no-op in fixed-ratio modes).
+  - `computeCroppedBlob()` returns **PNG** (lossless) so the upload pipeline owns all final format/quality decisions — emitting JPEG here would flatten transparency before detection runs.
+- The **lightbox** ([`src/components/Lightbox.jsx`](src/components/Lightbox.jsx)) offers a compound **Download** control for content images — display version (shown image) vs. printable artifact — labeled with dimensions (and the printable's file size, from the stored metadata).
 
 ### Behavioral analytics (per ADR-0009, migration 004)
 
@@ -701,7 +722,7 @@ Custom user-created types are persisted per-user as rows in the `node_types` tab
 - [x] Dynamic icon visibility at extreme zoom-out (no feedback-loop flicker)
 - [x] Icon registry with keyword-based recommendations
 - [x] Position persistence on node drag-stop; text node resize persistence on mouseup
-- [x] **Image storage** in Supabase Storage with thumb + full WebP variants; client-side transcode at upload; signed-URL rendering. The Inspector's avatar + inspiration uploads write straight to Storage.
+- [x] **Image storage** in Supabase Storage; client-side transcode at upload; signed-URL rendering. **Tiered variants** (ADR-0005 2026-06-18 amendment): UI-identity images get `thumb`/`full` WebP; content/handout images additionally get a high-res `printable` artifact (≤4096px) for download/print. **Transparency auto-detected** and drives format (transparent → PNG family; opaque → WebP display + JPEG printable). **Crop-box cropper** (static image, movable/resizable box; corner + content-only edge handles; Ctrl/Alt center-scale, Shift ratio-lock; pure geometry unit-tested in `cropGeometry.js`). **Higher-fidelity paste resolver** + **drag-and-drop** upload (`clipboardImage.js`). **Lightbox compound download** (display vs printable, with sizes). The Inspector's avatar + content uploads write straight to Storage.
 - [x] **Shared lightbox** — clicking a card avatar (canvas or modal) or any inspiration tile opens the same overlay.
 - [x] **App.jsx refactor** — load lifecycle, edge geometry, hover/select, and spacebar pan all extracted into focused hooks under `src/hooks/`. Hover/select state moved into `useCanvasUiStore` so a hover event no longer re-renders every card.
 - [x] Z-index lift — hovered/selected cards rise above their neighbors via a `:has(.is-lifted)` rule.
