@@ -27,10 +27,12 @@ import {
 import { useWorkspace } from '../lib/WorkspaceContext.jsx'
 import UserAvatar from './UserAvatar.jsx'
 import WorkspaceThumbnail from './WorkspaceThumbnail.jsx'
+import WorkspaceSortMenu from './WorkspaceSortMenu.jsx'
+import { readSortId, writeSortId, sortWorkspaces } from '../lib/workspaceSort.js'
 import { UploadImageProvider, useUploadImage } from './UploadImageProvider.jsx'
 import { workspaceCoverPipeline, deleteCardImage } from '../lib/imageStorage.js'
 import {
-  listWorkspaces,
+  listWorkspacesWithActivity,
   createWorkspace,
   updateWorkspace,
   deleteWorkspace,
@@ -76,6 +78,13 @@ function CampaignPickerInner() {
   // open actions menu (one at a time)
   const [menuOpenId, setMenuOpenId] = useState(null)
 
+  // sort selection (client-side over the fetched rows; remembered in localStorage)
+  const [sortId, setSortId] = useState(readSortId)
+  function changeSort(id) {
+    setSortId(id)
+    writeSortId(id)
+  }
+
   // ref to focus the name field the moment the create control opens
   const newNameRef = useRef(null)
 
@@ -94,7 +103,7 @@ function CampaignPickerInner() {
   const refresh = useCallback(async () => {
     setError(null)
     try {
-      const rows = await listWorkspaces()
+      const rows = await listWorkspacesWithActivity()
       setWorkspaces(rows)
     } catch (err) {
       setError(err.message)
@@ -240,7 +249,21 @@ function CampaignPickerInner() {
             Closed, the shorter button sits centered in the band, leaving a
             little more air above the grid; open, the frame fills the band,
             leaving less — matching the Figma spacing. */}
-        <div className="relative h-14 mb-4">
+        {/* z-20 lifts the whole band (and the sort dropdown that overhangs into
+            the grid) above the tile grid below it. */}
+        <div className="relative z-20 h-14 mb-4">
+          {/* Sort control — left side, baseline-aligned to the BASE of the
+              New workspace button (its bottom edge). The closed button is a
+              40px pill centered in the 56px band, so its base sits ~6px above
+              the band bottom; bottom-1.5 + leading-none lands the sort text's
+              baseline on that line. Hidden while creating (the expanding name
+              frame sweeps across the row) and when there's nothing to sort. */}
+          {workspaces.length > 1 && !creating && (
+            <div className="absolute left-0 bottom-1.5">
+              <WorkspaceSortMenu sortId={sortId} onChange={changeSort} />
+            </div>
+          )}
+
           <form
             onSubmit={handleCreate}
             className="absolute right-0 top-1/2 -translate-y-1/2 overflow-hidden rounded-lg border bg-white shadow-sm"
@@ -325,7 +348,7 @@ function CampaignPickerInner() {
           <div className="px-6 py-12 text-center text-sm text-gray-500">Loading…</div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {workspaces.map((c) => (
+            {sortWorkspaces(workspaces, sortId).map((c) => (
               <WorkspaceTile
                 key={c.id}
                 workspace={c}

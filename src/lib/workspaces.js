@@ -43,6 +43,19 @@ export async function listWorkspaces() {
 }
 
 // ----------------------------------------------------------------------------
+// List workspaces enriched with last_activity_at — the newest edit across the
+// workspace and all its content (cards, sections, connections, text). Computed
+// server-side by the list_workspaces_with_activity() function (migration 011)
+// so the picker's "Last modified" sort reflects real edits without bumping the
+// workspace row on every keystroke. Callers sort client-side over the result.
+// ----------------------------------------------------------------------------
+export async function listWorkspacesWithActivity() {
+  const { data, error } = await supabase.rpc('list_workspaces_with_activity')
+  if (error) throw error
+  return data
+}
+
+// ----------------------------------------------------------------------------
 // Create a workspace. Types are NOT seeded here — they live at the user
 // level and are guaranteed by ensureBuiltinTypes() on app load.
 // ----------------------------------------------------------------------------

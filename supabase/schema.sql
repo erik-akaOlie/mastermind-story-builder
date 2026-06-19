@@ -345,3 +345,49 @@ create policy "Owner can delete text nodes in their workspaces"
     select 1 from public.workspaces c
     where c.id = text_nodes.workspace_id and c.owner_id = auth.uid()
   ));
+
+
+-- ============================================================================
+-- FUNCTION: list_workspaces_with_activity (migration 011)
+-- Returns every workspace the caller owns, enriched with last_activity_at —
+-- the newest edit across the workspace row and all its content (cards, card
+-- sections, connections, text annotations). Powers the CampaignPicker's
+-- "Last modified" sort without bumping the workspace row on every child edit.
+-- SECURITY INVOKER so the per-table RLS policies above apply to the caller.
+-- Defined here (after all content tables) so its subqueries resolve.
+-- ============================================================================
+create or replace function public.list_workspaces_with_activity()
+returns table (
+  id               uuid,
+  owner_id         uuid,
+  name             text,
+  description      text,
+  cover_image_url  text,
+  snapshot_path    text,
+  created_at       timestamptz,
+  updated_at       timestamptz,
+  last_activity_at timestamptz
+)
+language sql
+security invoker
+stable
+as $$
+  select
+    w.id, w.owner_id, w.name, w.description, w.cover_image_url, w.snapshot_path,
+    w.created_at, w.updated_at,
+    greatest(
+      w.updated_at,
+      coalesce((select max(n.updated_at) from public.nodes n
+                  where n.workspace_id = w.id), w.created_at),
+      coalesce((select max(s.updated_at) from public.node_sections s
+                  join public.nodes n2 on n2.id = s.node_id
+                  where n2.workspace_id = w.id), w.created_at),
+      coalesce((select max(c.created_at) from public.connections c
+                  where c.workspace_id = w.id), w.created_at),
+      coalesce((select max(t.updated_at) from public.text_nodes t
+                  where t.workspace_id = w.id), w.created_at)
+    ) as last_activity_at
+  from public.workspaces w
+  where w.owner_id = auth.uid()
+  order by last_activity_at desc;
+$$;
