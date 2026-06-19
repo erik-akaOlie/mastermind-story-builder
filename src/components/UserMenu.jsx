@@ -160,6 +160,7 @@ export default function UserMenu() {
                       <span className="flex items-center gap-3 min-w-0">
                         <WorkspaceThumbnail
                           workspace={c}
+                          variant="thumb"
                           className="w-10 h-10 rounded-full flex-shrink-0 ring-1 ring-black/5"
                         />
                         <span className="truncate">{c.name}</span>

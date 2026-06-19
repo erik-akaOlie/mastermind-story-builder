@@ -27,6 +27,11 @@ import { getWorkspace } from './workspaces.js'
 
 const WORKSPACE_PARAM = 'w'
 
+// Upper bound on the leave-workspace snapshot capture. If the capture hasn't
+// finished within this window, we navigate anyway so a slow/hung capture can
+// never trap the user on the "Saving changes…" spinner.
+const LEAVE_CAPTURE_TIMEOUT_MS = 10000
+
 // Abandoned localStorage keys from the prior persist-and-auto-reopen model.
 // Cleared once on mount so they don't linger; nothing reads them anymore.
 const LEGACY_KEYS = ['mastermind:activeWorkspaceId', 'mastermind:activeCampaignId']
@@ -96,10 +101,16 @@ export function WorkspaceProvider({ children }) {
     const handler = beforeLeaveRef.current
     if (current && current !== nextId && handler) {
       setLeaving(true)
+      // The handler captures + uploads a canvas snapshot. It must NEVER trap the
+      // user on the spinner: if it errors OR hangs (e.g. a stuck image render),
+      // we navigate anyway. Its own .catch keeps a late rejection from going
+      // unhandled while it finishes in the background.
+      const handlerDone = Promise.resolve()
+        .then(() => handler(current))
+        .catch((err) => console.error('beforeLeave handler failed', err))
+      const timeout = new Promise((resolve) => setTimeout(resolve, LEAVE_CAPTURE_TIMEOUT_MS))
       try {
-        await handler(current)
-      } catch (err) {
-        console.error('beforeLeave handler failed', err) // non-fatal: still navigate
+        await Promise.race([handlerDone, timeout])
       } finally {
         setLeaving(false)
       }

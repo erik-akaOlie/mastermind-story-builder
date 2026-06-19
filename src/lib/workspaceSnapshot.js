@@ -19,10 +19,11 @@ import { getRectOfNodes, getTransformForBounds } from 'reactflow'
 import { toPng } from 'html-to-image'
 import { DEFAULT_CANVAS_COLOR } from './canvasColor.js'
 
-// 16:9 to match the cover frame. Half the cover's 1536×864 — a tile only ever
-// renders the thumb variant, so a smaller source keeps capture fast.
-const SNAPSHOT_W = 768
-const SNAPSHOT_H = 432
+// 16:9 at the same resolution as a custom cover (1536×864), so the `full`
+// variant the picker tiles render is crisp. transcodeImage also derives a
+// 256px thumb for small contexts (the switcher circles).
+const SNAPSHOT_W = 1536
+const SNAPSHOT_H = 864
 
 // `backgroundColor` defaults to the global canvas color but is overridable so a
 // future per-workspace canvas color flows straight through (the viewport is
