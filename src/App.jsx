@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import ReactFlow, { Background, useNodesState, useEdgesState } from 'reactflow'
+import { captureGraphSnapshot } from './lib/workspaceSnapshot.js'
+import { uploadWorkspaceSnapshot, deleteCardImage } from './lib/imageStorage.js'
+import { getWorkspace, updateWorkspace } from './lib/workspaces.js'
 import { useTypeStore } from './store/useTypeStore'
 import FloatingEdge from './edges/FloatingEdge'
 import ContextMenu from './components/ContextMenu'
@@ -79,7 +82,7 @@ function writeInspectorMode(mode) {
 }
 
 export default function App() {
-  const { activeWorkspaceId } = useWorkspace()
+  const { activeWorkspaceId, registerBeforeLeave } = useWorkspace()
 
   // Type-id lookups live in useTypeStore (per-user, hydrated on load).
   // Read via useTypeStore.getState().idByKey inside callbacks.
@@ -117,6 +120,34 @@ export default function App() {
   // always reads the current array without stale-closure issues.
   const nodesRef = useRef(nodes)
   useEffect(() => { nodesRef.current = nodes }, [nodes])
+
+  // Auto-snapshot the canvas as the workspace's fallback cover. Registered as a
+  // "before leave" handler so WorkspaceContext runs it (behind a "Saving
+  // preview…" spinner) while the canvas is still mounted, before navigating
+  // away. Captures the WHOLE graph (all nodes), uploads it to snapshot_path, and
+  // cleans up the previous snapshot. Empty graphs and failures are no-ops — the
+  // tile just keeps its prior snapshot or the letter placeholder.
+  useEffect(() => {
+    return registerBeforeLeave(async (workspaceId) => {
+      if (!workspaceId) return
+      const dataUrl = await captureGraphSnapshot(nodesRef.current)
+      if (!dataUrl) return
+      const blob = await (await fetch(dataUrl)).blob()
+      let prevPath = null
+      try {
+        prevPath = (await getWorkspace(workspaceId))?.snapshot_path ?? null
+      } catch { /* non-fatal — skip cleanup of the unknown prior snapshot */ }
+      const newPath = await uploadWorkspaceSnapshot({ workspaceId, file: blob })
+      await updateWorkspace(workspaceId, { snapshot_path: newPath })
+      if (prevPath && prevPath !== newPath) {
+        try {
+          await deleteCardImage(prevPath)
+        } catch (err) {
+          console.error('Failed to delete old snapshot', err)
+        }
+      }
+    })
+  }, [registerBeforeLeave])
   // Edge mirror for callbacks that need fresh edges without re-binding
   // (quick-connect's window listeners read it for duplicate checks).
   const edgesRef = useRef(edges)

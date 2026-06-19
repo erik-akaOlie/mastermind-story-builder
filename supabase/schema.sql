@@ -36,16 +36,38 @@ create table public.workspaces (
   owner_id          uuid        not null references auth.users(id) on delete cascade,
   name              text        not null,
   description       text,
-  cover_image_url   text,
+  cover_image_url   text,        -- user-supplied custom cover (display .full path)
+  snapshot_path     text,        -- auto-generated canvas snapshot; fallback cover (migration 010)
   created_at        timestamptz not null default now(),
   updated_at        timestamptz not null default now()
 );
 
 create index workspaces_owner_id_idx on public.workspaces(owner_id);
 
+-- Workspaces get a dedicated updated_at trigger (not the shared set_updated_at)
+-- so the auto-generated canvas snapshot (snapshot_path), which regenerates on
+-- every leave, does NOT count as a user "modification" — otherwise the picker's
+-- "Last modified" sort would mean "last visited." Bump only on a user-facing
+-- field change; preserve the timestamp for snapshot-only writes. See migration 010.
+create or replace function public.workspaces_set_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.name            is distinct from old.name
+     or new.description     is distinct from old.description
+     or new.cover_image_url is distinct from old.cover_image_url then
+    new.updated_at = now();
+  else
+    new.updated_at = old.updated_at;
+  end if;
+  return new;
+end;
+$$;
+
 create trigger workspaces_set_updated_at
   before update on public.workspaces
-  for each row execute function public.set_updated_at();
+  for each row execute function public.workspaces_set_updated_at();
 
 alter table public.workspaces enable row level security;
 

@@ -22,6 +22,7 @@
     "@phosphor-icons/react": "^2.1.10",
     "@reactflow/core": "^11.11.4",
     "@supabase/supabase-js": "^2.104.0",
+    "html-to-image": "^1.11.13",
     "posthog-js": "^1.373.1",
     "prosemirror-state": "^1.4.4",
     "react": "^18.3.1",

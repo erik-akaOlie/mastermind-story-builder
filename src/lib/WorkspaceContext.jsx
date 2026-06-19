@@ -22,7 +22,7 @@
 // of the UI can reach for data.name without re-querying Supabase.
 // ============================================================================
 
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { getWorkspace } from './workspaces.js'
 
 const WORKSPACE_PARAM = 'w'
@@ -74,6 +74,40 @@ export function WorkspaceProvider({ children }) {
     writeWorkspaceToUrl(id)
   }
 
+  // ── Leave-the-workspace hook ──────────────────────────────────────────────
+  // A consumer (App) registers a "before leave" handler that captures the
+  // canvas snapshot. leaveWorkspace() runs it (behind a blocking spinner, since
+  // the capture needs the canvas still mounted) BEFORE switching away. Entering
+  // a workspace from the picker still uses setActiveWorkspaceId directly — no
+  // snapshot to take on the way in.
+  const activeIdRef = useRef(activeWorkspaceId)
+  useEffect(() => { activeIdRef.current = activeWorkspaceId }, [activeWorkspaceId])
+
+  const beforeLeaveRef = useRef(null)
+  const registerBeforeLeave = useCallback((fn) => {
+    beforeLeaveRef.current = fn
+    return () => { if (beforeLeaveRef.current === fn) beforeLeaveRef.current = null }
+  }, [])
+
+  const [leaving, setLeaving] = useState(false)
+
+  const leaveWorkspace = useCallback(async (nextId = null) => {
+    const current = activeIdRef.current
+    const handler = beforeLeaveRef.current
+    if (current && current !== nextId && handler) {
+      setLeaving(true)
+      try {
+        await handler(current)
+      } catch (err) {
+        console.error('beforeLeave handler failed', err) // non-fatal: still navigate
+      } finally {
+        setLeaving(false)
+      }
+    }
+    setActiveWorkspaceIdState(nextId)
+    writeWorkspaceToUrl(nextId)
+  }, [])
+
   // React to browser back/forward (popstate fires only for those, not for our
   // own pushState calls). Re-read `?w` and re-sync state on a real change.
   useEffect(() => {
@@ -104,8 +138,22 @@ export function WorkspaceProvider({ children }) {
   }, [activeWorkspaceId])
 
   return (
-    <WorkspaceContext.Provider value={{ activeWorkspaceId, activeWorkspace, setActiveWorkspaceId }}>
+    <WorkspaceContext.Provider
+      value={{
+        activeWorkspaceId,
+        activeWorkspace,
+        setActiveWorkspaceId,
+        leaveWorkspace,
+        registerBeforeLeave,
+      }}
+    >
       {children}
+      {leaving && (
+        <div className="fixed inset-0 z-[10000] bg-black/40 backdrop-blur-sm flex flex-col items-center justify-center gap-3">
+          <div className="w-10 h-10 rounded-full border-4 border-white/30 border-t-white animate-spin" />
+          <span className="text-white text-sm font-medium">Saving changes…</span>
+        </div>
+      )}
     </WorkspaceContext.Provider>
   )
 }

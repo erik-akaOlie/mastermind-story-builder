@@ -22,10 +22,11 @@ import { useWorkspace } from '../lib/WorkspaceContext.jsx'
 import { listWorkspaces } from '../lib/workspaces.js'
 import UserAvatar from './UserAvatar.jsx'
 import HoverReveal from './HoverReveal.jsx'
+import WorkspaceThumbnail from './WorkspaceThumbnail.jsx'
 
 export default function UserMenu() {
   const { user } = useAuth()
-  const { activeWorkspace, activeWorkspaceId, setActiveWorkspaceId } = useWorkspace()
+  const { activeWorkspace, activeWorkspaceId, leaveWorkspace } = useWorkspace()
 
   const [hovered, setHovered] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -73,7 +74,7 @@ export default function UserMenu() {
   const expanded = hovered || menuOpen
 
   const handlePickWorkspace = (id) => {
-    if (id !== activeWorkspaceId) setActiveWorkspaceId(id)
+    if (id !== activeWorkspaceId) leaveWorkspace(id) // capture snapshot of the one we're leaving
     close()
   }
 
@@ -94,7 +95,7 @@ export default function UserMenu() {
               supplies the gap, so a collapsed/zero-width reveal adds zero
               width and the circle stays a circle). */}
           <button
-            onClick={() => setActiveWorkspaceId(null)}
+            onClick={() => leaveWorkspace(null)}
             className="flex items-center justify-center text-gray-500 hover:text-gray-900 transition-colors whitespace-nowrap p-1.5"
             title="Home"
             aria-label="Go to home"
@@ -133,7 +134,7 @@ export default function UserMenu() {
         {menuOpen && (
           <div
             role="menu"
-            className="absolute top-full left-0 mt-2 w-64 bg-white rounded-lg shadow-lg border border-gray-200 py-1 text-sm z-50"
+            className="absolute top-full left-0 mt-2 w-72 bg-white rounded-lg shadow-lg border border-gray-200 py-1 text-sm z-50"
           >
             <div className="px-3 py-1.5 text-[0.6875rem] uppercase tracking-wide text-gray-500 border-b border-gray-100">
               Switch workspace
@@ -152,11 +153,17 @@ export default function UserMenu() {
                       key={c.id}
                       role="menuitem"
                       onClick={() => handlePickWorkspace(c.id)}
-                      className={`w-full text-left px-3 py-2 flex items-center justify-between gap-2 hover:bg-gray-50 ${
+                      className={`w-full text-left px-3 py-2.5 flex items-center justify-between gap-2 hover:bg-gray-50 ${
                         isActive ? 'bg-sky-50 text-sky-900' : 'text-gray-800'
                       }`}
                     >
-                      <span className="truncate">{c.name}</span>
+                      <span className="flex items-center gap-3 min-w-0">
+                        <WorkspaceThumbnail
+                          workspace={c}
+                          className="w-10 h-10 rounded-full flex-shrink-0 ring-1 ring-black/5"
+                        />
+                        <span className="truncate">{c.name}</span>
+                      </span>
                       {isActive && <Check size={14} weight="bold" className="text-sky-600 flex-shrink-0" />}
                     </button>
                   )

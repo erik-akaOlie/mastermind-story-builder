@@ -104,6 +104,12 @@ export function buildCoverPath({ workspaceId, timestamp, variant }) {
   return `${workspaceId}/cover/cover-${timestamp}.${variant}.webp`
 }
 
+// Storage path for a workspace's auto-generated canvas snapshot (the fallback
+// cover). Same shape as buildCoverPath but under `${workspaceId}/snapshot/`.
+export function buildSnapshotPath({ workspaceId, timestamp, variant }) {
+  return `${workspaceId}/snapshot/snapshot-${timestamp}.${variant}.webp`
+}
+
 // Recognise a value as a base64 data URI (legacy storage shape).
 export function isBase64DataUri(value) {
   return typeof value === 'string' && value.startsWith('data:')
@@ -312,6 +318,24 @@ export async function uploadWorkspaceCover({ workspaceId, file, timestamp = Date
   const paths = {}
   for (const [variant, blob] of Object.entries(variants)) {
     const path = buildCoverPath({ workspaceId, timestamp, variant })
+    const { error } = await supabase.storage.from(BUCKET_WORKSPACE).upload(path, blob, {
+      contentType: 'image/webp',
+      upsert: false,
+    })
+    if (error) throw error
+    paths[variant] = path
+  }
+  return paths.full
+}
+
+// Upload an auto-generated canvas snapshot (the fallback cover). Same transcode
+// + variant treatment as a cover, but under the snapshot/ prefix. Returns the
+// .full display path to store in workspaces.snapshot_path.
+export async function uploadWorkspaceSnapshot({ workspaceId, file, timestamp = Date.now() }) {
+  const variants = await transcodeImage(file)
+  const paths = {}
+  for (const [variant, blob] of Object.entries(variants)) {
+    const path = buildSnapshotPath({ workspaceId, timestamp, variant })
     const { error } = await supabase.storage.from(BUCKET_WORKSPACE).upload(path, blob, {
       contentType: 'image/webp',
       upsert: false,

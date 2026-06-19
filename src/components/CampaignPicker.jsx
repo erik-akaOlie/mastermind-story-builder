@@ -25,9 +25,8 @@ import {
   X,
 } from '@phosphor-icons/react'
 import { useWorkspace } from '../lib/WorkspaceContext.jsx'
-import { useImageUrl } from '../lib/useImageUrl.js'
-import { labelInitial } from '../utils/labelUtils.js'
 import UserAvatar from './UserAvatar.jsx'
+import WorkspaceThumbnail from './WorkspaceThumbnail.jsx'
 import { UploadImageProvider, useUploadImage } from './UploadImageProvider.jsx'
 import { workspaceCoverPipeline, deleteCardImage } from '../lib/imageStorage.js'
 import {
@@ -383,27 +382,12 @@ function WorkspaceTile({
   onRemoveCover,
   onDelete,
 }) {
-  const coverUrl = useImageUrl(c.cover_image_url, { variant: 'thumb' })
+  // hasCover gates the "Set cover" vs "Change cover" / "Remove cover" menu
+  // items (a snapshot is not a user-supplied cover). The thumbnail itself —
+  // cover → snapshot → canvas color — is owned by WorkspaceThumbnail; rendered
+  // in both the clickable and rename states so the tile doesn't jump on rename.
   const hasCover = !!c.cover_image_url
-
-  // Shared cover visual — used in both the clickable and rename states so the
-  // tile doesn't visually jump when it flips into rename mode.
-  const cover = (
-    <div className="aspect-video w-full bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center overflow-hidden">
-      {coverUrl ? (
-        <img
-          src={coverUrl}
-          alt=""
-          className="w-full h-full object-cover"
-          draggable={false}
-        />
-      ) : (
-        <span className="text-5xl font-semibold text-gray-300 select-none">
-          {labelInitial(c.name)}
-        </span>
-      )}
-    </div>
-  )
+  const cover = <WorkspaceThumbnail workspace={c} className="aspect-video w-full" />
 
   return (
     <div className="group relative rounded-2xl border border-gray-200 bg-white overflow-hidden shadow-sm hover:shadow-md transition-shadow">
