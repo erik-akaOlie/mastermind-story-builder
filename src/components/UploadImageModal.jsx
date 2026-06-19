@@ -14,6 +14,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import ImageCropper from './ImageCropper'
+import { pasteHasImage, resolveBestPastedImage } from '../lib/clipboardImage'
 
 // OS-aware paste hint label
 const isMac = typeof navigator !== 'undefined' &&
@@ -55,6 +56,15 @@ export default function UploadImageModal({
   // where the user is already looking). Cleared on any user action that
   // supersedes the previous attempt (pick / paste / remove / save retry).
   const [errorMessage,    setErrorMessage]    = useState(null)
+  // pasteFlattenedAlpha: a pasted content image arrived with no transparency on
+  // ANY clipboard representation (the source app flattened it — common on
+  // Windows). Surfaces a non-blocking hint to drag/Add the PNG instead. Cleared
+  // on any fresh source (file pick / new paste / remove).
+  const [pasteFlattenedAlpha, setPasteFlattenedAlpha] = useState(false)
+  // dragActive: a file is being dragged over the drop zone (drives the
+  // highlight). Drag-dropping a file preserves transparency (raw file bytes),
+  // same as the file picker.
+  const [dragActive, setDragActive] = useState(false)
   const fileInputRef = useRef(null)
   const cropperRef   = useRef(null)
   // Note: the ImageCropper handles its own object URL lifecycle for the
@@ -97,29 +107,37 @@ export default function UploadImageModal({
   // Document-level paste listener using the capture phase so we run before
   // any focused input's own paste handler. We only preventDefault when we
   // actually take an image, so text-only pastes flow through normally.
+  //
+  // Rather than blindly taking the paste event's first image (often a
+  // white-matted bitmap on Windows), we resolve the highest-fidelity candidate
+  // across all clipboard representations — preferring one with real
+  // transparency. See lib/clipboardImage.js. If none has alpha, we surface a
+  // non-blocking note so the user knows to drag/Add a transparent PNG instead.
   useEffect(() => {
     const onPaste = (e) => {
-      const items = e.clipboardData?.items
-      if (!items) return
-      for (const item of items) {
-        if (item.kind === 'file' && item.type.startsWith('image/')) {
-          const file = item.getAsFile()
-          if (file) {
-            e.preventDefault()
-            setImageBlob(file)
-            setHasNewSource(true)
-            // If the user had clicked Remove, supplying a new image
-            // overrides that intent — they're now replacing.
-            setPendingRemoval(false)
-            setErrorMessage(null)
-            return // first image only — multi-image clipboards take the first silently
-          }
+      if (!pasteHasImage(e)) return // leave text-only pastes alone
+      e.preventDefault()
+      ;(async () => {
+        try {
+          const result = await resolveBestPastedImage(e)
+          if (!result) return
+          setImageBlob(result.blob)
+          setHasNewSource(true)
+          // If the user had clicked Remove, supplying a new image overrides
+          // that intent — they're now replacing.
+          setPendingRemoval(false)
+          setErrorMessage(null)
+          // Only meaningful for content images, which keep a printable: warn
+          // when the clipboard handed us no transparency at all.
+          setPasteFlattenedAlpha(mode === 'image-section' && !result.anyAlpha)
+        } catch (err) {
+          console.error('Paste resolve failed', err)
         }
-      }
+      })()
     }
     document.addEventListener('paste', onPaste, { capture: true })
     return () => document.removeEventListener('paste', onPaste, { capture: true })
-  }, [])
+  }, [mode])
 
   // Esc closes — capture phase + stopImmediatePropagation so the
   // Inspector's own window-level Esc handler doesn't also fire and close
@@ -135,15 +153,48 @@ export default function UploadImageModal({
     return () => window.removeEventListener('keydown', onKey, { capture: true })
   }, [onClose])
 
+  // While the modal is open, swallow drag/drop at the window level so the
+  // browser never navigates away to a dropped image (its default behavior).
+  // The drop zone's own onDrop handles the actual load.
+  useEffect(() => {
+    const prevent = (e) => e.preventDefault()
+    window.addEventListener('dragover', prevent)
+    window.addEventListener('drop', prevent)
+    return () => {
+      window.removeEventListener('dragover', prevent)
+      window.removeEventListener('drop', prevent)
+    }
+  }, [])
+
+  const acceptImageFile = (file) => {
+    if (!file || !file.type.startsWith('image/')) return
+    setImageBlob(file)
+    setHasNewSource(true)
+    setPendingRemoval(false)
+    setErrorMessage(null)
+    setPasteFlattenedAlpha(false) // file source (pick/drop) preserves alpha
+  }
+
   const handleFilePick = (e) => {
     const file = e.target.files?.[0]
     e.target.value = ''
-    if (file && file.type.startsWith('image/')) {
-      setImageBlob(file)
-      setHasNewSource(true)
-      setPendingRemoval(false)
-      setErrorMessage(null)
-    }
+    acceptImageFile(file)
+  }
+
+  const handleDrop = (e) => {
+    e.preventDefault()
+    setDragActive(false)
+    acceptImageFile(e.dataTransfer?.files?.[0])
+  }
+  const handleDragOver = (e) => {
+    e.preventDefault()
+    if (!dragActive) setDragActive(true)
+  }
+  const handleDragLeave = (e) => {
+    // Only clear when the pointer actually leaves the drop zone, not when it
+    // crosses onto a child element.
+    if (e.currentTarget.contains(e.relatedTarget)) return
+    setDragActive(false)
   }
 
   // Remove flow: clears the cropper to the empty state and marks the
@@ -157,6 +208,7 @@ export default function UploadImageModal({
     setHasNewSource(false)
     setPendingRemoval(true)
     setErrorMessage(null)
+    setPasteFlattenedAlpha(false)
   }
 
   const handleSave = async () => {
@@ -192,11 +244,13 @@ export default function UploadImageModal({
     }
     setUploading(true)
     try {
-      // Per ADR-0007: cropper produces the final cropped Blob (size
-      // depends on mode — capped at 1920×1080 for image-section,
-      // exactly 280×224 for thumbnail, exactly 256×256 for
-      // profile-avatar). pipeline.upload handles transcoding and
-      // bucket-specific path construction for that domain.
+      // Per ADR-0007: cropper produces the final cropped Blob as PNG
+      // (lossless; size depends on mode — content is the source crop up to
+      // 4096px long edge, thumbnail 560×448, profile-avatar 512×512).
+      // pipeline.upload handles transcoding (incl. the printable variant for
+      // content) and bucket-specific path construction. It resolves to a
+      // bare path string for UI-identity images, or a structured entry
+      // object for content images — onSave handles whichever it gets.
       const croppedBlob = await cropperRef.current.computeCroppedBlob()
       const newPath = await pipeline.upload(croppedBlob)
       onSave(newPath)
@@ -260,10 +314,16 @@ export default function UploadImageModal({
             </button>
           </div>
 
-          {/* Canvas area — empty state OR image preview (chunk 1: natural size) */}
+          {/* Canvas area — empty state OR image preview. Also the drag-and-drop
+              zone: dropping a file preserves transparency (raw bytes). */}
           <div
-            className="m-4 border border-gray-300 rounded relative flex items-center justify-center overflow-hidden bg-white"
+            className={`m-4 border rounded relative flex items-center justify-center overflow-hidden bg-white transition-colors ${
+              dragActive ? 'border-sky-500 ring-2 ring-sky-300' : 'border-gray-300'
+            }`}
             style={{ minHeight: '32rem' }}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
           >
             <input
               ref={fileInputRef}
@@ -284,17 +344,20 @@ export default function UploadImageModal({
                 <div className="w-8 h-8 rounded-full border-2 border-gray-300 border-t-gray-500 animate-spin" />
               </div>
             ) : (
-              <div className="flex flex-col items-center gap-4 text-gray-700">
+              <div className="flex flex-col items-center gap-4 text-gray-700 pointer-events-none">
                 <p className="text-base">
-                  <span className="font-bold">{PASTE_KEY_LABEL}</span> to paste an image
+                  <span className="font-bold">{PASTE_KEY_LABEL}</span> to paste, or drag an image here
                 </p>
                 <p className="text-gray-500 text-sm select-none">— or —</p>
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded font-semibold transition-colors"
+                  className="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded font-semibold transition-colors pointer-events-auto"
                 >
                   Select a file from computer
                 </button>
+                <p className="text-gray-400 text-xs select-none max-w-xs text-center">
+                  Tip: drag or select a file to keep transparency — pasting from some apps flattens it.
+                </p>
               </div>
             )}
           </div>
@@ -307,6 +370,15 @@ export default function UploadImageModal({
               className="mx-4 mb-3 px-3 py-2 bg-red-50 border border-red-200 rounded text-sm text-red-700"
             >
               {errorMessage}
+            </div>
+          )}
+
+          {/* Non-blocking transparency hint — a pasted content image had no
+              transparency on any clipboard representation. */}
+          {pasteFlattenedAlpha && (
+            <div className="mx-4 mb-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded text-sm text-amber-800">
+              This pasted image has no transparency — the clipboard flattened it.
+              To keep a transparent PNG, drag the file in or use the file picker.
             </div>
           )}
 
