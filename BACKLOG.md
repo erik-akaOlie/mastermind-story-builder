@@ -304,39 +304,29 @@ They reorder relative to each other based on what #1 + #2 reveal.
 > within the band reflects current sequencing intent, but is reviewed
 > sprint-by-sprint.
 
-### Edge-hover dual-node expansion (Bead View) — ⭐ Erik-flagged head-of-list (2026-06-16)
-- **Priority.** Erik flagged this **head-of-list** on 2026-06-16; final ranking
-  settled at the next sprint review. Logged here so it isn't forgotten.
-- **Problem.** Hovering a connection line should reveal *both* nodes it connects.
-  In Card View this already works (the two cards brighten + lift). In **Bead View**
-  (zoomed out, nodes are circles) the two endpoints stay beads — the user can't
-  read either end of the relationship without zooming all the way in. Erik's spec
-  for #6 is explicit: *regardless of mode, the connected nodes display as cards,
-  become 100% opaque, and scale up when zoomed way out.*
-- **Why it was split out.** The canvas assumes **only one node can be expanded
-  into a card at a time** — a single shared "expanded node" record drives the
-  edge-routing, the viewport-clamping, and the grow animation. Edge-hover needs
-  *two* expanded at once, which means generalizing that whole subsystem. Part A
-  (shipped 2026-06-16) delivered the low-risk half: edge-hover node highlight
-  (opacity + lift) in both views, a 200ms dwell delay, and "only the hovered line
-  stays bright" edge-dimming. This item is the deferred Part B.
-- **Success.** In Bead View, dwelling on a connection line (200ms) expands **both**
-  endpoint beads into full readable cards at threshold size — 100% opaque, lifted,
-  scaled up — with the hovered line re-routing to both expanded card rectangles and
-  the other lines off both nodes dimmed. Collapses back to beads on mouse-leave.
-  No regression to single-node hover-expand, the clamp/drift behavior, or edge
-  routing.
-- **Notes.** Generalize the single-expanded-node machinery to multiple:
-  `useCanvasUiStore.expandedNode` (single record) → a keyed collection;
-  `CampaignNode.isExpanded` gains the edge-highlight trigger; each expanded node
-  publishes its own record (no shared-slot stomping); `useEdgeGeometry.formOf`
-  looks up per-node; App's `currentlyExpandedId` / `fireExpandMorph` handle a set.
-  This is the highest-risk canvas code (clamp / drift / counter-scale + edge
-  re-routing) — needs careful browser testing across the morph. Tied to
-  [ADR-0010](./docs/decisions/0010-zoom-progressive-disclosure.md). The Part A/B
-  split + the architecture reasoning were worked out in the 2026-06-16 session.
-- **Dependencies.** None hard. Builds on Part A (shipped).
-- **Size:** M.
+### Edge-hover dual-node expansion (Bead View) — ✅ SHIPPED 2026-06-22
+- **Status.** **Shipped** in `d717b34` (2026-06-22), browser-verified by Erik.
+  Part A (highlight-only) shipped earlier in `d360640` (2026-06-16). Dwelling on
+  a connection line (200ms) in Bead View now expands **both** endpoint beads into
+  full readable cards, the hovered line re-routes to both, other lines dim, and it
+  collapses back on mouse-leave. The single-expanded-node machinery was
+  generalized to a keyed `expandedNodes` map; the interaction was stabilized with
+  a frozen-geometry edge-hover **session** that owns deactivation (so the
+  re-routing line / a card sliding under the cursor can't end it); and geometry
+  fidelity was fixed (screen-constant dot declustering + orientation-preserving
+  card repulsion). Full architecture in the CLAUDE.md "What Is Built" entry. Tied
+  to [ADR-0010](./docs/decisions/0010-zoom-progressive-disclosure.md).
+- **Deferred follow-ups (future-compatible, NOT built).** Reopen only with
+  evidence:
+  - *Pass 2 — custom activation/arbitration.* A nearest-edge picker with a
+    zoom-adaptive screen-space hit corridor + "ambiguous = no activation," built
+    only if dense-graph activation proves too hard in practice. The session's
+    `beginEdgeSession` seam + the single "ignore other edges while active" guard
+    in `useEdgeHoverSession.js` are the designed plug-in points — no session
+    rewrite needed.
+  - *Click-to-pin.* Lock two cards open for persistent relationship inspection
+    (vs. transient hover-peek). The session model was structured to accept a
+    future `pinnedEdgeId` without redoing the hover system.
 
 ### Behavioral analytics + session replay (PostHog)
 - **Problem.** Erik plans to invite ~5–10 DMs to start using the product
