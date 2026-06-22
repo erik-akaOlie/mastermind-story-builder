@@ -131,6 +131,11 @@ export default function App() {
   useEffect(() => {
     return registerBeforeLeave(async (workspaceId) => {
       if (!workspaceId) return
+      // Commit the open Inspector's pending edits while we're STILL on this
+      // workspace, so its flushed save + undo entries scope to the correct
+      // (outgoing) workspace. Idempotent (committedRef), so the
+      // activeWorkspaceId-change effect below won't re-emit it.
+      inspectorCommitRef.current?.()
       const dataUrl = await captureGraphSnapshot(nodesRef.current)
       if (!dataUrl) return
       const blob = await (await fetch(dataUrl)).blob()
@@ -215,6 +220,21 @@ export default function App() {
   // can't run the async delete pipeline twice for the same card.
   const deletingRef = useRef(null)
   if (deletingRef.current === null) deletingRef.current = new Set()
+
+  // Close the Inspector when the active workspace changes. Without this, a
+  // node editor opened in the previous workspace lingers over the new one,
+  // showing (and saving against) a stale node. We commit first so any pending
+  // edits flush — commitSession is idempotent (committedRef), so this is a
+  // no-op when the leave-handler above already committed on the normal switch
+  // path; it's the catch-all for the browser back/forward path, which bypasses
+  // that handler. The prevRef gate keeps it from running on initial mount.
+  const prevWorkspaceForInspectorRef = useRef(activeWorkspaceId)
+  useEffect(() => {
+    if (prevWorkspaceForInspectorRef.current === activeWorkspaceId) return
+    prevWorkspaceForInspectorRef.current = activeWorkspaceId
+    inspectorCommitRef.current?.()
+    setInspectorNode(null)
+  }, [activeWorkspaceId])
 
   useEdgeGeometry({ nodes, edges, setNodes, setEdges })
 
