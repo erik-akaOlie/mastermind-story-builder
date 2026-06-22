@@ -61,8 +61,16 @@ export function getNodeBorderIntersection(node, targetPoint) {
 // getNodeSpreadBorderPoints below.
 //
 // connections: [{ id: edgeId, targetCenter: {x, y} }]
+// minGap / cornerPad: minimum dot-center spacing and corner inset, in CANVAS
+//   units. Default to the static MIN_GAP / CORNER_PAD (fine at zoom ≈ 1), but
+//   callers that route a node painted at a different on-screen scale than its
+//   canvas extent — chiefly the Bead View hover-expanded card, whose canvas
+//   footprint balloons as you zoom out — must pass screen-constant values
+//   (desired_screen_px / zoom). Otherwise the fixed canvas gap shrinks to a
+//   few on-screen px and aligned dots visually stack. Mirrors the circular
+//   (bead) spreader, which is already screen-constant.
 // Returns:     { [edgeId]: {x, y} }  — canvas-absolute coordinates
-export function getSpreadBorderPoints(cx, cy, w, h, connections) {
+export function getSpreadBorderPoints(cx, cy, w, h, connections, minGap = MIN_GAP, cornerPad = CORNER_PAD) {
   if (connections.length === 0) return {}
 
   const left   = cx - w / 2
@@ -101,8 +109,8 @@ export function getSpreadBorderPoints(cx, cy, w, h, connections) {
     const isVertical = side === 'left' || side === 'right'
     const fixedCoord  = side === 'left' ? left : side === 'right' ? right
                       : side === 'top'  ? top  : bottom
-    const rangeMin = (isVertical ? top  : left)  + CORNER_PAD
-    const rangeMax = (isVertical ? bottom : right) - CORNER_PAD
+    const rangeMin = (isVertical ? top  : left)  + cornerPad
+    const rangeMax = (isVertical ? bottom : right) - cornerPad
 
     if (points.length === 1) {
       const p = points[0]
@@ -126,7 +134,7 @@ export function getSpreadBorderPoints(cx, cy, w, h, connections) {
     // Check if any adjacent pair needs spreading
     let needsSpread = false
     for (let i = 1; i < naturalPos.length; i++) {
-      if (naturalPos[i] - naturalPos[i - 1] < MIN_GAP) {
+      if (naturalPos[i] - naturalPos[i - 1] < minGap) {
         needsSpread = true
         break
       }
@@ -138,7 +146,7 @@ export function getSpreadBorderPoints(cx, cy, w, h, connections) {
       finalPos = naturalPos.map(p => Math.max(rangeMin, Math.min(rangeMax, p)))
     } else {
       const n = points.length
-      const totalSpan = MIN_GAP * (n - 1)
+      const totalSpan = minGap * (n - 1)
       const rangeLen  = rangeMax - rangeMin
 
       if (totalSpan >= rangeLen) {
@@ -153,7 +161,7 @@ export function getSpreadBorderPoints(cx, cy, w, h, connections) {
         let start = naturalCenter - totalSpan / 2
         // Clamp so the group fits within [rangeMin, rangeMax]
         start = Math.max(rangeMin, Math.min(rangeMax - totalSpan, start))
-        finalPos = points.map((_, i) => start + i * MIN_GAP)
+        finalPos = points.map((_, i) => start + i * minGap)
       }
     }
 
@@ -171,14 +179,15 @@ export function getSpreadBorderPoints(cx, cy, w, h, connections) {
 // delegates to getSpreadBorderPoints. Keeps the existing card-mode callsite
 // terse while Chunk D's expanded-card branch uses the raw five-arg form
 // with synthetic dimensions and the clamped center.
-export function getNodeSpreadBorderPoints(node, connections) {
+export function getNodeSpreadBorderPoints(node, connections, minGap, cornerPad) {
   const w = node.width || NODE_WIDTH
   const h = node.height || NODE_HEIGHT
   return getSpreadBorderPoints(
     node.position.x + w / 2,
     node.position.y + h / 2,
     w, h,
-    connections
+    connections,
+    minGap, cornerPad
   )
 }
 

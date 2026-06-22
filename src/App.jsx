@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import ReactFlow, { Background, useNodesState, useEdgesState } from 'reactflow'
 import { captureGraphSnapshot } from './lib/workspaceSnapshot.js'
 import { uploadWorkspaceSnapshot, deleteCardImage } from './lib/imageStorage.js'
@@ -35,6 +35,7 @@ import { useSpacebarPan } from './hooks/useSpacebarPan'
 import { useWorkspaceData } from './hooks/useWorkspaceData'
 import { useEdgeGeometry } from './hooks/useEdgeGeometry'
 import { useNodeHoverSelection } from './hooks/useNodeHoverSelection'
+import { useEdgeHoverSession } from './hooks/useEdgeHoverSession'
 import { useUndoShortcuts } from './hooks/useUndoShortcuts'
 import { useCustomMarquee } from './hooks/useCustomMarquee'
 import { useReducedMotion } from './hooks/useReducedMotion'
@@ -235,9 +236,12 @@ export default function App() {
     onSelectionChange,
     onNodeMouseEnter,
     onNodeMouseLeave,
-    onEdgeMouseEnter,
-    onEdgeMouseLeave,
   } = useNodeHoverSelection()
+
+  // Edge hover drives the stabilized dual-expand "session" (Part B.1): React
+  // Flow activates, the session owns persistence + deactivation so the moving
+  // line / a card sliding under the cursor can't end the interaction.
+  const { onEdgeMouseEnter, onEdgeMouseLeave } = useEdgeHoverSession({ rfInstanceRef, edgesRef })
 
   // Ctrl+Z / Ctrl+Shift+Z (Cmd on macOS, Ctrl+Y also accepted on Windows).
   // The hook captures nodes/edges/setters in a ref so the keydown listener
@@ -317,18 +321,30 @@ export default function App() {
   // (expanding to card). They run independently so multiple ids can be
   // in-flight at once (rare; happens when hover moves directly from one
   // bead to another).
-  const altitudeForExpand    = useCanvasUiStore((s) => s.altitude)
-  const hoveredNodeIdForExp  = useCanvasUiStore((s) => s.hoveredNodeId)
+  const altitudeForExpand     = useCanvasUiStore((s) => s.altitude)
+  const hoveredNodeIdForExp   = useCanvasUiStore((s) => s.hoveredNodeId)
   const selectedNodeIdsForExp = useCanvasUiStore((s) => s.selectedNodeIds)
-  let currentlyExpandedId = null
-  if (altitudeForExpand === 'beadView') {
-    if (hoveredNodeIdForExp) currentlyExpandedId = hoveredNodeIdForExp
-    else if (selectedNodeIdsForExp.size === 1) {
-      // Single-select case: grab the lone id without mutating
-      for (const id of selectedNodeIdsForExp) { currentlyExpandedId = id; break }
+  const hoveredEdgeNodeIdsForExp = useCanvasUiStore((s) => s.hoveredEdgeNodeIds)
+  // The SET of nodes currently expanded in Bead View. Union of three triggers,
+  // mirroring CampaignNode.isExpanded exactly: hover-expand (the hovered node),
+  // single-select expand (the lone selected node, only when nothing is
+  // hovered), and edge-hover expand (BOTH endpoints of the dwelled connection
+  // line). More than one id can be present — the dual-expand case is the two
+  // endpoints of a hovered edge.
+  const currentlyExpandedIds = useMemo(() => {
+    const ids = new Set()
+    if (altitudeForExpand === 'beadView') {
+      if (hoveredNodeIdForExp) ids.add(hoveredNodeIdForExp)
+      else if (selectedNodeIdsForExp.size === 1) {
+        for (const id of selectedNodeIdsForExp) { ids.add(id); break }
+      }
+      if (hoveredEdgeNodeIdsForExp) {
+        for (const id of hoveredEdgeNodeIdsForExp) ids.add(id)
+      }
     }
-  }
-  const prevExpandedIdRef    = useRef(null)
+    return ids
+  }, [altitudeForExpand, hoveredNodeIdForExp, selectedNodeIdsForExp, hoveredEdgeNodeIdsForExp])
+  const prevExpandedIdsRef   = useRef(new Set())
   const expandMorphTimersRef = useRef(new Map())
   const fireExpandMorph = useCallback((id) => {
     if (!id) return
@@ -357,13 +373,16 @@ export default function App() {
     expandMorphTimersRef.current.set(id, { outTimer, inTimer: null })
   }, [reducedMotion])
   useEffect(() => {
-    const prev = prevExpandedIdRef.current
-    const cur  = currentlyExpandedId
-    if (prev === cur) return
-    prevExpandedIdRef.current = cur
-    if (prev) fireExpandMorph(prev)
-    if (cur)  fireExpandMorph(cur)
-  }, [currentlyExpandedId, fireExpandMorph])
+    const prev = prevExpandedIdsRef.current
+    const cur  = currentlyExpandedIds
+    // Fire the two-phase line-fade morph for every id that just ENTERED or
+    // LEFT the expanded set — each transition animates the lines attached to
+    // that node through its bead↔card change. Independent per id, so two
+    // endpoints expanding (or collapsing) together both animate cleanly.
+    for (const id of cur)  { if (!prev.has(id)) fireExpandMorph(id) }
+    for (const id of prev) { if (!cur.has(id))  fireExpandMorph(id) }
+    prevExpandedIdsRef.current = cur
+  }, [currentlyExpandedIds, fireExpandMorph])
 
   // ── Persist node position on drag end ────────────────────────────────────
   // Per-node start positions captured at drag start drive (a) the 4px-jitter

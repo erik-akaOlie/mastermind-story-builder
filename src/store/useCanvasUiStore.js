@@ -102,15 +102,17 @@ export const useCanvasUiStore = create((set) => ({
   // Default = DEFAULT_MIN_ZOOM (0.5) until the first computeMinZoom run.
   dynamicMinZoom: 0.5,
 
-  // Expanded-node visual state (per ADR-0010 / Chunk D). Only one node can be
-  // expanded at a time (hover or single-select in Bead View), so a single
-  // record suffices instead of a Map. Published by the expanded CampaignNode
-  // each render; consumed by useEdgeGeometry to route the expanded node's
-  // edges to the card's rectangular perimeter at its CLAMPED visible center
-  // instead of the bead's circular perimeter at the true canvas center.
+  // Expanded-node visual state (per ADR-0010 / Chunk D; generalized to a
+  // keyed collection for edge-hover dual-expand, Part B). MORE THAN ONE node
+  // can be expanded at once: a single-select / hover expands one, but dwelling
+  // on a connection line in Bead View expands BOTH of its endpoint nodes. So
+  // this is a Map<nodeId, record> rather than a single slot. Each expanded
+  // CampaignNode publishes (and clears) ITS OWN entry by id, so two nodes
+  // never contend for one slot. Consumed by useEdgeGeometry, which routes each
+  // expanded node's edges to its card's rectangular perimeter at the CLAMPED
+  // visible center instead of the bead's circular perimeter at the true center.
   //
-  // Fields:
-  //   id                 — the node's id, or null when nothing is expanded
+  // Per-entry fields:
   //   centerX/Y          — canvas-units. The bead's true center plus the
   //                        canvas-unit equivalent of the screen-px clamp
   //                        offset (clampDx/zoom, clampDy/zoom). Pure visual
@@ -126,7 +128,7 @@ export const useCanvasUiStore = create((set) => ({
   //                        needs both the visible size AND the box size to
   //                        invert the container's transform when computing
   //                        dot CSS local positions.
-  expandedNode: null,
+  expandedNodes: new Map(),
 
   // Current React Flow viewport state — written by App.jsx's onMove handler
   // (the same one that drives the altitude trigger). Stored here because
@@ -170,21 +172,33 @@ export const useCanvasUiStore = create((set) => ({
         ? {}
         : { currentPanX: x, currentPanY: y }
     ),
-  // Equality guard compares each field — a no-op write (same id + same
-  // visual position) returns {} so subscribers don't see spurious updates
-  // when CampaignNode publishes the expanded record on every render.
-  setExpandedNode: (rec) =>
+  // Upsert/clear ONE node's expanded record by id. rec === null removes that
+  // id's entry. Always produces a NEW Map on a real change so Zustand's
+  // reference-equality check notifies subscribers (useEdgeGeometry). The
+  // per-entry equality guard returns {} for a no-op write (same id + same
+  // visual geometry) so subscribers don't see spurious updates when
+  // CampaignNode republishes its record on every render. Because each node
+  // only ever touches its OWN key, clearing one expanded node can never wipe
+  // another's geometry.
+  setExpandedNode: (id, rec) =>
     set((state) => {
-      const cur = state.expandedNode
-      if (rec === null && cur === null) return {}
-      if (rec && cur &&
-          cur.id === rec.id &&
-          cur.centerX === rec.centerX && cur.centerY === rec.centerY &&
-          cur.width === rec.width && cur.height === rec.height &&
-          cur.boxWidth === rec.boxWidth && cur.boxHeight === rec.boxHeight) {
+      const cur = state.expandedNodes
+      if (rec == null) {
+        if (!cur.has(id)) return {}
+        const next = new Map(cur)
+        next.delete(id)
+        return { expandedNodes: next }
+      }
+      const prev = cur.get(id)
+      if (prev &&
+          prev.centerX === rec.centerX && prev.centerY === rec.centerY &&
+          prev.width === rec.width && prev.height === rec.height &&
+          prev.boxWidth === rec.boxWidth && prev.boxHeight === rec.boxHeight) {
         return {}
       }
-      return { expandedNode: rec }
+      const next = new Map(cur)
+      next.set(id, rec)
+      return { expandedNodes: next }
     }),
   // Per-node morph signal API.
   //   setNodeMorphPhase(id, phase) — phase is 'out' | 'in' | null

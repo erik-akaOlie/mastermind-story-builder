@@ -86,6 +86,43 @@ export const MIN_CIRCLE_POINT_GAP_PX = 4
 // back in 75–150ms.
 export const MORPH_DURATION_MS = 150
 
+// ── Edge-hover session (Part B.1 stabilization) ───────────────────────────
+// Constants for the stable "edge-hover session" that owns Bead View dual-
+// expand persistence (see useEdgeHoverSession.js). All tunable; Erik tunes
+// these by feel in the browser. Grouped here so there's one home for them.
+
+// Dwell on a connection line this long (ms) before it activates a session.
+// An intent filter so a glancing pass over a line doesn't pop its cards.
+// (Was EDGE_HOVER_DELAY_MS, local to useNodeHoverSelection in Part A.)
+export const EDGE_ACTIVATION_DWELL_MS = 200
+
+// Half-width (screen px) of the frozen corridor that keeps a session alive.
+// Screen-space constant — unlike React Flow's native interaction band, which
+// is set in canvas units and therefore shrinks on screen as you zoom out.
+export const EDGE_SESSION_HIT_WIDTH_PX = 24
+
+// Padding (screen px) added around each expanded card rectangle when testing
+// whether the cursor is still inside the session's alive region, so the very
+// edge of a card isn't a hair-trigger exit.
+export const EDGE_SESSION_CARD_PAD_PX = 8
+
+// Grace period (ms) after the cursor leaves the alive region before the
+// session collapses — absorbs normal hand jitter without feeling sticky.
+export const EDGE_SESSION_EXIT_GRACE_MS = 150
+
+// Pairwise card-repulsion padding, as a fraction of card width: when two
+// beads expand into cards close enough to overlap, each is nudged visually so
+// a gap of this × card-width opens between them. ~10% of a standard card per
+// Erik's spec. Purely presentational — never touches node.position.
+export const REPEL_PAD_FRACTION = 0.10
+
+// React Flow per-edge `interactionWidth` (canvas units) — the invisible band
+// that ACTIVATES edge hover. Modest bump above RF's default of 20 to make
+// thin lines easier to target, especially zoomed out. First-pass aid only:
+// widening helps activation but can worsen wrong-edge activation in dense
+// graphs, so keep it modest and revisit (Pass 2 = nearest-edge arbitration).
+export const EDGE_INTERACTION_WIDTH = 40
+
 // 1 CSS pixel = 1/96 inch (per the CSS spec). 25.4 mm per inch.
 const CSS_PX_PER_MM = 96 / 25.4
 

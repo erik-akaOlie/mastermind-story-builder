@@ -38,9 +38,9 @@ export function useEdgeGeometry({ nodes, edges, setNodes, setEdges }) {
   // from useCanvasUiStore (App.jsx's onMove handler mirrors zoom there)
   // because this hook runs at the App level, outside the <ReactFlow>
   // context, so it can't call React Flow's own viewport hooks.
-  const altitude     = useCanvasUiStore((s) => s.altitude)
-  const zoom         = useCanvasUiStore((s) => s.currentZoom)
-  const expandedNode = useCanvasUiStore((s) => s.expandedNode)
+  const altitude      = useCanvasUiStore((s) => s.altitude)
+  const zoom          = useCanvasUiStore((s) => s.currentZoom)
+  const expandedNodes = useCanvasUiStore((s) => s.expandedNodes)
   const isBead = altitude === 'beadView'
 
   useEffect(() => {
@@ -59,8 +59,9 @@ export function useEdgeGeometry({ nodes, edges, setNodes, setEdges }) {
     // aim (because the OTHER node aims at THIS node's visible center).
     const beadHalf = BEAD_DIAMETER_PX / 2
     const formOf = (node) => {
-      if (expandedNode?.id === node.id) {
-        return { kind: 'expanded', rect: expandedNode }
+      const rec = expandedNodes.get(node.id)
+      if (rec) {
+        return { kind: 'expanded', rect: rec }
       }
       if (isBead) return { kind: 'bead' }
       return { kind: 'card' }
@@ -87,6 +88,18 @@ export function useEdgeGeometry({ nodes, edges, setNodes, setEdges }) {
       nodeConnections[edge.target].push({ id: edge.id, targetCenter: sourceCenter })
     })
 
+    // Screen-constant dot spacing for the RECTANGULAR spreaders (card +
+    // expanded card), mirroring the circular bead spreader: a fixed canvas
+    // gap shrinks on screen as you zoom out, so aligned dots visually stack.
+    // Convert the same screen-px target the bead branch uses (dot diameter +
+    // edge padding) into canvas units via 1/zoom.
+    const dotMinGapCanvas = zoom > 0
+      ? (CONNECTION_DOT_SCREEN_PX + MIN_CIRCLE_POINT_GAP_PX) / zoom
+      : (CONNECTION_DOT_SCREEN_PX + MIN_CIRCLE_POINT_GAP_PX)
+    const dotCornerPadCanvas = zoom > 0
+      ? CONNECTION_DOT_SCREEN_PX / zoom
+      : CONNECTION_DOT_SCREEN_PX
+
     const allBorderPoints = {}
     nodes.forEach((node) => {
       const conns = nodeConnections[node.id] || []
@@ -107,10 +120,13 @@ export function useEdgeGeometry({ nodes, edges, setNodes, setEdges }) {
         allBorderPoints[node.id] = getSpreadBorderPoints(
           form.rect.centerX, form.rect.centerY,
           form.rect.width, form.rect.height,
-          conns
+          conns,
+          dotMinGapCanvas, dotCornerPadCanvas
         )
       } else {
-        allBorderPoints[node.id] = getNodeSpreadBorderPoints(node, conns)
+        allBorderPoints[node.id] = getNodeSpreadBorderPoints(
+          node, conns, dotMinGapCanvas, dotCornerPadCanvas
+        )
       }
     })
 
@@ -185,5 +201,5 @@ export function useEdgeGeometry({ nodes, edges, setNodes, setEdges }) {
         }))
       )
     }
-  }, [nodes, edges, isBead, zoom, expandedNode, setEdges, setNodes])
+  }, [nodes, edges, isBead, zoom, expandedNodes, setEdges, setNodes])
 }

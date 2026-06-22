@@ -7,7 +7,7 @@ import QuickConnectButtons from './QuickConnectButtons.jsx'
 import { useImageUrl } from '../lib/useImageUrl'
 import { useLightbox } from '../components/Lightbox'
 import { labelInitial } from '../utils/labelUtils'
-import { BEAD_DIAMETER_PX, BEAD_BORDER_SCREEN_PX, MORPH_DURATION_MS, CONNECTION_DOT_SCREEN_PX, currentThresholdZoom } from '../utils/altitude'
+import { BEAD_DIAMETER_PX, BEAD_BORDER_SCREEN_PX, MORPH_DURATION_MS, CONNECTION_DOT_SCREEN_PX, REPEL_PAD_FRACTION, currentThresholdZoom } from '../utils/altitude'
 import { useReducedMotion } from '../hooks/useReducedMotion'
 import BlockPreview from './BlockPreview'
 
@@ -86,17 +86,30 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
   const isInBeadView      = altitudeMode === 'beadView'
   const isThisHovered     = hoveredNodeId === data.id
   const isThisSingleSel   = selectedNodeIds.size === 1 && selectedNodeIds.has(data.id)
-  // Only ONE node can be "the expanded one" at a time. Hover wins over
-  // selection — when the user moves their cursor to a different node, THAT
-  // node becomes expanded and any previously-selected one silently collapses
-  // back to a bead. When the cursor leaves all nodes, the single-selected
-  // one (if any) re-claims the expansion. Matches App.jsx's derivation of
-  // currentlyExpandedId so CampaignNode's local state and the store's
-  // published expandedNode record always agree on which node is expanded.
+  // True when THIS node is one of the two endpoints of the currently-hovered
+  // connection line (Part A's 200ms-dwell edge-hover set). In Bead View this
+  // expands the node — so hovering a line pops BOTH its endpoints into cards.
+  const isEdgeHighlighted = useCanvasUiStore(selectIsEdgeHighlighted(data.id))
+  // A node expands when, in Bead View, any of these hold — this is a UNION, not
+  // a winner-take-all: hover-expand (this node hovered), single-select expand
+  // (selected alone, no node hovered), OR edge-hover expand (an endpoint of the
+  // dwelled line). More than one node can therefore be expanded at once (the
+  // two endpoints of a hovered line). This derivation mirrors App.jsx's
+  // currentlyExpandedIds set so the local expansion and the store's published
+  // records always agree on which nodes are expanded.
   const isExpanded        = isInBeadView && (
     isThisHovered ||
-    (hoveredNodeId === null && isThisSingleSel)
+    (hoveredNodeId === null && isThisSingleSel) ||
+    isEdgeHighlighted
   )
+  // True when THIS card is open ONLY because an edge-hover session is holding
+  // it (an endpoint of the dwelled line). Such a card is a read-only "peek":
+  // it must be click-through (pointer-events:none, applied on the root below)
+  // so it can't steal pointer-hover and collapse its partner endpoint. Scoped
+  // to session expansion alone — `isEdgeHighlighted` is set only by an active
+  // session (useEdgeHoverSession), so selection / direct node-hover expansion
+  // keep their normal, interactive pointer behavior.
+  const isSessionCard     = isInBeadView && isEdgeHighlighted
   // Read the threshold from the store so a future altitude-rail UI that
   // mutates it propagates here without code changes. Default value (2.65)
   // lives in the store; altitude.js exposes the legacy constant only as a
@@ -256,7 +269,6 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
     return { iconHidden, cardWidth }
   }, [typeConfig.icon, data.label, titleFontSize, iconSize])
 
-  const isEdgeHighlighted = useCanvasUiStore(selectIsEdgeHighlighted(data.id))
   const anyHovered   = useCanvasUiStore((s) => s.anyHovered)
   const anySelected  = useCanvasUiStore((s) => s.anySelected)
   const edgeHovered  = useCanvasUiStore((s) => s.hoveredEdgeNodeIds != null)
@@ -532,14 +544,72 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
   // Remember the latest effective for the next drag-start snapshot.
   effectiveClampRef.current = { dx: effectiveClampDxScreen, dy: effectiveClampDyScreen }
 
-  // The two translate contributions in canvas units (= CSS local px inside
-  // the RF node coord space):
+  // ── Pairwise card repulsion (Part B Issue 2) ──────────────────────────────
+  // When two beads expand into cards close enough to overlap, nudge each card
+  // visually apart so both stay readable. Purely presentational — added to the
+  // transform + published center below, never to node.position; it clears the
+  // moment the card collapses back to a bead.
+  //
+  // Symmetric + loop-free: each card pushes HALF the minimum separation,
+  // computed against every OTHER expanded card's NATURAL (pre-clamp, pre-repel)
+  // bead-anchored rect — published as natCenterX/Y. Using the natural rect (not
+  // the already-pushed one) means both cards see stable inputs and converge
+  // instead of chasing each other. Standard AABB min-penetration separation
+  // also yields Erik's special case for free: vertically-stacked tall cards
+  // whose cheapest separation is horizontal get offset left/right; everything
+  // else pushes along the line between the two beads. Decoupled from the
+  // viewport-clamp (purely additive) so the fragile clamp code is untouched.
+  const expandedNodesForRepel = useCanvasUiStore((s) => s.expandedNodes)
+  let repelXCanvas = 0
+  let repelYCanvas = 0
+  if (isExpanded && typeof xPos === 'number' && typeof yPos === 'number') {
+    const myCx = xPos + BEAD_DIAMETER_PX / 2
+    const myCy = yPos + BEAD_DIAMETER_PX / 2
+    const myW  = cardWidth   * thresholdZoom / (zoom || 1)
+    const myH  = layoutHeight * thresholdZoom / (zoom || 1)
+    for (const [otherId, rec] of expandedNodesForRepel) {
+      if (otherId === data.id || typeof rec.natCenterX !== 'number') continue
+      const dx = myCx - rec.natCenterX
+      const dy = myCy - rec.natCenterY
+      const pad  = REPEL_PAD_FRACTION * (myW + rec.width) / 2
+      const sepX = (myW + rec.width)  / 2 + pad - Math.abs(dx)
+      const sepY = (myH + rec.height) / 2 + pad - Math.abs(dy)
+      if (sepX <= 0 || sepY <= 0) continue // these two don't overlap
+      // Choose the push axis to PRESERVE the beads' relative orientation, NOT
+      // the cheapest separation — otherwise side-by-side beads pop into a
+      // vertical column (cards are a touch shorter than wide, so "cheapest"
+      // is usually vertical). Dominant separation axis wins: |dx| >= |dy|
+      // means the beads are arranged horizontally, so keep them side-by-side.
+      let pushVertical = Math.abs(dy) > Math.abs(dx)
+      if (pushVertical) {
+        // Vertically-arranged beads normally stack. Exception (Erik's spec):
+        // if the two cards are jointly too tall to stack within the viewport,
+        // fall back to side-by-side. Because the fallback pushes only on X,
+        // each card keeps its natural Y — so the upper bead's card stays the
+        // higher one, as required.
+        const vhCanvas = zoom > 0 ? window.innerHeight / zoom : Infinity
+        if (myH + rec.height + pad > vhCanvas) pushVertical = false
+      }
+      // Each card moves half the needed separation; a deterministic id
+      // tiebreak handles exact alignment so both pick opposite directions.
+      if (pushVertical) {
+        const dir = dy !== 0 ? Math.sign(dy) : (data.id < otherId ? -1 : 1)
+        repelYCanvas += (dir * sepY) / 2
+      } else {
+        const dir = dx !== 0 ? Math.sign(dx) : (data.id < otherId ? -1 : 1)
+        repelXCanvas += (dir * sepX) / 2
+      }
+    }
+  }
+
+  // The translate contributions in canvas units (= CSS local px inside the RF
+  // node coord space): center-on-bead + viewport-clamp + pairwise repulsion.
   const centerOffsetX = isExpanded ? (BEAD_DIAMETER_PX / 2 - cardWidth    / 2) : 0
   const centerOffsetY = isExpanded ? (BEAD_DIAMETER_PX / 2 - layoutHeight / 2) : 0
   const clampDxCanvas = zoom > 0 ? effectiveClampDxScreen / zoom : 0
   const clampDyCanvas = zoom > 0 ? effectiveClampDyScreen / zoom : 0
-  const totalTx = centerOffsetX + clampDxCanvas
-  const totalTy = centerOffsetY + clampDyCanvas
+  const totalTx = centerOffsetX + clampDxCanvas + repelXCanvas
+  const totalTy = centerOffsetY + clampDyCanvas + repelYCanvas
 
   const finalScale = scale * counterScale
   const composedTransform = (totalTx || totalTy)
@@ -564,14 +634,19 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
   useEffect(() => {
     const store = useCanvasUiStore.getState()
     if (!isExpanded || typeof xPos !== 'number' || typeof yPos !== 'number') {
-      // Only clear if WE are the published expanded node — never stomp on
-      // someone else's record from this hook.
-      if (store.expandedNode?.id === data.id) store.setExpandedNode(null)
+      // Clear only THIS node's entry. The keyed map makes that inherently
+      // safe — deleting our own key can never disturb another expanded node's
+      // record (e.g. the other endpoint of a hovered edge).
+      store.setExpandedNode(data.id, null)
       return
     }
-    // Visible center: bead center + clamp (in canvas units).
-    const centerX = (xPos + BEAD_DIAMETER_PX / 2) + clampDxCanvas
-    const centerY = (yPos + BEAD_DIAMETER_PX / 2) + clampDyCanvas
+    // Natural (pre-clamp, pre-repel) bead center — what OTHER cards' repulsion
+    // reads, so the pairwise push has a stable, loop-free input.
+    const natCenterX = xPos + BEAD_DIAMETER_PX / 2
+    const natCenterY = yPos + BEAD_DIAMETER_PX / 2
+    // Visible center edges route to: bead center + clamp + repulsion (canvas).
+    const centerX = natCenterX + clampDxCanvas + repelXCanvas
+    const centerY = natCenterY + clampDyCanvas + repelYCanvas
     // Visible card extent in canvas units = container's CSS box × counterScale.
     // counterScale = thresholdZoom / zoom (when expanded), so:
     //   visible = box × thresholdZoom / zoom
@@ -584,13 +659,12 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
     // Box size in canvas units: just the CSS layout dimensions.
     const boxWidth   = cardWidth
     const boxHeight  = layoutHeight
-    store.setExpandedNode({ id: data.id, centerX, centerY, width, height, boxWidth, boxHeight })
-  }, [isExpanded, xPos, yPos, clampDxCanvas, clampDyCanvas, zoom, thresholdZoom, cardWidth, layoutHeight, data.id])
+    store.setExpandedNode(data.id, { centerX, centerY, natCenterX, natCenterY, width, height, boxWidth, boxHeight })
+  }, [isExpanded, xPos, yPos, clampDxCanvas, clampDyCanvas, repelXCanvas, repelYCanvas, zoom, thresholdZoom, cardWidth, layoutHeight, data.id])
 
   // Clear our published record when this node unmounts mid-expansion.
   useEffect(() => () => {
-    const store = useCanvasUiStore.getState()
-    if (store.expandedNode?.id === data.id) store.setExpandedNode(null)
+    useCanvasUiStore.getState().setExpandedNode(data.id, null)
   }, [data.id])
 
   // ── Quick-connect buttons (selected + hover dwell) ────────────────────────
@@ -632,6 +706,9 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
         width:  isBead ? BEAD_DIAMETER_PX : cardWidth,
         height: isBead ? BEAD_DIAMETER_PX : layoutHeight,
         opacity,
+        // Edge-hover-session cards are a read-only peek: click-through so they
+        // can't capture pointer-hover and collapse their partner endpoint.
+        pointerEvents: isSessionCard ? 'none' : undefined,
         boxShadow: shadow,
         transform: composedTransform,
         // Card-mode bg: light tint of type color (existing). Bead-mode bg:

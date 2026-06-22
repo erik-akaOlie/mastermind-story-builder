@@ -4,7 +4,7 @@ import {
   selectIsEdgeActive,
   selectAnythingActive,
 } from '../store/useCanvasUiStore'
-import { MORPH_DURATION_MS } from '../utils/altitude'
+import { MORPH_DURATION_MS, EDGE_INTERACTION_WIDTH } from '../utils/altitude'
 import { useReducedMotion } from '../hooks/useReducedMotion'
 
 // Opacity tiers — match the card-side values in CampaignNode.jsx so cards
@@ -116,6 +116,13 @@ export default function FloatingEdge({ source, target, data, style, selected }) 
   return (
     <BaseEdge
       path={path}
+      // Widen the invisible interaction band (RF default 20) so thin lines are
+      // easier to target — this is what ACTIVATES an edge-hover session. A
+      // first-pass aid only: it's in canvas units (shrinks on screen as you
+      // zoom out) and a wider band can worsen wrong-edge activation in dense
+      // graphs. Tunable via EDGE_INTERACTION_WIDTH; Pass 2 adds nearest-edge
+      // arbitration if testing shows it's needed.
+      interactionWidth={EDGE_INTERACTION_WIDTH}
       style={{
         ...style,
         stroke,
