@@ -421,11 +421,81 @@ export default function App() {
   const dragStartPosRef  = useRef(new Map())
   const finalizedDragRef = useRef(new Set())
 
+  // ── Shift-to-lock-axis drag ───────────────────────────────────────────────
+  // While Shift is held during a node drag, movement is constrained to one
+  // axis. Dynamic nearest-axis (Figma/Illustrator-style): the cursor moves
+  // freely and the object snaps to whichever of horizontal/vertical it's
+  // closer to, RE-EVALUATED every frame (not frozen on first movement). We
+  // enforce this in handleNodesChange by rewriting each position change against
+  // its drag-start anchor (dragStartPosRef), and — critically — re-apply the
+  // same lock at drag-stop so the COMMITTED position matches the preview (RF's
+  // raw drag position is unlocked). `lockedAxisRef` holds the current pinned
+  // coordinate. Shift-CLICK multi-select is untouched: that produces `select`
+  // changes, not `position` changes.
+  const shiftHeldRef  = useRef(false)
+  const lockedAxisRef = useRef(null) // null | 'x' | 'y' — current pinned coord
+
   const captureDragStart = useCallback((dragNodes) => {
     finalizedDragRef.current.clear()
+    lockedAxisRef.current = null
     for (const n of dragNodes ?? []) {
       if (!n) continue
       dragStartPosRef.current.set(n.id, { x: n.position.x, y: n.position.y })
+    }
+  }, [])
+
+  // Dead-zone (flow units) before any constraint kicks in, so a tiny initial
+  // wobble doesn't snap the node. (8pt-grid value; a movement threshold, not a
+  // layout measurement.)
+  const AXIS_LOCK_DEADZONE = 8
+
+  // The pinned coordinate for a given drag vector: drag mostly horizontal pins
+  // y (free horizontal movement); mostly vertical pins x. Shared by the live
+  // preview (handleNodesChange) and the commit (finalizeDragStop) so they can
+  // never disagree.
+  const pinnedAxisFor = useCallback((dx, dy) => {
+    if (Math.abs(dx) < AXIS_LOCK_DEADZONE && Math.abs(dy) < AXIS_LOCK_DEADZONE) return null
+    return Math.abs(dx) >= Math.abs(dy) ? 'y' : 'x'
+  }, [])
+
+  // Apply the axis lock to a raw (cursor-following) position against its anchor.
+  const lockPosition = useCallback((rawPos, start, axis) => {
+    if (axis === 'y') return { x: rawPos.x, y: start.y }
+    if (axis === 'x') return { x: start.x, y: rawPos.y }
+    return rawPos
+  }, [])
+
+  // Wraps RF's onNodesChange. When Shift is held, each drag position change is
+  // clamped to the nearest axis (re-evaluated every frame); everything else
+  // (and every non-Shift drag) passes through untouched.
+  const handleNodesChange = useCallback((changes) => {
+    if (!shiftHeldRef.current) { onNodesChange(changes); return }
+    const next = changes.map((c) => {
+      if (c.type !== 'position' || !c.position) return c
+      const start = dragStartPosRef.current.get(c.id)
+      if (!start) return c
+      const axis = pinnedAxisFor(c.position.x - start.x, c.position.y - start.y)
+      lockedAxisRef.current = axis
+      if (!axis) return c
+      return { ...c, position: lockPosition(c.position, start, axis) }
+    })
+    onNodesChange(next)
+  }, [onNodesChange, pinnedAxisFor, lockPosition])
+
+  // Track whether Shift is currently held so handleNodesChange (which doesn't
+  // receive the originating event) can read it. Any key event refreshes the
+  // flag from e.shiftKey; window blur clears it so a Shift held across an
+  // alt-tab can't get stuck on.
+  useEffect(() => {
+    const onKey  = (e) => { shiftHeldRef.current = e.shiftKey }
+    const onBlur = () => { shiftHeldRef.current = false }
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('keyup', onKey)
+    window.addEventListener('blur', onBlur)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('keyup', onKey)
+      window.removeEventListener('blur', onBlur)
     }
   }, [])
 
@@ -437,6 +507,14 @@ export default function App() {
     const cardMoves = []
     const cardPersists = []
 
+    // When Shift-axis-lock was active for this drag, the COMMITTED position
+    // must be the locked preview position, not RF's raw (unlocked) drag
+    // position — otherwise the node snaps off-axis on drop and undo reverts the
+    // wrong thing. We re-apply the same lock here so persist, undo, and the
+    // final render all agree with what the user saw mid-drag.
+    const lockActive = shiftHeldRef.current && !!lockedAxisRef.current
+    const corrected = new Map()
+
     for (const n of dragNodes ?? []) {
       if (!n || finalizedDragRef.current.has(n.id)) continue
       finalizedDragRef.current.add(n.id)
@@ -444,11 +522,16 @@ export default function App() {
       const start = dragStartPosRef.current.get(n.id)
       dragStartPosRef.current.delete(n.id)
 
+      const pos = (lockActive && start)
+        ? lockPosition(n.position, start, lockedAxisRef.current)
+        : n.position
+      if (lockActive && start) corrected.set(n.id, pos)
+
       // 4px threshold filters out mouse-jitter "moves" that aren't real drags
       // (per ADR-0006 §"Action set covered" — moveCard fires only if Δ ≥ 4px).
       const movedFar =
         start &&
-        Math.hypot(n.position.x - start.x, n.position.y - start.y) >= 4
+        Math.hypot(pos.x - start.x, pos.y - start.y) >= 4
 
       // card_repositioned_quickly: friction signal for "I dropped it wrong" —
       // a card created within the recent window is moved before its timer
@@ -466,14 +549,14 @@ export default function App() {
 
       if (n.type === 'campaignNode') {
         const persist = dbUpdateNode(n.id, {
-          positionX: n.position.x,
-          positionY: n.position.y,
+          positionX: pos.x,
+          positionY: pos.y,
         })
         if (movedFar) {
           cardMoves.push({
             cardId: n.id,
             before: { x: start.x, y: start.y },
-            after:  { x: n.position.x, y: n.position.y },
+            after:  { x: pos.x, y: pos.y },
           })
           cardPersists.push(persist)
         } else {
@@ -482,8 +565,8 @@ export default function App() {
         }
       } else if (n.type === 'textNode') {
         const persist = dbUpdateTextNode(n.id, {
-          positionX: n.position.x,
-          positionY: n.position.y,
+          positionX: pos.x,
+          positionY: pos.y,
         })
         if (movedFar) {
           // moveTextNode is one entry per text node moved (no grouping).
@@ -497,7 +580,7 @@ export default function App() {
             timestamp: new Date().toISOString(),
             textNodeId: n.id,
             before: { x: start.x, y: start.y },
-            after:  { x: n.position.x, y: n.position.y },
+            after:  { x: pos.x, y: pos.y },
           })
           persist.catch((err) => {
             console.error(err)
@@ -512,6 +595,14 @@ export default function App() {
           persist.catch(console.error)
         }
       }
+    }
+
+    // Snap the rendered positions to the locked finals so there's no post-drop
+    // jump from RF settling back to its unlocked internal drag position.
+    if (corrected.size > 0) {
+      setNodes((nds) => nds.map((nd) =>
+        corrected.has(nd.id) ? { ...nd, position: corrected.get(nd.id) } : nd
+      ))
     }
 
     if (cardMoves.length === 0) return
@@ -533,7 +624,7 @@ export default function App() {
         useUndoStore.getState().popLastAction()
       }
     })
-  }, [activeWorkspaceId])
+  }, [activeWorkspaceId, lockPosition, setNodes])
 
   // Apply a batch of node moves as one logical action: optimistic setNodes,
   // a single grouped MOVE_CARD undo entry for the cards + one MOVE_TEXT_NODE
@@ -1657,7 +1748,7 @@ export default function App() {
       <ReactFlow
         nodes={nodes}
         edges={edges}
-        onNodesChange={onNodesChange}
+        onNodesChange={handleNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeDragStart={onNodeDragStart}
         onNodeDragStop={onNodeDragStop}
