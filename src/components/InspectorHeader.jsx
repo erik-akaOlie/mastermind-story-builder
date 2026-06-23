@@ -22,8 +22,8 @@
 // (Inspector) because auto-save reads them. The Upload Image modal
 // handles its own upload progress and Storage writes.
 
-import { useEffect, useRef } from 'react'
-import { Pencil, CaretDown } from '@phosphor-icons/react'
+import { useEffect, useRef, useState } from 'react'
+import { Pencil, CaretDown, Eye, EyeSlash } from '@phosphor-icons/react'
 import { useImageUrl } from '../lib/useImageUrl'
 import { cardImagePipeline } from '../lib/imageStorage'
 import { useLightbox } from './Lightbox'
@@ -44,6 +44,8 @@ export default function InspectorHeader({
   TypeIcon,
   thumbnail,
   setThumbnail,
+  hideAvatar,
+  setHideAvatar,
   workspaceId,
   onClose,
   onCreateNewType,
@@ -51,6 +53,9 @@ export default function InspectorHeader({
   const titleRef     = useRef(null)
   const lightbox     = useLightbox()
   const upload       = useUploadImage()
+  // Hover state for the show/hide eye, so the HIDDEN tile can swap its
+  // EyeSlash → open Eye on pointer-over (signifying "click to show").
+  const [eyeHover, setEyeHover] = useState(false)
   const thumbnailUrl = useImageUrl(thumbnail, 'thumb')
 
   // Auto-focus the title field on mount so the user can start typing
@@ -97,42 +102,53 @@ export default function InspectorHeader({
           className="relative group w-16 h-16 rounded-[0.5rem] overflow-hidden flex items-center justify-center"
           style={{ backgroundColor: typeConfig.color, filter: 'brightness(0.75)' }}
         >
-          {thumbnailUrl ? (
-            <>
-              <img
-                src={thumbnailUrl}
-                alt="Avatar"
-                className="w-full h-full object-cover absolute inset-0 cursor-zoom-in"
-                onClick={() => lightbox.open(thumbnail)}
-                draggable={false}
-              />
-              <button
-                className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-70 transition-opacity flex items-center justify-center"
-                onMouseEnter={(e) => { e.currentTarget.style.opacity = '1' }}
-                onMouseLeave={(e) => { e.currentTarget.style.opacity = '' }}
-                onClick={(e) => { e.stopPropagation(); openUploadReplace() }}
-                aria-label="Edit avatar"
-              >
-                <Pencil size={12} weight="fill" />
-              </button>
-            </>
-          ) : (
+          {/* Center: the identity image, or its first-letter placeholder. Both
+              only render when the thumbnail is SHOWN — when hidden the whole
+              component reads as off (just the muted tile + the eye control), so
+              there's no stray placeholder. The stored image is never deleted. */}
+          {!hideAvatar && thumbnailUrl && (
+            <img
+              src={thumbnailUrl}
+              alt="Avatar"
+              className="w-full h-full object-cover absolute inset-0 cursor-zoom-in"
+              onClick={() => lightbox.open(thumbnail)}
+              draggable={false}
+            />
+          )}
+          {!hideAvatar && !thumbnailUrl && (
+            <span className="font-bold text-2xl select-none" style={{ color: hdrText }}>
+              {labelInitial(title || node.data.label)}
+            </span>
+          )}
+
+          {/* Add / replace the image — only while shown; reveal on hover. */}
+          {!hideAvatar && (
             <button
-              className="absolute inset-0 flex items-center justify-center cursor-pointer"
-              onClick={openUploadFresh}
-              aria-label="Add avatar"
+              className="absolute top-1 right-1 z-20 w-5 h-5 rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-80 transition-opacity flex items-center justify-center"
+              onClick={(e) => { e.stopPropagation(); if (thumbnailUrl) openUploadReplace(); else openUploadFresh() }}
+              aria-label={thumbnailUrl ? 'Edit avatar' : 'Add avatar'}
             >
-              <span className="font-bold text-2xl select-none relative z-10" style={{ color: hdrText }}>
-                {labelInitial(title || node.data.label)}
-              </span>
-              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
-              <span
-                className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/50 text-white flex items-center justify-center opacity-70 group-hover:opacity-100 transition-opacity z-10 pointer-events-none"
-              >
-                <Pencil size={12} weight="fill" />
-              </span>
+              <Pencil size={12} weight="fill" />
             </button>
           )}
+
+          {/* Show/hide toggle (display-only). SHOWN: hidden until tile-hover,
+              then an EyeSlash → click to hide. HIDDEN: a persistent EyeSlash
+              that swaps to an open Eye on pointer-over → click to show. */}
+          <button
+            className={`absolute inset-0 m-auto z-10 w-8 h-8 rounded-full bg-black/55 text-white flex items-center justify-center transition-opacity ${
+              hideAvatar ? 'opacity-90' : 'opacity-0 group-hover:opacity-90'
+            }`}
+            onMouseEnter={() => setEyeHover(true)}
+            onMouseLeave={() => setEyeHover(false)}
+            onClick={(e) => { e.stopPropagation(); setHideAvatar(!hideAvatar) }}
+            aria-label={hideAvatar ? 'Show thumbnail on the canvas' : 'Hide thumbnail on the canvas'}
+            title={hideAvatar ? 'Show on canvas' : 'Hide on canvas'}
+          >
+            {hideAvatar && eyeHover
+              ? <Eye size={16} weight="fill" />
+              : <EyeSlash size={16} weight="fill" />}
+          </button>
         </div>
       </div>
 

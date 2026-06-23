@@ -286,6 +286,7 @@ function seedCard(rs, {
   const dbRow = {
     id, workspace_id: WORKSPACE, type_id: TYPE_ID,
     label, summary, avatar_url: avatarUrl,
+    hide_avatar: false,   // mirrors the real schema default (migration 013)
     position_x: positionX, position_y: positionY,
   }
   const reactNode = dbNodeToReactFlow(

@@ -213,11 +213,12 @@ export async function duplicateCard({
 // Update core node fields (label, summary, avatar, position) and sections.
 // Pass any subset; unspecified values are left untouched.
 // ----------------------------------------------------------------------------
-export async function updateNode(id, { label, summary, avatarUrl, positionX, positionY, typeId }) {
+export async function updateNode(id, { label, summary, avatarUrl, hideAvatar, positionX, positionY, typeId }) {
   const patch = {}
   if (label !== undefined) patch.label = label
   if (summary !== undefined) patch.summary = summary
   if (avatarUrl !== undefined) patch.avatar_url = avatarUrl
+  if (hideAvatar !== undefined) patch.hide_avatar = hideAvatar
   if (positionX !== undefined) patch.position_x = positionX
   if (positionY !== undefined) patch.position_y = positionY
   if (typeId !== undefined) patch.type_id = typeId
@@ -276,6 +277,7 @@ export async function buildDeleteCardSnapshot(cardId, { nodes, edges, workspaceI
     label:       node.data.label   ?? '',
     summary:     node.data.summary ?? '',
     avatar_url:  node.data.avatar  ?? null,
+    hide_avatar: node.data.hideAvatar ?? false,
     position_x:  node.position.x,
     position_y:  node.position.y,
   }
@@ -363,6 +365,10 @@ export function dbNodeToReactFlow(n, sections, nodeTypesById) {
       label:       n.label,
       type:        typeInfo?.key ?? null,
       avatar:      n.avatar_url,
+      // Per-node display preference (migration 013): hide the identity image in
+      // the canvas without deleting it. avatar stays set; this just suppresses
+      // its render (card header → title only; bead → first letter).
+      hideAvatar:  n.hide_avatar ?? false,
       summary:     n.summary,
       storyNotes:  normalizeBullets(sections.narrative),
       hiddenLore:  normalizeBullets(sections.hidden_lore),

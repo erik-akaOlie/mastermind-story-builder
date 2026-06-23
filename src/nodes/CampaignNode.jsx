@@ -367,7 +367,12 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
   const avatarBg = darkenColor(typeConfig.color)
   const avatarInitialSize = Math.round(avatarSize * 0.45)
   const hdrText = headerTextColor(typeConfig.color)
-  const avatarUrl = useImageUrl(data.avatar, 'thumb')
+  // Per-node display preference (migration 013). When set, the identity image
+  // is suppressed in the canvas: nulling avatarUrl makes the BEAD fall back to
+  // its first-letter initial automatically, and the card header below renders
+  // title-only (no avatar box, no type icon). The stored avatar is untouched.
+  const hideAvatar = !!data.hideAvatar
+  const avatarUrl = useImageUrl(hideAvatar ? null : data.avatar, 'thumb')
   const lightbox = useLightbox()
 
   // Bead's no-thumbnail fallback — the card title's first initial in the
@@ -894,6 +899,7 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
                 bottom where header bg used to peek through.
               - marginTop/Left: -1 pull the avatar 1px past the card's content
                 area to overlap the border on top and left. */}
+        {!hideAvatar && (
         <div
           className="flex-shrink-0 overflow-hidden flex items-center justify-center"
           style={{
@@ -937,16 +943,23 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
             </span>
           )}
         </div>
+        )}
 
-        {/* Title + type icon — this div is the source of truth for avatar height */}
-        <div ref={headerRef} className="flex items-start py-4 pr-2 gap-2 flex-1 min-w-0">
+        {/* Title + type icon — this div is the source of truth for avatar height.
+            When the thumbnail is hidden the title is the only header content, so
+            it gets symmetric horizontal insets (px-8 = 32px, twice the 16px top
+            padding) to sit clear of the card edges like a sticky note. */}
+        <div
+          ref={headerRef}
+          className={`flex items-start gap-2 flex-1 min-w-0 ${hideAvatar ? 'py-4 px-8' : 'py-4 pr-2'}`}
+        >
           <span
             className="font-semibold leading-none flex-1 min-w-0"
             style={{ fontSize: `${titleFontSize}rem`, color: hdrText }}
           >
             {data.label || 'Untitled'}
           </span>
-          {typeConfig.icon && !iconHidden && (() => {
+          {typeConfig.icon && !iconHidden && !hideAvatar && (() => {
             const Icon = typeConfig.icon
             return (
               <Icon

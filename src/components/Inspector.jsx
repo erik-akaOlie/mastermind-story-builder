@@ -90,6 +90,11 @@ export default function Inspector({
   const [title,      setTitle]      = useState(node.data.label  || '')
   const [type,       setType]       = useState(node.data.type)
   const [thumbnail,  setThumbnail]  = useState(node.data.avatar || null)
+  // Per-node display preference (migration 013): hide the identity image on the
+  // canvas without deleting it. Persisted via onUpdate alongside the other
+  // header fields; intentionally NOT in EDITABLE_FIELDS (a display toggle has
+  // no undo entry — toggling back is the inverse).
+  const [hideAvatar, setHideAvatar] = useState(node.data.hideAvatar || false)
   const NODE_TYPES = useNodeTypes()
   const typeConfig = NODE_TYPES[type] || { color: '#6B7280', label: type }
   const TypeIcon   = typeConfig.icon
@@ -140,6 +145,7 @@ export default function Inspector({
     label:  title.trim(),
     type,
     avatar: thumbnail || null,
+    hideAvatar,
   }
 
   // Per-field session start snapshot (ADR-0006 §7). Captured ONCE on mount
@@ -261,7 +267,7 @@ export default function Inspector({
       addConnections.forEach(({ id, nodeId }) => syncedConnsRef.current.set(id, nodeId))
       removeConnections.forEach(({ id }) => syncedConnsRef.current.delete(id))
     },
-    deps: [title, type, thumbnail, localConns],
+    deps: [title, type, thumbnail, hideAvatar, localConns],
   })
 
   const animateClose = useMorphAnimation({ modalRef, backdropRef, originRect, skipOpenMorph, getCloseRect, onClose })
@@ -620,6 +626,8 @@ export default function Inspector({
             TypeIcon={TypeIcon}
             thumbnail={thumbnail}
             setThumbnail={setThumbnail}
+            hideAvatar={hideAvatar}
+            setHideAvatar={setHideAvatar}
             workspaceId={activeWorkspaceId}
             onClose={handleClose}
             onCreateNewType={() => setShowCreateTypeModal(true)}

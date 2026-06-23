@@ -1084,8 +1084,9 @@ export default function App() {
     // fields below. The legacy section-write path was removed at the E4
     // cutover (ADR-0016).
     const nodeField = {}
-    if (updatedData.label !== undefined)   nodeField.label     = updatedData.label
-    if (updatedData.avatar !== undefined)  nodeField.avatarUrl = updatedData.avatar
+    if (updatedData.label !== undefined)      nodeField.label      = updatedData.label
+    if (updatedData.avatar !== undefined)     nodeField.avatarUrl  = updatedData.avatar
+    if (updatedData.hideAvatar !== undefined) nodeField.hideAvatar = updatedData.hideAvatar
     if (updatedData.type !== undefined) {
       const typeId = useTypeStore.getState().idByKey[updatedData.type]
       if (typeId) nodeField.typeId = typeId
