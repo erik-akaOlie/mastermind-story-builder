@@ -499,6 +499,35 @@ export default function App() {
     }
   }, [])
 
+  // Globalize the ZOOM gesture only. Ctrl+wheel (and trackpad pinch, which
+  // browsers deliver as a ctrlKey wheel event) must zoom the canvas and never
+  // the browser, no matter what's under the cursor — over the canvas, over the
+  // Inspector, a dropdown, the altitude rail, anywhere. React Flow only handles
+  // wheel inside its own pane, so over any UI overlay the browser's native
+  // Ctrl+wheel zoom would otherwise fire. Plain wheel is deliberately left
+  // untouched, so scrollable UI (Inspector body, dropdowns, the editor) and the
+  // canvas's pan-on-scroll keep working exactly as before. Capture phase +
+  // passive:false so preventDefault actually suppresses the browser zoom.
+  useEffect(() => {
+    const onWheel = (e) => {
+      if (!e.ctrlKey) return
+      e.preventDefault() // kill the browser's native Ctrl+wheel zoom everywhere
+      // Over the React Flow pane, RF's own handler already applies a
+      // cursor-anchored zoom — don't double-apply.
+      if (e.target?.closest?.('.react-flow')) return
+      const rf = rfInstanceRef.current
+      if (!rf) return
+      // Mirror d3-zoom's default wheel delta so over-UI zoom matches the feel of
+      // in-canvas zoom. Anchors to the viewport center (the cursor isn't over
+      // the canvas); zoomTo clamps to the active [minZoom, maxZoom].
+      const unit = e.deltaMode === 1 ? 0.05 : e.deltaMode ? 1 : 0.002
+      const next = rf.getZoom() * Math.pow(2, -e.deltaY * unit)
+      rf.zoomTo(next, { duration: 0 })
+    }
+    window.addEventListener('wheel', onWheel, { passive: false, capture: true })
+    return () => window.removeEventListener('wheel', onWheel, { capture: true })
+  }, [])
+
   const finalizeDragStop = useCallback((dragNodes) => {
     // Collect every card from this drag into one moveCard entry so Ctrl+Z
     // reverts the whole drag in a single step (vs N steps for N cards).
