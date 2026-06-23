@@ -92,6 +92,24 @@ export async function getWorkspace(id) {
 }
 
 // ----------------------------------------------------------------------------
+// Record that a workspace was just opened, so "Recently active" treats opening
+// as activity (not only content edits). Writes last_opened_at directly
+// (migration 012); the workspaces_set_updated_at trigger preserves updated_at
+// on this write, so an open never counts as a content modification. The RPC
+// folds last_opened_at into last_activity_at, unifying the picker + switcher
+// ordering. Fire-and-forget at the call site (failure is non-fatal — the list
+// just keeps its prior ordering).
+// ----------------------------------------------------------------------------
+export async function touchWorkspaceOpened(id) {
+  if (!id) return
+  const { error } = await supabase
+    .from('workspaces')
+    .update({ last_opened_at: new Date().toISOString() })
+    .eq('id', id)
+  if (error) throw error
+}
+
+// ----------------------------------------------------------------------------
 // List all node types for the current user (built-in + custom).
 // Returned in sort_order so the UI can render the picker consistently.
 // ----------------------------------------------------------------------------

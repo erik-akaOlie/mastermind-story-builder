@@ -3,22 +3,23 @@
 // ----------------------------------------------------------------------------
 // Sorting happens client-side over the already-fetched rows (no extra queries).
 // The chosen option is remembered in localStorage. Labels are adaptive per
-// field (A–Z / Z–A for names, Newest / Oldest for dates). "Last modified" reads
-// last_activity_at, the real newest-edit timestamp from
-// list_workspaces_with_activity() (migration 011).
+// field (A–Z / Z–A for names, Newest / Oldest for dates). "Recently active"
+// reads last_activity_at from list_workspaces_with_activity() — the newest of
+// any content edit OR the last time the workspace was opened (migrations 011 +
+// 012). The option id stays 'modified' for backward-compatible localStorage.
 // ============================================================================
 
 import { sortKey } from '../utils/labelUtils.js'
 
 // Three single-choice options — each carries its own fixed direction, so the
 // user makes ONE choice (no separate direction modifier):
-//   Alphabetical  → A→Z
-//   Date created  → oldest → newest
-//   Last modified → newest → oldest
+//   Alphabetical    → A→Z
+//   Date created    → oldest → newest
+//   Recently active → newest → oldest (counts edits AND opens)
 export const SORT_OPTIONS = [
-  { id: 'alphabetical', label: 'Alphabetical', field: 'name',             dir: 'asc'  },
-  { id: 'created',      label: 'Date created',  field: 'created_at',       dir: 'asc'  },
-  { id: 'modified',     label: 'Last modified', field: 'last_activity_at', dir: 'desc' },
+  { id: 'alphabetical', label: 'Alphabetical',    field: 'name',             dir: 'asc'  },
+  { id: 'created',      label: 'Date created',     field: 'created_at',       dir: 'asc'  },
+  { id: 'modified',     label: 'Recently active',  field: 'last_activity_at', dir: 'desc' },
 ]
 
 export const DEFAULT_SORT_ID = 'modified'

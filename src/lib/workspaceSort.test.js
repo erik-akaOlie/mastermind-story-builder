@@ -30,7 +30,7 @@ describe('sortWorkspaces', () => {
     expect(ids(sortWorkspaces(rows, 'created'))).toEqual(['a', 'c', 'b'])
   })
 
-  it('Last modified: newest → oldest (default)', () => {
+  it('Recently active: newest → oldest (default)', () => {
     expect(DEFAULT_SORT_ID).toBe('modified')
     expect(ids(sortWorkspaces(rows, 'modified'))).toEqual(['c', 'a', 'b'])
   })

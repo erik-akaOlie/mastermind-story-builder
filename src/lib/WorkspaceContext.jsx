@@ -23,7 +23,7 @@
 // ============================================================================
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
-import { getWorkspace } from './workspaces.js'
+import { getWorkspace, touchWorkspaceOpened } from './workspaces.js'
 
 const WORKSPACE_PARAM = 'w'
 
@@ -129,6 +129,20 @@ export function WorkspaceProvider({ children }) {
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
   }, [])
+
+  // Record "opened" once per workspace activation. Opening a workspace counts
+  // as activity for the "Recently active" ordering (picker + switcher), so the
+  // one you just opened leads even before you edit anything. The ref guards
+  // against duplicate writes from re-renders, same-value state churn, and the
+  // dev StrictMode double-invoke — only a genuine id change records an open.
+  const lastOpenRecordedRef = useRef(null)
+  useEffect(() => {
+    if (!activeWorkspaceId) return
+    if (lastOpenRecordedRef.current === activeWorkspaceId) return
+    lastOpenRecordedRef.current = activeWorkspaceId
+    touchWorkspaceOpened(activeWorkspaceId).catch((err) =>
+      console.error('Failed to record workspace open', err))
+  }, [activeWorkspaceId])
 
   // Fetch the active workspace row whenever the id changes.
   useEffect(() => {

@@ -19,7 +19,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { CaretDown, Check, House } from '@phosphor-icons/react'
 import { useAuth } from '../lib/AuthContext.jsx'
 import { useWorkspace } from '../lib/WorkspaceContext.jsx'
-import { listWorkspaces } from '../lib/workspaces.js'
+import { listWorkspacesWithActivity } from '../lib/workspaces.js'
+import { sortWorkspaces } from '../lib/workspaceSort.js'
 import UserAvatar from './UserAvatar.jsx'
 import HoverReveal from './HoverReveal.jsx'
 import WorkspaceThumbnail from './WorkspaceThumbnail.jsx'
@@ -36,12 +37,16 @@ export default function UserMenu() {
   const close = useCallback(() => setMenuOpen(false), [])
 
   // Fetch the workspace list on first menu open; refresh every subsequent open
-  // so new/renamed/deleted workspaces show up without a page reload.
+  // so new/renamed/deleted workspaces show up without a page reload. Ordered
+  // newest-edited first — hard-coded (NOT the picker's user-changeable sort) so
+  // the workspace you most recently touched is always at the top. We use
+  // last_activity_at (true newest edit across content) rather than the row's
+  // updated_at, which only bumps on name/cover changes.
   useEffect(() => {
     if (!menuOpen) return
     let cancelled = false
-    listWorkspaces()
-      .then((rows) => { if (!cancelled) setWorkspaces(rows) })
+    listWorkspacesWithActivity()
+      .then((rows) => { if (!cancelled) setWorkspaces(sortWorkspaces(rows, 'modified')) })
       .catch((err) => {
         if (!cancelled) {
           console.error('Failed to list workspaces', err)
@@ -77,6 +82,16 @@ export default function UserMenu() {
     if (id !== activeWorkspaceId) leaveWorkspace(id) // capture snapshot of the one we're leaving
     close()
   }
+
+  // The current workspace always sits at the top — just opening it makes it the
+  // one you're working on now, even before any edit bumps its last_activity_at.
+  // The rest keep their newest-edited-first order from the fetch.
+  const orderedWorkspaces = workspaces == null
+    ? null
+    : [
+        ...workspaces.filter((w) => w.id === activeWorkspaceId),
+        ...workspaces.filter((w) => w.id !== activeWorkspaceId),
+      ]
 
   return (
     <div className="fixed top-4 left-4 z-50 flex items-center gap-2">
@@ -140,13 +155,13 @@ export default function UserMenu() {
               Switch workspace
             </div>
 
-            {workspaces === null ? (
+            {orderedWorkspaces === null ? (
               <div className="px-3 py-2 text-xs text-gray-500">Loading…</div>
-            ) : workspaces.length === 0 ? (
+            ) : orderedWorkspaces.length === 0 ? (
               <div className="px-3 py-2 text-xs text-gray-500">No other workspaces.</div>
             ) : (
               <div className="max-h-72 overflow-y-auto">
-                {workspaces.map((c) => {
+                {orderedWorkspaces.map((c) => {
                   const isActive = c.id === activeWorkspaceId
                   return (
                     <button
