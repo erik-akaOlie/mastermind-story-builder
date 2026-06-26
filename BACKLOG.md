@@ -93,6 +93,219 @@ They reorder relative to each other based on what #1 + #2 reveal.
 
 ---
 
+## Mox free-beta launch readiness (pre-launch)
+
+> Implementation work for the capped free-beta launch decided in
+> [ADR-0017](./docs/decisions/0017-mox-free-beta-launch.md) (2026-06-24).
+> Grouped as a cross-band theme rather than scattered across Value-Add
+> bands so the launch checklist stays in one place. **None of these are
+> built yet** — they are decisions awaiting implementation through the
+> normal pipeline. Already-in-place pieces (Terms/Privacy clickwrap +
+> Privacy Policy disclosure, $5 PostHog caps, sole PostHog membership,
+> 30-day retention, account+recording deletion) are **not** listed here
+> because they are done.
+
+**Priority order (2026-06-25 beta-readiness audit).** Must-fix sequence:
+production confirmations (Erik, ~30 min) → ship simple search → the **signup &
+launch-ops cluster** (soft-cap + waitlist + how-heard + recording notice + beta
+promise + user identification — they share the signup form, the
+`handle_new_user` trigger, and one migration, so build together) → first-run
+creation affordance → mobile entry. Simple search, first-run affordance, mobile
+entry, and user identification were added/promoted in the 2026-06-25 audit;
+workspace-delete custom confirmation and markdown export are Soon-after.
+Decisions reached in that audit are recorded inline below. **Honest sizing:** the
+cluster is M–L; total Bucket-1 build is ~1.5 sprints.
+
+### Soft cap + overflow waitlist + "how did you hear?"
+- **Problem.** ADR-0017 commits to a ~50-seat ("50-ish") capped beta with
+  an overflow waitlist, but no seat-gating, waitlist, or attribution
+  capture exists. Signup is currently open and ungated.
+- **Success.** A `beta_config` row (`seat_limit`, `beta_open`) the client
+  reads to show signup vs. waitlist; the signup trigger **auto-flips**
+  `beta_open` off when the user count reaches the limit, with manual
+  override; no mid-signup rejection (soft cap — a few extra during the
+  transition is acceptable). A `waitlist` table (email + how-heard +
+  timestamps) with **unique email, format validation, insert-only access,
+  and rate-limit protection**. "How did you hear about MasterMind?"
+  (dropdown + Other) on **both** flows — required on waitlist, optional on
+  signup. `how_heard` on signup rides the existing signup-metadata →
+  `handle_new_user` trigger path (same mechanism as `terms_accepted_at`).
+- **Notes.** **No Turnstile initially** — escalate to an Edge Function +
+  Cloudflare Turnstile on the waitlist only if spam appears or the link
+  spreads beyond the intended community (ADR-0017 §4). The waitlist's
+  unauthenticated insert is the spam-sensitive surface (its count is the
+  demand signal).
+- **Dependencies.** None hard. The auto-flip extends the existing
+  `handle_new_user` trigger (migration 008).
+- **Size:** S–M (insert-only-RLS version; the Turnstile escalation is a
+  separate later chunk).
+
+### In-flow session-recording notice on signup
+- **Problem.** Per ADR-0017, recording stays on for free beta users under
+  *disclosed in-app consent*, but the signup checkbox only says "I agree
+  to the Terms of Service and Privacy Policy" — the recording disclosure
+  lives one click away inside the Privacy Policy, not in-flow.
+- **Success.** A short plain-English notice on the signup screen (signup
+  mode only), above the existing Terms/Privacy checkbox, stating that
+  in-app sessions are recorded (including typed campaign text), used only
+  to improve the product, not sold, and deleted after 30 days, with
+  deletion-on-request. **One checkbox only** — no second recording-specific
+  checkbox unless legal review requires unbundled consent.
+- **Dependencies.** None.
+- **Size:** S.
+
+### Beta-promise copy (free early-access, no free-forever guarantee)
+- **Problem.** ADR-0017 locks the beta *promise* — free early-access,
+  pricing may change, beta access is not a free-forever guarantee — but it
+  is not stated anywhere users see it.
+- **Success.** The promise appears in the Mox launch post and on the
+  signup screen so no user assumes free-forever (protects future
+  monetization without awkwardness).
+- **Dependencies.** None. Pairs naturally with the in-flow recording notice.
+- **Size:** S (copy placement).
+
+### Email-first support placement + in-app Contact/Feedback link
+- **Problem.** ADR-0017 sets an email-first support model
+  (`contact.mastermind.lab@gmail.com`), but there is no in-app entry point
+  to it, and the support-expectation + Discord-redirect copy aren't placed.
+- **Success.** An in-app **Contact/Feedback link** that opens a
+  pre-addressed email (low-effort launch polish — defer if it turns out to
+  be more than ~S). The support-expectation copy and the public Discord
+  redirect script (both verbatim in ADR-0017 §5) are placed where they're
+  used (in-app/docs + the launch post).
+- **Dependencies.** None.
+- **Size:** S (in-app link); copy placement is trivial.
+
+### Verify Supabase email confirmation is enabled
+- **Problem.** ADR-0017 relies on email confirmation being on (the primary
+  cheap abuse control). The signup UI already handles the confirm-email
+  path, but the dashboard setting hasn't been confirmed this cycle.
+- **Success.** Confirmed in the Supabase dashboard (Authentication →
+  Providers → Email → "Confirm email" on). Settings-only; no code.
+- **Dependencies.** None.
+- **Size:** S (a dashboard check).
+
+### Simple search (titles + types) — beta scope
+- **Problem.** A search control is **visible** top-right (`SearchBar.jsx`) and
+  expands to a `Search…` input on hover, but it is **presentational only —
+  typing does nothing**. The only "coming soon" cue is a hidden screen-reader
+  label; visually it looks like a working search. A visible, non-functional
+  control reads to a new user as broken / their-data-wasn't-saved / unfinished —
+  a trust hit.
+- **Success.** Typing matches node **titles and types**; a results list appears;
+  selecting a result **centers + selects** that node on the canvas. Searching
+  **inside** card body text (block-editor content) is explicitly **deferred** to
+  a fast-follow.
+- **Decision (2026-06-25).** Make it work (simple version) rather than hide it.
+- **Dependencies.** None — operates over already-loaded nodes.
+- **Size:** M.
+
+### First-run creation affordance (FTUE) — beta scope
+- **Problem.** A brand-new workspace opens to an empty canvas with **no visible
+  way to add a node or text block** — creation is right-click-only, which is
+  undiscoverable and has no touch equivalent. `createWorkspace` seeds no sample
+  content. Highest first-session abandonment risk (abandonment is the cardinal
+  failure for a tool that goes stale if entry feels like a chore).
+- **Success.** On a new/empty workspace, a centered "Start building" prompt
+  offers **Add node** (+ **Add text block** — text nodes are already real and
+  reliable). After the first action or dismissal, it reduces to a **small
+  bottom-center `+` create button** (minimal — **not** a full persistent
+  toolbar). Right-click remains a power-user shortcut. A first-time user can
+  **create AND name their first node within ~10s without knowing about
+  right-click**. After **Add node**, the Inspector / naming flow opens
+  immediately so the next step is obvious (verify the first created node opens
+  into a clear editing path).
+- **Design stance (2026-06-25).** A **visible creation affordance is required**;
+  a **permanent full toolbar is NOT settled** — the graph is the product and
+  permanent canvas chrome must earn its keep. Option C (center prompt → minimal
+  docked `+`) is the leading concept, built minimal-first; a fuller toolbar
+  awaits a dedicated design pass. Bottom-center placement must clear the docked
+  Inspector (bottom-right) and the feedback strip (bottom-left).
+- **Dependencies.** None hard; touches the canvas (App.jsx) + the Inspector open
+  path.
+- **Size:** M (minimal version); the center→dock spotlight choreography is a
+  polish layer on top.
+
+### Mobile entry: responsive login + "best on desktop" expectation — beta scope
+- **Problem.** The Mox Discord link will be clicked on phones, but the login
+  card barely fits a ~380px screen (razor-thin margins; breaks under font
+  scaling) and the app has **no responsive layout anywhere** and **nothing tells
+  users building is best on desktop**. Current mobile state overall:
+  **read-only useful** (pan/pinch/read work; create/duplicate/delete are
+  right-click-only and invisible to touch; Inspector modals overflow phones).
+- **Success.** Login/signup is comfortably usable on a phone (sign up + read the
+  beta promise) **and** the app plainly sets the expectation that building is
+  best on desktop. Full mobile canvas authoring stays deferred.
+- **Decision (2026-06-25).** Promoted to must-fix (was deferred). Mobile
+  light-capture / comments-on-nodes is a separate post-beta idea, not in scope.
+- **Dependencies.** None.
+- **Size:** S.
+
+### Beta user identification (display name + PostHog identify)
+- **Problem.** Signup collects only email + password + terms timestamp — **no
+  name**; `profiles.display_name` is always NULL (the column + `setDisplayName`
+  exist but nothing in the UI calls them). PostHog `identify` is called with
+  **only the raw Supabase UUID** — no email, no name, no properties — so the
+  session-replay list is unreadable UUIDs and known testers (Chris, Todd) can't
+  be spotted. Genuine beta-ops gap.
+- **Success.** Two levels: **(1) immediate** — pass **email** to PostHog
+  `identify` as a person property so the replay list is scannable by known email
+  (no migration, no signup change); **(2) fuller** — collect a **name** at signup,
+  store it in `profiles` via the `handle_new_user` trigger (same metadata path as
+  `terms_accepted_at` + `how_heard`), and pass **email + name + how_heard** to
+  `identify` so Supabase Table Editor **and** PostHog both show real people.
+- **Decision (2026-06-25).** Collect name/user-id at signup; build both levels.
+- **Privacy note.** Sending email/name to PostHog while recording is on makes
+  sessions personally identifiable — the in-flow recording notice must say
+  session activity is tied to your account (don't imply anonymity).
+- **Dependencies.** Pairs with the signup-form + `handle_new_user` changes in
+  "Soft cap + waitlist + how-heard" (shared migration + form).
+- **Size:** S (level 1) + S–M (level 2).
+
+### Production confirmations (Erik — settings/console, no code)
+- **Email confirmation ON** (see item above).
+- **`VITE_POSTHOG_KEY` set at Vercel BUILD time** — if empty, the `posthog-js`
+  chunk is dead-code-eliminated and recording silently never runs (then the
+  in-flow notice would disclose recording that isn't happening). See CLAUDE.md
+  "Environment Variables."
+- **Live signup is open/ungated**; **$5 PostHog caps, 30-day retention, sole org
+  membership** still true (ADR-0017 §3 claims verified-in-account — spot-check).
+- **Confirm the Supabase backup / point-in-time-recovery tier** — the only
+  recovery backstop for hard-deleted data (see the Soon-after item below).
+- **Size:** S (dashboard/console checks).
+
+---
+
+## Mox free-beta — Soon after beta opens
+
+### Custom destructive confirmation for workspace delete
+- **Problem.** Whole-workspace delete is functional and reasonably protected
+  (homepage → tile "…" menu → Delete → a browser `confirm()` naming the
+  workspace) but the popup is a **generic browser dialog**, and there is **no
+  soft-delete / no undo** for a whole-workspace delete — the only recovery is a
+  coarse Supabase backup restore. (Card deletes have no confirm but ARE
+  in-session undoable; account delete is strongly guarded with type-your-email.)
+  Not a beta blocker (hard to trigger by pure accident), but a trust-hardening
+  item for a memory-reconstruction product.
+- **Success.** A custom, product-native modal showing the workspace name +
+  impactful destructive language (optionally type-the-name-to-confirm if
+  campaigns hold serious history). Erik wants a design pass; bundle with
+  homepage polish if it fits naturally.
+- **Decision (2026-06-25).** Soon-after, not a beta blocker.
+- **Size:** S–M.
+
+### Markdown export (data portability)
+- See the Foundational/Quick-Win entry below. ToS already covers the gap
+  (commercially-reasonable-efforts + human-assisted export on request), so it is
+  **not** a beta blocker; ship soon for the no-lock-in trust promise (tenet 6).
+- **Size:** S–M.
+
+### Turnstile on the waitlist (conditional)
+- Escalate to an Edge Function + Cloudflare Turnstile on the waitlist **only if**
+  spam appears or the link spreads beyond the intended community (ADR-0017 §4).
+
+---
+
 ## Quick Win
 
 ### Undo support for duplicate (single + multi)

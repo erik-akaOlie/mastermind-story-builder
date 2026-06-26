@@ -3,6 +3,8 @@ Date: 2026-05-11
 Status: Accepted (ships at the start of the current sprint, before tester invites)
 
 > **Terminology note (post-2026-05-18):** This ADR predates ADR-0012's `campaign` -> `workspace` rename. References to "campaign(s)" / `campaign_id` here describe the architectural object now called "workspace" / `workspace_id`. The decision content remains accurate; only the names changed.
+>
+> **Launch-posture note (2026-06-24):** The "revert `is_test_user` before public launch + build a tester allowlist" guidance and the invite-conversation-only consent model below are **superseded for the Mox free-beta stage by [ADR-0017](./0017-mox-free-beta-launch.md)**. For that stage, recording stays ON for free beta users under **disclosed in-app consent** (in-flow notice + Terms/Privacy clickwrap), and `is_test_user` keeps its migration-005 default of `true`. The analytics tooling, named-event set, identification, and password masking in this ADR still stand. The revert-and-allowlist plan applies only to a future *fully public, non-capped* launch.
 
 ## Context
 
