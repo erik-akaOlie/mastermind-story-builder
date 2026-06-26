@@ -270,8 +270,19 @@ cluster is M–L; total Bucket-1 build is ~1.5 sprints.
   "Environment Variables."
 - **Live signup is open/ungated**; **$5 PostHog caps, 30-day retention, sole org
   membership** still true (ADR-0017 §3 claims verified-in-account — spot-check).
-- **Confirm the Supabase backup / point-in-time-recovery tier** — the only
-  recovery backstop for hard-deleted data (see the Soon-after item below).
+- **Supabase backups** — ✅ **RESOLVED 2026-06-26: upgraded to Supabase Pro.**
+  Daily backups (7-day retention) are now active as the **disaster-recovery
+  backstop** (full-DB corruption / dropped table / bad migration) — and they also
+  protect Erik's own live campaign, which previously had no backup. **Caveats
+  (two):** (a) backups cover the **database only** — Storage objects (card +
+  content images in `workspace-media`, profile avatars) are **not** included, so a
+  restore brings back card text / structure / connections but **not** images
+  deleted since; (b) a native restore is **whole-database to a point in time**, so
+  recovering a single deleted workspace *without disrupting other users* is a
+  manual restore-to-a-clone + extract. Both are why backups do **not** replace
+  app-level workspace soft-delete (Soon-after item below) for clean per-workspace
+  recovery. (Storage-object backup is a separate future consideration — not a beta
+  blocker; campaign *text* is the crown jewel and it is now covered.)
 - **Size:** S (dashboard/console checks).
 
 ---
@@ -282,17 +293,40 @@ cluster is M–L; total Bucket-1 build is ~1.5 sprints.
 - **Problem.** Whole-workspace delete is functional and reasonably protected
   (homepage → tile "…" menu → Delete → a browser `confirm()` naming the
   workspace) but the popup is a **generic browser dialog**, and there is **no
-  soft-delete / no undo** for a whole-workspace delete — the only recovery is a
-  coarse Supabase backup restore. (Card deletes have no confirm but ARE
-  in-session undoable; account delete is strongly guarded with type-your-email.)
-  Not a beta blocker (hard to trigger by pure accident), but a trust-hardening
-  item for a memory-reconstruction product.
+  soft-delete / no in-app undo** for a whole-workspace delete — post-delete
+  recovery now relies on the Supabase Pro daily backup, which is a manual
+  restore-to-a-clone + extract (whole-DB granularity), not a clean per-workspace
+  undelete (the soft-delete item below is that clean fix). (Card deletes have no
+  confirm but ARE in-session undoable; account delete is strongly guarded with
+  type-your-email.) Not a beta blocker (hard to trigger by pure accident), but a
+  trust-hardening item for a memory-reconstruction product.
 - **Success.** A custom, product-native modal showing the workspace name +
   impactful destructive language (optionally type-the-name-to-confirm if
   campaigns hold serious history). Erik wants a design pass; bundle with
   homepage polish if it fits naturally.
 - **Decision (2026-06-25).** Soon-after, not a beta blocker.
 - **Size:** S–M.
+
+### Workspace soft-delete + restore (early Bucket 2)
+- **Problem.** A permanently deleted workspace cannot be cleanly recovered
+  in-app. Supabase Pro daily backups (added 2026-06-26) are the **disaster**
+  backstop, but recovering **one** deleted workspace from a backup means a manual
+  restore-to-a-clone + extract at whole-DB granularity — fine for a rare
+  catastrophe, clumsy as the answer to "a beta user deleted their campaign
+  yesterday, get it back without disrupting anyone."
+- **Success.** Deleting a workspace marks it deleted (e.g. `deleted_at`) and hides
+  it rather than destroying its rows; a "restore from trash" path brings **exactly
+  that one workspace** back, touching no other user. Pairs naturally with the
+  custom destructive-confirmation modal above. (Consider extending the same
+  pattern to card/text deletes later; out of scope here.)
+- **Classification (2026-06-26).** **Early Bucket 2 — not a beta blocker.** With
+  Pro backups now active the data is recoverable (manually) even before this
+  ships, the existing delete path is reasonably guarded, and for a ~50-person
+  short beta the occasional manual recovery is an acceptable support burden. No
+  strong reason found to block the first Mox users on it.
+- **Dependencies.** A schema migration (`deleted_at` on `workspaces`) + read-path
+  filtering everywhere workspaces are listed/loaded + a restore surface.
+- **Size:** M.
 
 ### Markdown export (data portability)
 - See the Foundational/Quick-Win entry below. ToS already covers the gap
