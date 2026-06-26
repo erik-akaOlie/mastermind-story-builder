@@ -18,15 +18,20 @@
 
 import { useEffect } from 'react'
 import { useProfile } from '../lib/ProfileContext.jsx'
+import { useAuth } from '../lib/AuthContext.jsx'
 import { initAnalytics } from '../lib/analytics.js'
 
 export default function AnalyticsBootstrap() {
   const { profile } = useProfile()
+  const { user } = useAuth()
 
   useEffect(() => {
     if (!profile) return
-    initAnalytics(profile)
-  }, [profile?.id, profile?.is_test_user])
+    // Pass the auth email alongside the profile so PostHog identify() can
+    // attach it as a person property (email lives on auth.users, not the
+    // profile row). See ADR-0017 "beta user identification".
+    initAnalytics(profile, user?.email)
+  }, [profile?.id, profile?.is_test_user, user?.email])
 
   return null
 }

@@ -37,7 +37,7 @@ let initStarted = false
 // the user isn't a tester. Designed to be called from a React effect on
 // profile load.
 // ----------------------------------------------------------------------------
-export async function initAnalytics(profile) {
+export async function initAnalytics(profile, email) {
   if (initStarted) return
   if (profile?.is_test_user !== true) return
 
@@ -78,11 +78,22 @@ export async function initAnalytics(profile) {
           element?.classList?.contains('ph-mask') ? '*'.repeat(text?.length ?? 0) : text,
       },
       // Identify the tester so their replays correlate to live observation
-      // sessions. Done in `loaded` so the SDK is fully ready first.
+      // sessions. Done in `loaded` so the SDK is fully ready first. We attach
+      // email + display_name + how_heard as person properties so the replay
+      // list shows real people (known testers like Chris/Todd) instead of raw
+      // UUIDs — see ADR-0017 "beta user identification". Undefined props are
+      // omitted by PostHog, so pre-trigger users (no display_name) are fine.
+      // PRIVACY: sending email/name while recording makes sessions personally
+      // identifiable; the in-flow recording notice discloses this (it does not
+      // imply anonymity).
       loaded: (instance) => {
         if (profile?.id) {
           try {
-            instance.identify(profile.id)
+            instance.identify(profile.id, {
+              email: email || undefined,
+              display_name: profile.display_name || undefined,
+              how_heard: profile.how_heard || undefined,
+            })
           } catch (err) {
             console.warn('[analytics] identify failed:', err)
           }
