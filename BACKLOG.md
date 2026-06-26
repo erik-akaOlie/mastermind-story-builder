@@ -176,14 +176,33 @@ cluster is M–L; total Bucket-1 build is ~1.5 sprints.
 - **Dependencies.** None.
 - **Size:** S (in-app link); copy placement is trivial.
 
-### Verify Supabase email confirmation is enabled
-- **Problem.** ADR-0017 relies on email confirmation being on (the primary
-  cheap abuse control). The signup UI already handles the confirm-email
-  path, but the dashboard setting hasn't been confirmed this cycle.
-- **Success.** Confirmed in the Supabase dashboard (Authentication →
-  Providers → Email → "Confirm email" on). Settings-only; no code.
-- **Dependencies.** None.
-- **Size:** S (a dashboard check).
+### Custom SMTP for auth email — LAUNCH BLOCKER
+- **Problem.** Supabase's built-in email sender is test-only and capped at
+  ~2 messages/hour **project-wide** (a single shared bucket across ALL signups,
+  not per user) — confirmed in Supabase's own docs. A Mox launch burst would
+  drain that shared cap within the first few signups, leaving later users with
+  no confirmation email and no way into the app — a **loss-of-trust** failure
+  (the cardinal beta risk). **Supabase Pro does NOT raise this limit** — custom
+  SMTP is the only fix. Email confirmation is the chosen abuse control
+  (ADR-0017 §4) so it must stay ON, which means working email at burst volume
+  is mandatory. (Confirmed 2026-06-26: built-in delivery works for solo testing
+  but is unusable at launch volume.)
+- **Success.** A real email provider wired into Supabase (Authentication →
+  SMTP settings) so confirmation emails deliver reliably at launch volume.
+  **Recommended path: Resend free tier ($0; 3,000/mo, 100/day) sending from a
+  subdomain of the already-owned `justlivingthedream.com`** (e.g.
+  `no-reply@mastermind.justlivingthedream.com`) — **NO new domain purchase, NO
+  new recurring cost.**
+- **Tradeoffs.** Resend + owned domain = best deliverability, ~20–30 min
+  one-time DNS setup (copy-paste across 3 dashboards). Gmail SMTP
+  (`contact.mastermind.lab@gmail.com`) = no DNS setup but fragile deliverability
+  + Google-throttling risk mid-launch (needs an app password + 2FA); **backup
+  only, not preferred.** Do NOT launch on the built-in sender; do NOT disable
+  email confirmation to dodge this (it removes the abuse control).
+- **Cost.** $0 (free tier + a domain Erik already owns).
+- **Dependencies.** Access to `justlivingthedream.com`'s DNS settings (need to
+  know which registrar/DNS host manages it to write exact click-steps).
+- **Size:** S (one-time setup; mostly copy-paste).
 
 ### Simple search (titles + types) — beta scope
 - **Problem.** A search control is **visible** top-right (`SearchBar.jsx`) and
