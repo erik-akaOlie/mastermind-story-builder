@@ -98,25 +98,32 @@ They reorder relative to each other based on what #1 + #2 reveal.
 > Implementation work for the capped free-beta launch decided in
 > [ADR-0017](./docs/decisions/0017-mox-free-beta-launch.md) (2026-06-24).
 > Grouped as a cross-band theme rather than scattered across Value-Add
-> bands so the launch checklist stays in one place. **None of these are
-> built yet** — they are decisions awaiting implementation through the
-> normal pipeline. Already-in-place pieces (Terms/Privacy clickwrap +
+> bands so the launch checklist stays in one place. **Status (2026-06-26):
+> the signup / launch-ops cluster has SHIPPED** (the ✅ items below); the
+> remaining items are still awaiting implementation through the normal
+> pipeline. Already-in-place pieces (Terms/Privacy clickwrap +
 > Privacy Policy disclosure, $5 PostHog caps, sole PostHog membership,
 > 30-day retention, account+recording deletion) are **not** listed here
 > because they are done.
 
-**Priority order (2026-06-25 beta-readiness audit).** Must-fix sequence:
-production confirmations (Erik, ~30 min) → ship simple search → the **signup &
-launch-ops cluster** (soft-cap + waitlist + how-heard + recording notice + beta
-promise + user identification — they share the signup form, the
-`handle_new_user` trigger, and one migration, so build together) → first-run
-creation affordance → mobile entry. Simple search, first-run affordance, mobile
-entry, and user identification were added/promoted in the 2026-06-25 audit;
-workspace-delete custom confirmation and markdown export are Soon-after.
-Decisions reached in that audit are recorded inline below. **Honest sizing:** the
-cluster is M–L; total Bucket-1 build is ~1.5 sprints.
+**Priority order (updated 2026-06-26).** ✅ **DONE:** production confirmations
+and the **signup & launch-ops cluster** (soft-cap + waitlist + how-heard +
+recording notice + beta promise + user identification — shipped as one
+coordinated build on migration 014; see the ✅ items below). **Remaining
+must-fix before the Mox post:** custom SMTP + Supabase Site URL (the email-
+deliverability gate — see "Custom SMTP for auth email" below) → simple search
+→ first-run creation affordance → mobile entry. Search, first-run affordance,
+and mobile entry are pending a re-triage against the stricter "required to
+launch + learn" bar. Workspace-delete custom confirmation and markdown export
+are Soon-after. **Honest sizing:** SMTP + Site URL is S (config only); the
+rest of remaining Bucket-1 is ~1 sprint.
 
 ### Soft cap + overflow waitlist + "how did you hear?"
+- ✅ **SHIPPED 2026-06-26** (migration 014 + `betaConfig.js`/`waitlist.js` +
+  Login waitlist mode). Verified in prod at the DB level: account creation +
+  display_name capture, waitlist insert + duplicate/format guards, soft-cap
+  auto-flip to `beta_open = false` at the seat limit. Original spec retained
+  below for history.
 - **Problem.** ADR-0017 commits to a ~50-seat ("50-ish") capped beta with
   an overflow waitlist, but no seat-gating, waitlist, or attribution
   capture exists. Signup is currently open and ungated.
@@ -141,6 +148,8 @@ cluster is M–L; total Bucket-1 build is ~1.5 sprints.
   separate later chunk).
 
 ### In-flow session-recording notice on signup
+- ✅ **SHIPPED 2026-06-26** — the plain-English recording notice renders on the
+  signup screen above the single Terms/Privacy checkbox. Original spec below.
 - **Problem.** Per ADR-0017, recording stays on for free beta users under
   *disclosed in-app consent*, but the signup checkbox only says "I agree
   to the Terms of Service and Privacy Policy" — the recording disclosure
@@ -155,6 +164,9 @@ cluster is M–L; total Bucket-1 build is ~1.5 sprints.
 - **Size:** S.
 
 ### Beta-promise copy (free early-access, no free-forever guarantee)
+- ✅ **SHIPPED 2026-06-26 (signup screen only).** The beta-promise copy renders
+  on the signup screen. The **launch-post placement is still pending** (part of
+  the launch-post copy work). Original spec below.
 - **Problem.** ADR-0017 locks the beta *promise* — free early-access,
   pricing may change, beta access is not a free-forever guarantee — but it
   is not stated anywhere users see it.
@@ -261,6 +273,11 @@ cluster is M–L; total Bucket-1 build is ~1.5 sprints.
 - **Size:** S.
 
 ### Beta user identification (display name + PostHog identify)
+- ✅ **SHIPPED 2026-06-26 (code).** Required display name collected at signup +
+  stored in `profiles` via the trigger; `analytics.identify()` now sends email
+  + display_name + how_heard. **Not yet verified end to end** that PostHog's
+  replay list actually shows the enriched properties — confirm during the next
+  test pass. Original spec below.
 - **Problem.** Signup collects only email + password + terms timestamp — **no
   name**; `profiles.display_name` is always NULL (the column + `setDisplayName`
   exist but nothing in the UI calls them). PostHog `identify` is called with

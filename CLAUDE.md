@@ -194,6 +194,12 @@ src/
                                    resetAnalytics() both no-op when init never ran. All three public
                                    functions wrap their PostHog calls in try/catch so a misbehaving
                                    analytics call can't crash the host feature.
+    betaConfig.js                  reads the single beta_config launch-switch row (isBetaOpen). Anon-
+                                   readable; fail-safe defaults to OPEN if the read fails. Migration 014.
+    waitlist.js                    joinWaitlist() — anon insert into public.waitlist with plain-English
+                                   dup/format errors. Overflow signups when beta_open is false.
+    howHeardOptions.js             shared "How did you hear?" option list (Discord, Reddit, YouTube,
+                                   LinkedIn, Friend / word of mouth, Other) used by signup + waitlist.
 
   lib/undo/                        Undo-system command-pattern dispatcher (per ADR-0006)
     index.js                       exports ACTION_TYPES, deepEqual, and the four dispatcher functions
@@ -335,6 +341,14 @@ supabase/
                                    profile row per new sign-up, the profile-media Storage bucket, and
                                    same-schema RLS policies pinning every object to its owner's
                                    auth.uid() prefix
+    004–013                        is_test_user flag + default flip, campaign→workspace rename, card-media
+                                   rename, terms-acceptance, unique connection pairs, workspace snapshot/
+                                   activity/last-opened, node hide-avatar (see each file for specifics)
+    014_beta_launch_ops.sql        Mox free-beta launch ops (ADR-0017): beta_config (single-row seat cap
+                                   + open flag; anon-readable, no write policy), waitlist (anon insert-only
+                                   + unique/format guards), profiles.how_heard column, and handle_new_user
+                                   extended to capture display_name + how_heard and auto-flip beta_open at
+                                   the seat cap (soft cap — never rejects the current signup)
 
 public/
   avatars/                         static avatar images for the sample Strahd data
@@ -356,13 +370,15 @@ docs/
 | Table | Purpose |
 |---|---|
 | `auth.users` | Supabase-managed; referenced by `workspaces.owner_id` and `profiles.id` |
-| `profiles` | one row per user — canonical home for app-level user metadata (`avatar_path`, `display_name`, `is_test_user`, future fields). Auto-created by an `auth.users` INSERT trigger; backfilled in migration 003. `is_test_user` added in migration 004; default flipped to `true` in migration 005 for the invite-only stage. **For the Mox free-beta stage this default is retained** — recording stays on for free beta users under disclosed in-app consent (see [ADR-0017](./docs/decisions/0017-mox-free-beta-launch.md)); ADR-0009's "revert before public launch + tester allowlist" plan applies only to a future fully-public, non-capped launch. Gates whether PostHog loads for that user (ADR-0009 / ADR-0017) |
+| `profiles` | one row per user — canonical home for app-level user metadata (`avatar_path`, `display_name`, `is_test_user`, `how_heard` (signup attribution, added in migration 014), future fields). Auto-created by an `auth.users` INSERT trigger; backfilled in migration 003. `is_test_user` added in migration 004; default flipped to `true` in migration 005 for the invite-only stage. **For the Mox free-beta stage this default is retained** — recording stays on for free beta users under disclosed in-app consent (see [ADR-0017](./docs/decisions/0017-mox-free-beta-launch.md)); ADR-0009's "revert before public launch + tester allowlist" plan applies only to a future fully-public, non-capped launch. Gates whether PostHog loads for that user (ADR-0009 / ADR-0017) |
 | `workspaces` | one row per workspace; owned by a user. `cover_image_url` = user-supplied custom cover (display `.full` path); `snapshot_path` = auto-generated canvas snapshot used as the fallback cover (migration 010). A workspace-specific `updated_at` trigger bumps only on name/description/cover changes, so snapshot writes don't count as "modified." `list_workspaces_with_activity()` (migration 011) returns each row + `last_activity_at` for the picker's "Last modified" sort. |
 | `node_types` | card types per user (built-in five + any custom); `is_system` flags the built-ins. Per-user scope was introduced in migration 001 — every workspace a user owns shares the same set of types. |
 | `nodes` | cards on the canvas (label, summary, avatar_url, position, type_id) |
 | `node_sections` | modular sections inside each card: `kind` ∈ `narrative` \| `hidden_lore` \| `dm_notes` \| `media` \| `custom`; `content` is JSONB |
 | `connections` | edges between two nodes in the same workspace |
 | `text_nodes` | free-floating text annotations on the canvas |
+| `beta_config` | single-row launch switch (`seat_limit`, `beta_open`) read pre-auth by the login screen; anon-readable, **no write policy** (flip only via the dashboard). `handle_new_user` auto-flips `beta_open` off at the seat cap. Migration 014 (ADR-0017). |
+| `waitlist` | overflow signups when the beta is closed (email + how-heard); **anon insert-only**, unique email + email-format CHECK. Migration 014. |
 
 Full DDL in `supabase/schema.sql`. Every table has RLS enabled; policies require that the row's workspace belongs to the current `auth.uid()`.
 
@@ -730,6 +746,12 @@ Custom user-created types are persisted per-user as rows in the `node_types` tab
 ## What Is Built
 
 - [x] Supabase auth (email+password), login screen, sign-out, avatar dropdown
+- [x] **Beta signup / launch-ops cluster** (ADR-0017, migration 014) — capped signup with soft-cap
+  auto-flip + overflow waitlist; "how did you hear?" on both flows; required display name at signup;
+  in-flow session-recording notice + beta-promise copy on the signup screen; PostHog identify enriched
+  with email + display_name + how_heard. DB-level behaviors verified in prod; the email confirmation
+  round-trip (Supabase Site URL), the PostHog-side display of the enriched props, and custom SMTP are
+  **not yet verified/configured** — see BACKLOG "Custom SMTP for auth email — LAUNCH BLOCKER."
 - [x] Workspace CRUD (create, list, rename, delete, switch)
 - [x] RLS policies on every table
 - [x] 5 built-in node types seeded per user on first sign-in

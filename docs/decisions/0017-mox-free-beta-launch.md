@@ -1,6 +1,6 @@
 # ADR-0017: Mox free-beta launch — model, recording posture, and operations
 Date: 2026-06-24
-Status: Accepted (planning; implementation is tracked in BACKLOG.md and is **not yet built** — see "Implementation status" below)
+Status: Accepted (planning; the signup/launch-ops cluster **shipped 2026-06-26** — remaining items tracked in BACKLOG.md; see "Implementation status" below)
 
 > **Scope note.** The legal/tax/entity content below is **planning support, not legal or tax advice.** Points that need the City of Bellevue, WA Department of Revenue, WA Secretary of State, a CPA, or an attorney are flagged as such. No definitive legal/tax conclusions are recorded here.
 
@@ -23,7 +23,7 @@ This ADR records the launch-readiness decisions reached in the 2026-06-24 strate
 
 ### 2. Recording posture — supersedes ADR-0009's public-launch guidance
 - **Session recording remains ON for free beta users.** `is_test_user` stays default `true` (migration 005 is **not** reverted for this stage).
-- **Consent shifts to disclosed in-app consent** (from ADR-0009's invite-conversation model): the existing single **Terms/Privacy clickwrap** + the Privacy Policy's session-recording disclosure, **plus a new in-flow plain-English recording notice on the signup screen** (decided here; **not yet built** — see BACKLOG).
+- **Consent shifts to disclosed in-app consent** (from ADR-0009's invite-conversation model): the existing single **Terms/Privacy clickwrap** + the Privacy Policy's session-recording disclosure, **plus a new in-flow plain-English recording notice on the signup screen** (shipped 2026-06-26 — see BACKLOG).
 - **One Terms/Privacy checkbox; no second recording-specific checkbox** unless legal review says the users' jurisdictions require unbundled consent. A separate checkbox would imply a *consent* legal basis inconsistent with the Privacy Policy's current *performance-of-contract* basis — **flagged for legal review**, not adopted by default.
 - This **retires ADR-0009's "revert `is_test_user` before public launch + build a tester allowlist" assumption for the Mox free-beta stage.** That plan applies only to a future *fully public, non-capped* launch.
 
@@ -55,13 +55,17 @@ This ADR records the launch-readiness decisions reached in the 2026-06-24 strate
 - **Entity cleanup becomes a prerequisite before charging money** or before changing the legal docs to operate MasterMind through an LLC (rather than personally).
 - **Where a professional/office is required:** the City of Bellevue Tax Division, WA DOR, and WA SOS for status and closure; a **CPA** for back/final B&O returns and any penalty abatement; an **attorney** if there are liabilities or for the close-vs-revive decision. This ADR records the posture only.
 
-### Implementation status (decisions are not built)
-**Decided here but NOT yet implemented** (tracked in BACKLOG.md; goes through the normal coding pipeline — scope → build → Erik browser-tests → commit):
+### Implementation status
+**Shipped 2026-06-26** (signup/launch-ops cluster — migration 014; verified in prod at the DB level — account/waitlist rows + auto-flip — but the email round-trip and PostHog-side display are not yet verified end to end):
 - soft-cap + overflow waitlist + "how did you hear?" flow
 - in-flow session-recording notice on the signup screen
-- beta-promise copy placement (launch post + signup)
+- beta-promise copy on the signup screen (the **launch-post** placement is still pending)
+- beta user identification: display name collected + stored; `identify()` now sends email + display_name + how_heard
+
+**Still NOT implemented** (tracked in BACKLOG.md; normal pipeline — scope → build → Erik tests → commit):
+- **custom SMTP + Supabase Site URL fix** — the email-deliverability launch gate. The built-in sender is ~2/hr project-wide and unusable at launch volume; the Site URL must point at the production app so confirmation links land in-app. (Replaces the earlier "verify email confirmation is enabled" item — confirmation is on, but delivery is the real gap.)
+- launch-post copy placement (beta promise + Discord redirect script)
 - email-first support placement + in-app Contact/Feedback link
-- verification that Supabase email confirmation is enabled
 
 **Already in place (verified):** the Terms/Privacy clickwrap + Privacy Policy session-recording disclosure; the $5 PostHog caps; sole PostHog org membership; 30-day recording retention; and account deletion that also wipes PostHog records.
 
