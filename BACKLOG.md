@@ -212,8 +212,9 @@ rest of remaining Bucket-1 is ~1 sprint.
   only, not preferred.** Do NOT launch on the built-in sender; do NOT disable
   email confirmation to dodge this (it removes the abuse control).
 - **Cost.** $0 (free tier + a domain Erik already owns).
-- **Dependencies.** Access to `justlivingthedream.com`'s DNS settings (need to
-  know which registrar/DNS host manages it to write exact click-steps).
+- **Dependencies.** Access to `justlivingthedream.com`'s DNS settings — **DNS is
+  managed at GoDaddy** (confirmed 2026-06-28), so the DNS-record step is a GoDaddy
+  task.
 - **Size:** S (one-time setup; mostly copy-paste).
 
 ### Simple search (titles + types) — beta scope
