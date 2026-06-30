@@ -48,3 +48,4 @@ An ADR records **settled decisions and architecture.** It stays intentionally si
 - [ADR-0015: Float-or-dock Inspector for card editing](./0015-float-or-dock-inspector.md)
 - [ADR-0016: Block-editor foundation](./0016-block-editor-foundation.md)
 - [ADR-0017: Mox free-beta launch — model, recording posture, and operations](./0017-mox-free-beta-launch.md)
+- [ADR-0018: Transactional auth email — reusable per-app sending infrastructure](./0018-transactional-email-infrastructure.md)

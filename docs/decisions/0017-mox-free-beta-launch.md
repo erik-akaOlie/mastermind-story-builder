@@ -56,14 +56,16 @@ This ADR records the launch-readiness decisions reached in the 2026-06-24 strate
 - **Where a professional/office is required:** the City of Bellevue Tax Division, WA DOR, and WA SOS for status and closure; a **CPA** for back/final B&O returns and any penalty abatement; an **attorney** if there are liabilities or for the close-vs-revive decision. This ADR records the posture only.
 
 ### Implementation status
-**Shipped 2026-06-26** (signup/launch-ops cluster — migration 014; verified in prod at the DB level — account/waitlist rows + auto-flip — but the email round-trip and PostHog-side display are not yet verified end to end):
+**Shipped 2026-06-26** (signup/launch-ops cluster — migration 014; verified in prod at the DB level — account/waitlist rows + auto-flip. The **email round-trip is now verified** (2026-06-29, see below); the **PostHog-side display of the enriched `identify` props is still NOT verified end to end** — remains on the pending list):
 - soft-cap + overflow waitlist + "how did you hear?" flow
 - in-flow session-recording notice on the signup screen
 - beta-promise copy on the signup screen (the **launch-post** placement is still pending)
 - beta user identification: display name collected + stored; `identify()` now sends email + display_name + how_heard
 
+**Shipped + verified end-to-end 2026-06-29:**
+- **custom SMTP + Supabase Site URL** — the email-deliverability launch gate is CLOSED. Resend free tier wired into Supabase custom SMTP, sending from `auth.mastermind.justlivingthedream.com` (DKIM + SPF verified at GoDaddy); post-SMTP rate limit raised 30 → 100/hr; Site URL confirmed already pointing at the production app. Verified with a real signup round-trip (email to inbox → link → live app) + Resend delivery logs. Built as a reusable per-app pattern — see [ADR-0018](./0018-transactional-email-infrastructure.md). Non-blocking follow-ups: re-home the Resend account to a company identity; add a company-level DMARC later.
+
 **Still NOT implemented** (tracked in BACKLOG.md; normal pipeline — scope → build → Erik tests → commit):
-- **custom SMTP + Supabase Site URL fix** — the email-deliverability launch gate. The built-in sender is ~2/hr project-wide and unusable at launch volume; the Site URL must point at the production app so confirmation links land in-app. (Replaces the earlier "verify email confirmation is enabled" item — confirmation is on, but delivery is the real gap.)
 - launch-post copy placement (beta promise + Discord redirect script)
 - email-first support placement + in-app Contact/Feedback link
 

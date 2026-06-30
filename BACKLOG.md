@@ -29,7 +29,8 @@ Version-level scope (V1, V2+, V3+, out) lives in [`docs/product/roadmap.md`](./d
 - **Each item has a problem statement, success criteria, and dependencies.**
   No code until those three exist (per project process preference).
 - **Done items live in CHANGELOG.md, not here.** This doc is forward-looking
-  only.
+  only. *(Deliberate exception: the Mox launch-readiness section keeps a few
+  shipped items inline, clearly marked ✅, as at-a-glance launch history.)*
 
 ## Sizing convention
 
@@ -42,7 +43,16 @@ Version-level scope (V1, V2+, V3+, out) lives in [`docs/product/roadmap.md`](./d
 
 ---
 
-## Current sprint candidate — next
+## Post-launch feature roadmap (May 2026 — PAUSED for Mox launch)
+
+> **Superseded as the *current* focus (2026-06-29).** The immediate focus is the
+> **Mox free-beta launch** — see the next section for the live status snapshot.
+> This May product-discovery sprint plan (custom card types → typed connections
+> → search) is **paused until the beta launches**, then resumes, re-triaged
+> against what real GM usage teaches. Kept here as the queued post-launch
+> feature work — **not** the current sprint. (Note: *simple* search is pulled
+> forward into the launch list below as a candidate must-fix; the fuller search
+> here is the post-launch version.)
 
 The previous sprint shipped **Analytics + session replay**,
 **Zoom-to-node-view (v1 → v2)**, the **Altitude Rail** instrument,
@@ -93,7 +103,35 @@ They reorder relative to each other based on what #1 + #2 reveal.
 
 ---
 
-## Mox free-beta launch readiness (pre-launch)
+## Mox free-beta launch readiness (pre-launch) — CURRENT FOCUS
+
+### Current Mox launch snapshot (2026-06-29)
+
+**Hard gates closed** ✅
+- Signup / waitlist / attribution (how-heard) / in-flow recording notice /
+  beta-promise copy on the signup screen (migration 014, 2026-06-26)
+- Custom SMTP + Site URL + confirmation round-trip — **verified end-to-end
+  once, configured for expected beta volume (not load-tested)**; see
+  [ADR-0018](./docs/decisions/0018-transactional-email-infrastructure.md)
+
+**Pending verification** (not a hard gate)
+- PostHog-side display of the enriched `identify` props (email + display_name +
+  how_heard) — DB/code shipped 2026-06-26; replay-side display not yet eyeballed
+
+**Candidate must-fix before the Mox post** (pending re-triage against the
+"required to launch + learn" bar — the next product-lead decision)
+- Simple search · First-run creation affordance (FTUE) · Mobile login +
+  best-on-desktop expectation
+
+**Launch-post copy** (write at post time)
+- Beta-promise + Discord redirect script + support-expectation copy
+
+**Likely fast-follow** (post-launch polish, not blockers)
+- In-app Contact/Feedback link · workspace-delete confirmation · markdown export
+  · custom app domain · company-level DMARC · re-home Resend account to a
+  company identity
+
+---
 
 > Implementation work for the capped free-beta launch decided in
 > [ADR-0017](./docs/decisions/0017-mox-free-beta-launch.md) (2026-06-24).
@@ -106,17 +144,20 @@ They reorder relative to each other based on what #1 + #2 reveal.
 > 30-day retention, account+recording deletion) are **not** listed here
 > because they are done.
 
-**Priority order (updated 2026-06-26).** ✅ **DONE:** production confirmations
-and the **signup & launch-ops cluster** (soft-cap + waitlist + how-heard +
+**Priority order (updated 2026-06-29).** ✅ **DONE:** production confirmations;
+the **signup & launch-ops cluster** (soft-cap + waitlist + how-heard +
 recording notice + beta promise + user identification — shipped as one
-coordinated build on migration 014; see the ✅ items below). **Remaining
-must-fix before the Mox post:** custom SMTP + Supabase Site URL (the email-
-deliverability gate — see "Custom SMTP for auth email" below) → simple search
-→ first-run creation affordance → mobile entry. Search, first-run affordance,
-and mobile entry are pending a re-triage against the stricter "required to
-launch + learn" bar. Workspace-delete custom confirmation and markdown export
-are Soon-after. **Honest sizing:** SMTP + Site URL is S (config only); the
-rest of remaining Bucket-1 is ~1 sprint.
+coordinated build on migration 014; see the ✅ items below); and the
+**custom-SMTP + Site-URL email-deliverability gate** (shipped + verified
+end-to-end 2026-06-29 — see the ✅ item below and [ADR-0018](./docs/decisions/0018-transactional-email-infrastructure.md)).
+**Remaining candidate must-fix before the Mox post** (pending re-triage, see
+snapshot above): simple search → first-run creation affordance → mobile entry,
+judged against the stricter "required to launch + learn" bar. Also still **pending verification** (lighter,
+not a hard gate): the **PostHog-side display of the enriched `identify` props**
+(email + display_name + how_heard) — the DB/code side shipped 2026-06-26 but the
+replay-side display hasn't been eyeballed. Workspace-delete custom confirmation
+and markdown export are Soon-after. **Honest sizing:** remaining Bucket-1 is
+~1 sprint.
 
 ### Soft cap + overflow waitlist + "how did you hear?"
 - ✅ **SHIPPED 2026-06-26** (migration 014 + `betaConfig.js`/`waitlist.js` +
@@ -188,7 +229,20 @@ rest of remaining Bucket-1 is ~1 sprint.
 - **Dependencies.** None.
 - **Size:** S (in-app link); copy placement is trivial.
 
-### Custom SMTP for auth email — LAUNCH BLOCKER
+### ✅ Custom SMTP for auth email — LAUNCH BLOCKER (SHIPPED + VERIFIED 2026-06-29)
+- **Outcome.** Resend free tier wired into Supabase custom SMTP, sending from
+  `auth.mastermind.justlivingthedream.com` (DKIM + SPF verified at GoDaddy).
+  Supabase post-SMTP rate limit raised 30 → 100/hr; Site URL confirmed already
+  pointing at the production app (`https://mastermind-story-builder.vercel.app`);
+  `localhost:5173` kept as a dev redirect. Verified end-to-end: real `+alias`
+  signup → confirmation email **to inbox** → link → live app; Resend logs
+  confirm delivery; own sign-in intact. Built as a **reusable per-app pattern**
+  (MasterMind is the first tenant) — playbook in
+  [ADR-0018](./docs/decisions/0018-transactional-email-infrastructure.md).
+  **Follow-ups (non-blocking):** re-home the Resend account from personal Gmail
+  to a company identity; add a monitored company-level DMARC later. $0 added cost.
+
+#### Original problem statement (for reference)
 - **Problem.** Supabase's built-in email sender is test-only and capped at
   ~2 messages/hour **project-wide** (a single shared bucket across ALL signups,
   not per user) — confirmed in Supabase's own docs. A Mox launch burst would
