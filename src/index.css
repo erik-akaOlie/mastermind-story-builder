@@ -18,6 +18,45 @@ input[type="password"]::-ms-clear {
   display: none;
 }
 
+/* ── Mobile gesture ownership (MB-1) ─────────────────────────────────────
+   The app — not the browser — owns touch gestures over the canvas.
+
+   overscroll-behavior: none disables pull-to-refresh and rubber-band
+   overscroll at the page level, so a drag that reaches the page edge can't
+   hand control to the browser mid-gesture (the "suddenly I'm controlling
+   the browser" break from the 2026-07-02 mobile audit).
+
+   touch-action: none on .react-flow tells the browser that no touch gesture
+   inside the canvas (pane, nodes, edges) should trigger native scrolling or
+   zooming — pointer events keep firing to our handlers instead of being
+   cancelled the moment the browser claims the gesture. React Flow v11 ships
+   NO touch-action rules of its own (verified in the installed package), so
+   without this every canvas drag was a tug-of-war with Chrome's scroll.
+   Overlays that need native scrolling (Inspector, pickers, menus) are
+   siblings of .react-flow, not children — they keep normal touch behavior. */
+html,
+body {
+  overscroll-behavior: none;
+}
+.react-flow {
+  touch-action: none;
+}
+
+/* App-level viewport sizing. 100vh on mobile includes the area behind the
+   browser's collapsing address bar, so layout is ~56px too tall and jumps
+   when the bar shows/hides. dvh (dynamic viewport height) tracks the REAL
+   visible area; the @supports block keeps 100vh as the fallback for older
+   browsers. */
+.app-viewport {
+  width: 100vw;
+  height: 100vh;
+}
+@supports (height: 100dvh) {
+  .app-viewport {
+    height: 100dvh;
+  }
+}
+
 /* Canvas background — dark theme exploration */
 .react-flow {
   background-color: #031a15;

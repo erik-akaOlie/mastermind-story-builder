@@ -133,6 +133,33 @@ export function useCustomMarquee({ rfInstanceRef, nodes, setNodes, isPanning }) 
     return () => document.removeEventListener('pointerdown', onPointerDown)
   }, [rfInstanceRef])
 
+  // ── Second finger lands → hand the gesture off to two-finger pan/zoom ───
+  // Touch interaction model (approved 2026-07-02): one-finger drag on empty
+  // canvas = marquee, two-finger drag = pan/zoom (useTouchCanvasGestures).
+  // When a marquee is in flight and a second finger touches down, the user's
+  // intent is pan — abort the marquee and REVERT selection to what it was at
+  // pointerdown, so the half-second of accidental marquee doesn't leave a
+  // surprise selection behind.
+  useEffect(() => {
+    function onTouchStart(e) {
+      if (!sessionRef.current) return
+      if (e.touches.length < 2) return
+      const initial = sessionRef.current.initialSelectedIds
+      setNodesRef.current((nds) =>
+        nds.map((n) => {
+          const want = initial.has(n.id)
+          return n.selected !== want ? { ...n, selected: want } : n
+        })
+      )
+      sessionRef.current = null
+      currentRef.current = null
+      lastAppliedSelectedIdsRef.current = new Set()
+      setMarquee(null)
+    }
+    document.addEventListener('touchstart', onTouchStart)
+    return () => document.removeEventListener('touchstart', onTouchStart)
+  }, [])
+
   // ── Block native text selection WHILE a marquee is in flight ────────────
   // The browser's default response to a click-drag is to start a text
   // selection, sweeping it across whatever DOM lies between the drag's start
@@ -315,13 +342,27 @@ export function useCustomMarquee({ rfInstanceRef, nodes, setNodes, isPanning }) 
       rafId = requestAnimationFrame(tick)
     }
 
-    document.addEventListener('pointermove', onPointerMove)
-    document.addEventListener('pointerup',   onPointerUp)
+    // pointercancel fires when something else claims the pointer mid-drag
+    // (on touch: the browser or another gesture recognizer). Without this,
+    // a cancelled touch-marquee would leave a stale session + rect behind.
+    // touch-action:none on .react-flow makes cancellation rare, but not
+    // impossible (e.g. an incoming call sheet). Clean up without applying.
+    function onPointerCancel() {
+      sessionRef.current = null
+      currentRef.current = null
+      lastAppliedSelectedIdsRef.current = new Set()
+      setMarquee(null)
+    }
+
+    document.addEventListener('pointermove',   onPointerMove)
+    document.addEventListener('pointerup',     onPointerUp)
+    document.addEventListener('pointercancel', onPointerCancel)
     rafId = requestAnimationFrame(tick)
 
     return () => {
-      document.removeEventListener('pointermove', onPointerMove)
-      document.removeEventListener('pointerup',   onPointerUp)
+      document.removeEventListener('pointermove',   onPointerMove)
+      document.removeEventListener('pointerup',     onPointerUp)
+      document.removeEventListener('pointercancel', onPointerCancel)
       if (rafId !== null) cancelAnimationFrame(rafId)
     }
   }, [marqueeActive, rfInstanceRef, forceRender])

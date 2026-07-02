@@ -2,7 +2,13 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- maximum-scale=1 stops the BROWSER from pinch-zooming the page itself
+         (which scaled fixed UI chrome along with the canvas on Android).
+         Canvas pinch-zoom is our own gesture (useTouchCanvasGestures).
+         iOS Safari deliberately ignores this attribute for accessibility —
+         there, the non-passive preventDefault in the gesture hook does the
+         equivalent job for gestures that start on the canvas. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>MasterMind OS</title>
   </head>

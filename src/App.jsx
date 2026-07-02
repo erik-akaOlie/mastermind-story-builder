@@ -38,6 +38,7 @@ import { useNodeHoverSelection } from './hooks/useNodeHoverSelection'
 import { useEdgeHoverSession } from './hooks/useEdgeHoverSession'
 import { useUndoShortcuts } from './hooks/useUndoShortcuts'
 import { useCustomMarquee } from './hooks/useCustomMarquee'
+import { useTouchCanvasGestures } from './hooks/useTouchCanvasGestures'
 import { useReducedMotion } from './hooks/useReducedMotion'
 import { useArrowKeyNavigation } from './hooks/useArrowKeyNavigation'
 import MarqueeRect from './components/MarqueeRect'
@@ -249,6 +250,14 @@ export default function App() {
     setNodes,
     isPanning,
   })
+
+  // Touch interaction model (approved 2026-07-02, provisional pending
+  // Checkpoint 1 on-device test): one-finger drag on empty canvas = marquee
+  // (the hook above — its pointer events fire for touch too), two-finger
+  // drag = pan + pinch-zoom together, Google-Maps style. RF v11 rejects all
+  // touch-drag starts when panOnDrag is false (always false on a phone — no
+  // spacebar), so touch pan/zoom is our own hook rather than RF's.
+  useTouchCanvasGestures({ rfInstanceRef })
 
   // Hover / selection UI (not persisted; backed by useCanvasUiStore so a
   // hover event mutates one atomic value instead of every node's data).
@@ -1751,7 +1760,7 @@ export default function App() {
   // ── Render ──────────────────────────────────────────────────────────────
   if (loading) {
     return (
-      <div style={{ width: '100vw', height: '100vh' }} className="flex items-center justify-center bg-gray-50">
+      <div className="app-viewport flex items-center justify-center bg-gray-50">
         <div className="text-sm text-gray-500">Loading campaign…</div>
       </div>
     )
@@ -1759,7 +1768,7 @@ export default function App() {
 
   if (loadError) {
     return (
-      <div style={{ width: '100vw', height: '100vh' }} className="flex items-center justify-center bg-gray-50">
+      <div className="app-viewport flex items-center justify-center bg-gray-50">
         <div className="max-w-md text-center">
           <div className="text-sm font-medium text-red-700 mb-1">Couldn't load campaign</div>
           <div className="text-xs text-gray-600">{loadError}</div>
@@ -1772,8 +1781,7 @@ export default function App() {
     <LightboxProvider>
     <CanvasOpsProvider value={{ onDeleteNode, beginQuickConnect }}>
     <div
-      style={{ width: '100vw', height: '100vh' }}
-      className={isPanning ? 'is-panning' : ''}
+      className={`app-viewport ${isPanning ? 'is-panning' : ''}`}
     >
       <ReactFlow
         nodes={nodes}
