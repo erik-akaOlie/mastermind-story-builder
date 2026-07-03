@@ -282,8 +282,13 @@ src/
     TypePicker.jsx                 type dropdown (used inside InspectorHeader) + "Create new type…" row
     SectionLabel.jsx               tiny uppercase-tracked label utility used across sections
     ContextMenu.jsx                right-click menu on canvas card nodes (Edit/Duplicate/Delete)
-    CanvasContextMenu.jsx          right-click menu on empty canvas (Add card / Add text). Submenu uses
-                                   a 16px invisible hover-bridge + 200ms hover-intent close delay
+    CanvasContextMenu.jsx          right-click / long-press menu on empty canvas (Add card / Add text) —
+                                   "Canvas Tool Menu" in product language. Desktop: hover opens the type
+                                   submenu (16px invisible hover-bridge + 200ms hover-intent close delay),
+                                   click quick-adds the first type. Touch-primary (useTouchPrimary): tap
+                                   on "Add card" expands the type list INLINE (accordion) instead — hover
+                                   handlers no-op so synthetic tap-hover can't open the side panel; rows
+                                   grow to 44px tap targets (MB-3)
     CreateTypeModal.jsx            custom card type creation (label + icon + color picker)
     Lightbox.jsx                   shared <LightboxProvider>; any consumer calls useLightbox().open(value)
     MigrateImages.jsx              one-shot tool at #migrate to backfill base64 → Storage; safe to delete

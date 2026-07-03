@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { TextT, CaretRight } from '@phosphor-icons/react'
 import { useNodeTypes } from '../store/useTypeStore'
+import { useTouchPrimary } from '../hooks/useTouchPrimary'
 
 const HOVER_INTENT_CLOSE_MS = 200
 const BRIDGE_WIDTH = 16  // overlaps 6px into parent + 4px gap + 6px into submenu
@@ -9,11 +10,22 @@ export default function CanvasContextMenu({ x, y, onAddCard, onAddText, onClose 
   const NODE_TYPES = useNodeTypes()
   const [showSub, setShowSub] = useState(false)
 
+  // Touch-primary devices can't hover, so the hover side-panel is unreachable
+  // and a plain tap on "Add card" would silently create the first type. On
+  // touch, tapping "Add card" instead expands the type list INLINE (accordion)
+  // — one panel, so it fits a phone's width, unlike the side-by-side layout.
+  // Desktop behavior is unchanged: hover opens the side panel, click quick-adds.
+  const touchPrimary = useTouchPrimary()
+  const [expanded, setExpanded] = useState(false)
+
   // Hover-intent: delay closing the submenu so a brief mouseleave (e.g., the
   // cursor briefly leaving all hover regions while crossing the gap) doesn't
   // immediately collapse the submenu. Re-entering cancels the pending close.
+  // Both handlers no-op on touch: taps fire synthetic mouseenter events that
+  // would otherwise open the (off-screen-prone) hover side-panel.
   const closeTimerRef = useRef(null)
   const openSub = () => {
+    if (touchPrimary) return
     if (closeTimerRef.current) {
       clearTimeout(closeTimerRef.current)
       closeTimerRef.current = null
@@ -21,6 +33,7 @@ export default function CanvasContextMenu({ x, y, onAddCard, onAddText, onClose 
     setShowSub(true)
   }
   const scheduleCloseSub = () => {
+    if (touchPrimary) return
     if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
     closeTimerRef.current = setTimeout(() => {
       setShowSub(false)
@@ -47,7 +60,13 @@ export default function CanvasContextMenu({ x, y, onAddCard, onAddText, onClose 
   //   Wrapper offsetTop: 4px py-top + 27px section header = 31px
   //   Each submenu row: 14px line-height + 16px py-2 padding = 36px
   //   Submenu chrome: 8px py-1 container + 2px borders = 10px
-  const menuHeight = 118
+  // Touch rows use py-3 instead of py-2 → 44px rows (the platform minimum
+  // comfortable tap target), and the inline type list adds one row per type.
+  const typeEntries = Object.entries(NODE_TYPES)
+  const rowPad     = touchPrimary ? 'py-3' : 'py-2'
+  const rowHeight  = touchPrimary ? 44 : 36
+  const menuHeight = 46 + rowHeight * 2
+    + (touchPrimary && expanded ? typeEntries.length * rowHeight : 0)
   const WRAPPER_OFFSET_TOP = 31
 
   // Parent menu: prefer click position; flip above when it'd overflow downward,
@@ -58,7 +77,6 @@ export default function CanvasContextMenu({ x, y, onAddCard, onAddText, onClose 
   const left = Math.max(VIEWPORT_MARGIN, Math.min(flippedLeft, window.innerWidth  - VIEWPORT_MARGIN - menuWidth))
   const top  = Math.max(VIEWPORT_MARGIN, Math.min(flippedTop,  window.innerHeight - VIEWPORT_MARGIN - menuHeight))
 
-  const typeEntries = Object.entries(NODE_TYPES)
   const subHeight   = typeEntries.length * 36 + 10
   const subLeft     = left + menuWidth + 4
   const subOverflow = subLeft + menuWidth + VIEWPORT_MARGIN > window.innerWidth
@@ -88,32 +106,70 @@ export default function CanvasContextMenu({ x, y, onAddCard, onAddText, onClose 
 
       <div
         className="fixed z-[9999] bg-white border border-gray-200 rounded-lg shadow-xl py-1 select-none"
-        style={{ left, top, width: menuWidth }}
+        style={{
+          left,
+          top,
+          width: menuWidth,
+          // Degenerate-case guard: many custom types could make the expanded
+          // inline list taller than the viewport — scroll rather than clip.
+          maxHeight: window.innerHeight - VIEWPORT_MARGIN * 2,
+          overflowY: 'auto',
+        }}
         onContextMenu={(e) => e.preventDefault()}
       >
         <p className="px-4 py-1.5 text-[0.625rem] font-semibold text-gray-400 uppercase tracking-widest">
           Add to canvas
         </p>
 
-        {/* Add card — click adds the user's first available type; hover
-            opens the type submenu for a deliberate pick. If the user has
-            no types at all (shouldn't happen — ensureBuiltinTypes seeds
-            five on first sign-in), addCardNode logs an error and no-ops. */}
+        {/* Add card — desktop: click adds the user's first available type;
+            hover opens the type submenu for a deliberate pick. Touch: tap
+            toggles the inline type list instead (no hover, and a silent
+            first-type add gives the user no choice). If the user has no
+            types at all (shouldn't happen — ensureBuiltinTypes seeds five
+            on first sign-in), addCardNode logs an error and no-ops. */}
         <div
           className="relative"
           onMouseEnter={openSub}
           onMouseLeave={scheduleCloseSub}
         >
           <button
-            className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-2.5"
-            onClick={() => { onAddCard(typeEntries[0]?.[0]); onClose() }}
+            className={`w-full text-left px-4 ${rowPad} text-sm text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-2.5`}
+            onClick={() => {
+              if (touchPrimary) { setExpanded((v) => !v); return }
+              onAddCard(typeEntries[0]?.[0]); onClose()
+            }}
           >
             <span className="flex-1">Add card</span>
-            <CaretRight size={12} className="text-gray-400" weight="bold" />
+            <CaretRight
+              size={12}
+              className={`text-gray-400 transition-transform ${expanded ? 'rotate-90' : ''}`}
+              weight="bold"
+            />
           </button>
 
-          {/* Card type submenu */}
-          {showSub && (
+          {/* Inline type list (touch only) — same rows as the hover submenu,
+              indented under "Add card" so the choice reads as a sub-level. */}
+          {touchPrimary && expanded && (
+            <div>
+              {typeEntries.map(([key, cfg]) => {
+                const Icon = cfg.icon
+                return (
+                  <button
+                    key={key}
+                    className={`w-full text-left pl-8 pr-4 ${rowPad} text-sm text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-2.5`}
+                    onClick={() => { onAddCard(key); onClose() }}
+                  >
+                    <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: cfg.color }} />
+                    {Icon && <Icon size={14} weight="fill" color={cfg.color} />}
+                    {cfg.label}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Card type submenu (desktop hover) */}
+          {!touchPrimary && showSub && (
             <>
               {/* Invisible hover bridge — overlaps both menus and the gap so the
                   cursor never lands in dead space while transitioning. Combined
@@ -160,7 +216,7 @@ export default function CanvasContextMenu({ x, y, onAddCard, onAddText, onClose 
 
         {/* Add text */}
         <button
-          className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-2.5"
+          className={`w-full text-left px-4 ${rowPad} text-sm text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-2.5`}
           onClick={() => { onAddText(); onClose() }}
         >
           <TextT size={14} weight="bold" color="#6b7280" />
