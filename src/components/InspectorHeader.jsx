@@ -186,7 +186,10 @@ export default function InspectorHeader({
       </div>
 
       <button
-        className="flex-shrink-0 self-start transition-colors"
+        // p-2/-m-2 grows the touch target to ~40px without moving the icon —
+        // the close control is the "never trap the user" guarantee on mobile
+        // (MB-2), and a 24px bare icon is below comfortable thumb size.
+        className="flex-shrink-0 self-start transition-colors p-2 -m-2"
         style={{ color: hdrText, opacity: 0.7 }}
         onMouseEnter={(e) => { e.currentTarget.style.opacity = '1' }}
         onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.7' }}

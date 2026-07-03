@@ -562,6 +562,62 @@ describe('Inspector — docked mode (Chunk 2c)', () => {
   })
 })
 
+describe('Inspector — full-screen presentation on narrow viewports (MB-2)', () => {
+  // Simulate a phone-narrow viewport: our useIsNarrowViewport hook asks
+  // matchMedia('(max-width: 640px)'). Match that query only, so other
+  // matchMedia consumers (e.g. reduced-motion) keep their defaults.
+  let originalMatchMedia
+  beforeEach(() => {
+    vi.useFakeTimers()
+    originalMatchMedia = window.matchMedia
+    window.matchMedia = (query) => ({
+      matches: query.includes('max-width'),
+      media: query,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    })
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    window.matchMedia = originalMatchMedia
+  })
+
+  it('renders the full-screen container regardless of the desktop mode prop', async () => {
+    await renderModal({ mode: 'docked' })
+    expect(screen.getByTestId('inspector-fullscreen')).toBeInTheDocument()
+  })
+
+  it('uses the X close control (not the docked chevron) and slides down to close', async () => {
+    const { props } = await renderModal({ mode: 'docked' })
+    flushSave()
+
+    expect(screen.queryByRole('button', { name: /collapse to edge/i })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /^close$/i }))
+    // onClose is deferred until the slide-down finishes (same exit as docked).
+    expect(props.onClose).not.toHaveBeenCalled()
+    act(() => { vi.advanceTimersByTime(260) })
+    expect(props.onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('still populates and edits the title (the B2 naming flow)', async () => {
+    const { props } = await renderModal()
+    flushSave()
+    props.onUpdate.mockClear()
+
+    const titleInput = screen.getByDisplayValue('Strahd von Zarovich')
+    fireEvent.change(titleInput, { target: { value: 'Strahd on Mobile' } })
+    flushSave()
+    expect(props.onUpdate).toHaveBeenCalledWith(
+      'node-strahd',
+      expect.objectContaining({ label: 'Strahd on Mobile' }),
+      expect.anything(),
+    )
+  })
+})
+
 describe('Inspector — directional close (Chunk 3)', () => {
   beforeEach(() => { vi.useFakeTimers() })
   afterEach(() => { vi.useRealTimers() })

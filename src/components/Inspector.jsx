@@ -6,6 +6,7 @@ import { ACTION_TYPES, deepEqual } from '../lib/undo/index.js'
 import CreateTypeModal from './CreateTypeModal'
 import InspectorHeader from './InspectorHeader'
 import { useAutoSave } from '../hooks/useAutoSave'
+import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
 import { useMorphAnimation, TRANSITION_MS } from '../hooks/useMorphAnimation'
 import { UploadImageProvider } from './UploadImageProvider'
 import { SEARCH_BAND_REM } from './SearchBar'
@@ -84,6 +85,14 @@ export default function Inspector({
   onClose,
 }) {
   const isDocked = mode === 'docked'
+  // MB-2 (mobile beta hardening): on phone-narrow viewports BOTH desktop
+  // presentations are wider than the screen (floating 660px, docked 480px),
+  // so the Inspector renders as a full-screen takeover instead — Erik's
+  // product call 2026-07-02 (mobile users don't expect to see the graph
+  // alongside the editor). Presentation-level override only: `mode` (and its
+  // localStorage memory) stays desktop-only state, untouched by this branch,
+  // so rotating to landscape or moving to desktop restores the chosen mode.
+  const isFullscreen = useIsNarrowViewport()
   // ── Form state ────────────────────────────────────────────────────────────
   // Card content (summary / bullets / media) lives in the block editor now;
   // the Inspector owns only the three header fields below, plus connections.
@@ -395,9 +404,11 @@ export default function Inspector({
 
   const handleClose = useCallback(() => {
     commitSession()
-    if (isDocked) animateDockedClose()
+    // Full-screen and docked share the slide-down exit (dockedRef); the
+    // undocked modal morphs back toward its node instead.
+    if (isFullscreen || isDocked) animateDockedClose()
     else animateClose()
-  }, [commitSession, isDocked, animateDockedClose, animateClose])
+  }, [commitSession, isFullscreen, isDocked, animateDockedClose, animateClose])
 
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') handleClose() }
@@ -515,7 +526,7 @@ export default function Inspector({
   // viewport. Re-run the same clamp the drag path uses whenever the modal
   // resizes or the window resizes. Undocked only; docked is pinned.
   useEffect(() => {
-    if (isDocked) return
+    if (isDocked || isFullscreen) return
     const el = modalRef.current
     if (!el) return
     const reclamp = () => {
@@ -534,7 +545,7 @@ export default function Inspector({
       ro?.disconnect()
       window.removeEventListener('resize', reclamp)
     }
-  }, [isDocked])
+  }, [isDocked, isFullscreen])
 
   // ── Title focus on mount ─────────────────────────────────────────────────
   const titleRef = useRef(null)
@@ -615,8 +626,10 @@ export default function Inspector({
           {/* ── Header: avatar + title + type dropdown + close ── */}
           <InspectorHeader
             node={node}
-            onPointerDown={isDocked ? onDockedHeaderPointerDown : onHeaderPointerDown}
-            docked={isDocked}
+            // Full-screen has no drag gestures — there's nowhere to drag a
+            // panel that already fills the screen.
+            onPointerDown={isFullscreen ? undefined : (isDocked ? onDockedHeaderPointerDown : onHeaderPointerDown)}
+            docked={isDocked && !isFullscreen}
             title={title}
             setTitle={setTitle}
             type={type}
@@ -674,11 +687,25 @@ export default function Inspector({
 
       {/* No scrim — the canvas stays live behind the inspector. Docked is a
           bottom-right overlay (flush bottom, off the right edge, top at the
-          search band); undocked is a centered, draggable modal. */}
-      <div className={isDocked
+          search band); undocked is a centered, draggable modal. On narrow
+          viewports (MB-2) both collapse into a full-screen takeover: no
+          rounded corners, no drag, slide-up entry, slide-down close. */}
+      <div className={(isDocked || isFullscreen)
         ? 'fixed inset-0 z-[9999] pointer-events-none'
         : 'fixed inset-0 z-[9999] flex items-center justify-center pointer-events-none'}>
-        {isDocked ? (
+        {isFullscreen ? (
+          <div
+            ref={dockedRef}
+            data-testid="inspector-fullscreen"
+            className={`pointer-events-auto absolute inset-0 flex flex-col overflow-hidden ${skipOpenMorph ? 'inspector-fade-in' : 'inspector-rise-in'}`}
+            style={{
+              backgroundColor: `color-mix(in srgb, ${typeConfig.color} 5%, white)`,
+              '--modal-bg': `color-mix(in srgb, ${typeConfig.color} 5%, white)`,
+            }}
+          >
+            {inner}
+          </div>
+        ) : isDocked ? (
           <div
             ref={dockedRef}
             className={`pointer-events-auto absolute rounded-[0.5rem] shadow-2xl flex flex-col overflow-hidden ${skipOpenMorph ? 'inspector-fade-in' : 'inspector-rise-in'}`}
