@@ -638,6 +638,12 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
   // canvas units.
   useEffect(() => {
     const store = useCanvasUiStore.getState()
+    // zoom/thresholdZoom can be transiently 0 or unhydrated for a frame
+    // (store defaults, first mobile paint, mid-gesture). The division below
+    // would mint NaN/Infinity — which the store now rejects, but don't even
+    // build the record: keep the previous good one and republish next frame
+    // when the inputs are real.
+    if (!(zoom > 0) || !Number.isFinite(thresholdZoom)) return
     if (!isExpanded || typeof xPos !== 'number' || typeof yPos !== 'number') {
       // Clear only THIS node's entry. The keyed map makes that inherently
       // safe — deleting our own key can never disturb another expanded node's

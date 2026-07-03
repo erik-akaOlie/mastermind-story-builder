@@ -7,6 +7,7 @@ import CreateTypeModal from './CreateTypeModal'
 import InspectorHeader from './InspectorHeader'
 import { useAutoSave } from '../hooks/useAutoSave'
 import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
+import { useVisualViewportHeight } from '../hooks/useVisualViewportHeight'
 import { useMorphAnimation, TRANSITION_MS } from '../hooks/useMorphAnimation'
 import { UploadImageProvider } from './UploadImageProvider'
 import { SEARCH_BAND_REM } from './SearchBar'
@@ -93,6 +94,13 @@ export default function Inspector({
   // localStorage memory) stays desktop-only state, untouched by this branch,
   // so rotating to landscape or moving to desktop restores the chosen mode.
   const isFullscreen = useIsNarrowViewport()
+  // When the on-screen keyboard opens, mobile browsers overlay it without
+  // shrinking the layout viewport — a fixed inset-0 panel keeps its full
+  // height and its bottom (the GM's Eyes Only zone) hides behind the
+  // keyboard. Constrain the full-screen container to the VISIBLE height so
+  // the inner scroll area can actually reach what the user is typing.
+  // null when the keyboard is closed (or on desktop) → normal inset-0.
+  const keyboardAwareHeight = useVisualViewportHeight(isFullscreen)
   // ── Form state ────────────────────────────────────────────────────────────
   // Card content (summary / bullets / media) lives in the block editor now;
   // the Inspector owns only the three header fields below, plus connections.
@@ -699,6 +707,10 @@ export default function Inspector({
             data-testid="inspector-fullscreen"
             className={`pointer-events-auto absolute inset-0 flex flex-col overflow-hidden ${skipOpenMorph ? 'inspector-fade-in' : 'inspector-rise-in'}`}
             style={{
+              // Explicit height beats inset-0's bottom when the keyboard is
+              // open (over-constrained box: bottom loses), shrinking the
+              // panel to the visible area above the keyboard.
+              ...(keyboardAwareHeight != null ? { height: `${keyboardAwareHeight}px` } : null),
               backgroundColor: `color-mix(in srgb, ${typeConfig.color} 5%, white)`,
               '--modal-bg': `color-mix(in srgb, ${typeConfig.color} 5%, white)`,
             }}

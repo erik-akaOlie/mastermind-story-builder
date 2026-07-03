@@ -22,12 +22,23 @@
 
 import { useCallback } from 'react'
 import { useCanvasUiStore } from '../store/useCanvasUiStore'
+import { useTouchPrimary } from './useTouchPrimary'
 
 export function useNodeHoverSelection() {
   const setAnySelected = useCanvasUiStore((s) => s.setAnySelected)
   const setAnyHovered  = useCanvasUiStore((s) => s.setAnyHovered)
   const setHoveredNodeId = useCanvasUiStore((s) => s.setHoveredNodeId)
   const setSelectedNodeIds = useCanvasUiStore((s) => s.setSelectedNodeIds)
+  // A phone has no hover — but taps SYNTHESIZE mouseenter/leave events, and
+  // the browser re-dispatches them whenever an element MOVES under the last
+  // touch point. A bead near the viewport edge expands → the clamp shifts
+  // the card away from the tap point → "hover" flips to whatever is under
+  // it now → expansion churns → geometry republish loop (the 2026-07-02
+  // mobile "maximum update depth" crash, root cause identified by Erik:
+  // near-edge beads + fast taps). On touch-primary devices hover writes are
+  // no-ops; bead expansion is driven by SELECTION alone, which taps set
+  // deterministically.
+  const touchPrimary = useTouchPrimary()
 
   const onSelectionChange = useCallback(({ nodes: selected }) => {
     setAnySelected(selected.length > 0)
@@ -35,14 +46,16 @@ export function useNodeHoverSelection() {
   }, [setAnySelected, setSelectedNodeIds])
 
   const onNodeMouseEnter = useCallback((_event, node) => {
+    if (touchPrimary) return
     setAnyHovered(true)
     setHoveredNodeId(node?.id ?? null)
-  }, [setAnyHovered, setHoveredNodeId])
+  }, [setAnyHovered, setHoveredNodeId, touchPrimary])
 
   const onNodeMouseLeave = useCallback(() => {
+    if (touchPrimary) return
     setAnyHovered(false)
     setHoveredNodeId(null)
-  }, [setAnyHovered, setHoveredNodeId])
+  }, [setAnyHovered, setHoveredNodeId, touchPrimary])
 
   return {
     onSelectionChange,

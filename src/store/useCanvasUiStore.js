@@ -42,6 +42,12 @@ import { create } from 'zustand'
 
 const EMPTY_SET = new Set()
 
+// Per-node write telemetry for setExpandedNode's oscillation circuit-breaker
+// (see the comment inside setExpandedNode). id → { count, clears, firstTs }.
+// Module-level on purpose: it's diagnostic bookkeeping, not UI state — no
+// subscriber should ever re-render off it.
+const _expandedLoopDetect = new Map()
+
 export const useCanvasUiStore = create((set) => ({
   anySelected: false,
   anyHovered:  false,
@@ -185,16 +191,86 @@ export const useCanvasUiStore = create((set) => ({
       const cur = state.expandedNodes
       if (rec == null) {
         if (!cur.has(id)) return {}
+        // A rapid set→clear→set alternation is a loop too (isExpanded itself
+        // flapping) — count clears so the set branch's breaker can name it.
+        const dClear = _expandedLoopDetect.get(id)
+        if (dClear && Date.now() - dClear.firstTs < 250) dClear.clears += 1
         const next = new Map(cur)
         next.delete(id)
         return { expandedNodes: next }
       }
-      const prev = cur.get(id)
-      if (prev &&
-          prev.centerX === rec.centerX && prev.centerY === rec.centerY &&
-          prev.width === rec.width && prev.height === rec.height &&
-          prev.boxWidth === rec.boxWidth && prev.boxHeight === rec.boxHeight) {
+      // ── Oscillation circuit-breaker (diagnostic + safety) ────────────────
+      // A publish→notify→republish cycle where the record's numbers keep
+      // CHANGING can nest updates until React throws a generic "maximum
+      // update depth" with no clue which value flapped (2026-07-02 mobile
+      // white-screen). If one id lands >40 REAL updates inside 250ms:
+      // in dev, throw a descriptive error naming the flapping fields and
+      // their last two values (the RootErrorBoundary renders it — the
+      // device becomes the profiler); in prod, drop the write, which
+      // freezes that node's published geometry for a beat but keeps the
+      // app alive.
+      const now = Date.now()
+      const d = _expandedLoopDetect.get(id)
+      const inWindow = d && now - d.firstTs < 250
+      // Non-finite geometry (NaN/Infinity from a zero-zoom frame or an
+      // unhydrated threshold) must never enter the map: NaN breaks every ===
+      // equality guard downstream (NaN === NaN is false), which turned each
+      // republish into a "real change" and looped render → publish → notify
+      // until React threw "maximum update depth" — the 2026-07-02 mobile
+      // white-screen. Dropping the write keeps the last good record.
+      if (!Number.isFinite(rec.centerX) || !Number.isFinite(rec.centerY) ||
+          !Number.isFinite(rec.width) || !Number.isFinite(rec.height) ||
+          !Number.isFinite(rec.boxWidth) || !Number.isFinite(rec.boxHeight) ||
+          !Number.isFinite(rec.natCenterX) || !Number.isFinite(rec.natCenterY)) {
         return {}
+      }
+      const prev = cur.get(id)
+      // DEADBAND equality, not exact equality. The clamp + repulsion offsets
+      // are coupled through re-renders, and floating-point can settle into
+      // TWO answers a fraction of a pixel apart — observed on-device
+      // 2026-07-02: centerX flapping by 0.31–0.63 canvas units, 41 updates
+      // in ~150ms, "maximum update depth" crash. Treating sub-pixel deltas
+      // as "no change" starves that loop on its first cycle while letting
+      // any real movement (drag/zoom/pan moves are orders of magnitude
+      // bigger per frame) through untouched.
+      //
+      // ε ≈ 0.4% of the published width ≈ 2.7 SCREEN px constant regardless
+      // of zoom (width already carries the thresholdZoom/zoom factor).
+      // Was 0.2% — an on-device flap of 0.68 canvas units beat that ε by a
+      // hair (photo finish: ε computed to ~0.67 for that card), so the
+      // margin doubled. Edge endpoints anchoring within ~3px of the card
+      // border is imperceptible at Bead View distances. Object.is fallback
+      // keeps NaN (impossible past the gate above) from ever reading as a
+      // change.
+      const eps = Number.isFinite(rec.width) ? Math.max(0.01, rec.width * 0.004) : 0.01
+      const near = (a, b) => Object.is(a, b) || Math.abs(a - b) < eps
+      if (prev &&
+          near(prev.centerX, rec.centerX) && near(prev.centerY, rec.centerY) &&
+          near(prev.width, rec.width) && near(prev.height, rec.height) &&
+          near(prev.boxWidth, rec.boxWidth) && near(prev.boxHeight, rec.boxHeight) &&
+          near(prev.natCenterX, rec.natCenterX) && near(prev.natCenterY, rec.natCenterY)) {
+        return {}
+      }
+      // Real change confirmed — count it, and trip the breaker on a burst.
+      if (inWindow) {
+        d.count += 1
+        if (d.count > 40) {
+          const flapping = prev
+            ? Object.keys(rec)
+                .filter((k) => !Object.is(prev[k], rec[k]))
+                .map((k) => `${k}: ${prev[k]} → ${rec[k]}`)
+                .join('; ')
+            : `record was CLEARED between publishes (${d.clears} clears in window) — isExpanded itself is flapping on/off`
+          const msg =
+            `[expandedNode oscillation] node ${id}: ${d.count} real geometry ` +
+            `updates in ${now - d.firstTs}ms. Flapping → ${flapping}`
+          _expandedLoopDetect.delete(id)
+          if (import.meta.env.DEV) throw new Error(msg)
+          console.error(msg)
+          return {} // prod: freeze last good geometry instead of looping
+        }
+      } else {
+        _expandedLoopDetect.set(id, { count: 1, clears: 0, firstTs: now })
       }
       const next = new Map(cur)
       next.set(id, rec)

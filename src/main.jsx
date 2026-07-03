@@ -17,6 +17,7 @@ import MigrateImages from './components/MigrateImages.jsx'
 import MigrateBlocks from './components/MigrateBlocks.jsx'
 import Profile from './components/Profile.jsx'
 import AnalyticsBootstrap from './components/AnalyticsBootstrap.jsx'
+import { RootErrorBoundary } from './components/RootErrorBoundary.jsx'
 import TermsOfServicePage from './components/TermsOfServicePage.jsx'
 import PrivacyPolicyPage from './components/PrivacyPolicyPage.jsx'
 import SpikeIndex from './spike/SpikeIndex.jsx'  // SPIKE-ONLY — remove with src/spike/
@@ -81,13 +82,15 @@ function Root() {
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <AuthProvider>
-      <WorkspaceProvider>
-        <ProfileProvider>
-          <AnalyticsBootstrap />
-          <Root />
-        </ProfileProvider>
-      </WorkspaceProvider>
-    </AuthProvider>
+    <RootErrorBoundary>
+      <AuthProvider>
+        <WorkspaceProvider>
+          <ProfileProvider>
+            <AnalyticsBootstrap />
+            <Root />
+          </ProfileProvider>
+        </WorkspaceProvider>
+      </AuthProvider>
+    </RootErrorBoundary>
   </StrictMode>,
 )

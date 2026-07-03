@@ -24,6 +24,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { Pencil, CaretDown, Eye, EyeSlash } from '@phosphor-icons/react'
+import { useTouchPrimary } from '../hooks/useTouchPrimary'
 import { useImageUrl } from '../lib/useImageUrl'
 import { cardImagePipeline } from '../lib/imageStorage'
 import { useLightbox } from './Lightbox'
@@ -53,6 +54,13 @@ export default function InspectorHeader({
   const titleRef     = useRef(null)
   const lightbox     = useLightbox()
   const upload       = useUploadImage()
+  // Touch-primary devices get persistently-visible, corner-separated avatar
+  // controls. The desktop hover-reveal model left both buttons INVISIBLE but
+  // still tappable — on a phone the centered eye toggle swallowed taps meant
+  // for "add an image" (2026-07-02 audit follow-up: fat-finger hide/show
+  // loop). Touch layout: pencil pinned top-right, eye pinned bottom-right,
+  // the rest of the tile is the image/upload target.
+  const touchPrimary = useTouchPrimary()
   // Hover state for the show/hide eye, so the HIDDEN tile can swap its
   // EyeSlash → open Eye on pointer-over (signifying "click to show").
   const [eyeHover, setEyeHover] = useState(false)
@@ -101,6 +109,11 @@ export default function InspectorHeader({
         <div
           className="relative group w-16 h-16 rounded-[0.5rem] overflow-hidden flex items-center justify-center"
           style={{ backgroundColor: typeConfig.color, filter: 'brightness(0.75)' }}
+          // Empty tile = one big "add an image" target (matches the header
+          // comment's documented intent). Buttons above it stopPropagation.
+          onClick={!hideAvatar && !thumbnailUrl ? openUploadFresh : undefined}
+          role={!hideAvatar && !thumbnailUrl ? 'button' : undefined}
+          aria-label={!hideAvatar && !thumbnailUrl ? 'Add avatar image' : undefined}
         >
           {/* Center: the identity image, or its first-letter placeholder. Both
               only render when the thumbnail is SHOWN — when hidden the whole
@@ -121,23 +134,34 @@ export default function InspectorHeader({
             </span>
           )}
 
-          {/* Add / replace the image — only while shown; reveal on hover. */}
+          {/* Add / replace the image — only while shown. Desktop: reveal on
+              hover. Touch: persistently visible, 32px, pinned to the top-right
+              corner (invisible-but-tappable controls are tap traps). */}
           {!hideAvatar && (
             <button
-              className="absolute top-1 right-1 z-20 w-5 h-5 rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-80 transition-opacity flex items-center justify-center"
+              className={touchPrimary
+                ? 'absolute top-0 right-0 z-20 w-8 h-8 rounded-full bg-black/50 text-white opacity-80 flex items-center justify-center'
+                : 'absolute top-1 right-1 z-20 w-5 h-5 rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-80 transition-opacity flex items-center justify-center'}
               onClick={(e) => { e.stopPropagation(); if (thumbnailUrl) openUploadReplace(); else openUploadFresh() }}
               aria-label={thumbnailUrl ? 'Edit avatar' : 'Add avatar'}
             >
-              <Pencil size={12} weight="fill" />
+              <Pencil size={touchPrimary ? 16 : 12} weight="fill" />
             </button>
           )}
 
-          {/* Show/hide toggle (display-only). SHOWN: hidden until tile-hover,
-              then an EyeSlash → click to hide. HIDDEN: a persistent EyeSlash
-              that swaps to an open Eye on pointer-over → click to show. */}
+          {/* Show/hide toggle (display-only). Desktop SHOWN: hidden until
+              tile-hover, then an EyeSlash → click to hide. HIDDEN (both
+              inputs): a persistent centered EyeSlash that swaps to an open
+              Eye on pointer-over → click to show. Touch SHOWN: persistently
+              visible, pinned bottom-right so it can't swallow taps meant for
+              the image/upload target. */}
           <button
-            className={`absolute inset-0 m-auto z-10 w-8 h-8 rounded-full bg-black/55 text-white flex items-center justify-center transition-opacity ${
-              hideAvatar ? 'opacity-90' : 'opacity-0 group-hover:opacity-90'
+            className={`absolute z-10 w-8 h-8 rounded-full bg-black/55 text-white flex items-center justify-center transition-opacity ${
+              hideAvatar
+                ? 'inset-0 m-auto opacity-90'
+                : touchPrimary
+                  ? 'bottom-0 right-0 opacity-70'
+                  : 'inset-0 m-auto opacity-0 group-hover:opacity-90'
             }`}
             onMouseEnter={() => setEyeHover(true)}
             onMouseLeave={() => setEyeHover(false)}

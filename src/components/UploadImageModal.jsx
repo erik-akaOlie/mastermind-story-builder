@@ -15,11 +15,21 @@
 import { useEffect, useRef, useState } from 'react'
 import ImageCropper from './ImageCropper'
 import { pasteHasImage, resolveBestPastedImage } from '../lib/clipboardImage'
+import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
+import { useTouchPrimary } from '../hooks/useTouchPrimary'
 
 // OS-aware paste hint label
 const isMac = typeof navigator !== 'undefined' &&
   /mac/i.test(navigator.platform || navigator.userAgent || '')
 const PASTE_KEY_LABEL = isMac ? 'Cmd+V' : 'Ctrl+V'
+
+// Clipboard-read support (the "Paste from clipboard" button). Requires a
+// secure context (HTTPS or localhost) — on the LAN dev server (http://192.…)
+// the API is absent and the button simply doesn't render, so this can only
+// be verified against production. iOS Safari shows a paste-permission bubble
+// on first use — on the Safari verification list.
+const canClipboardRead = typeof navigator !== 'undefined' &&
+  typeof navigator.clipboard?.read === 'function'
 
 export default function UploadImageModal({
   // mode: 'image-section' | 'thumbnail' | 'profile-avatar' | 'workspace-cover'
@@ -33,18 +43,22 @@ export default function UploadImageModal({
   // with the existing image (fetched via pipeline.getUrl) and surfaces a
   // Remove button inside the cropper.
   existingImage,
+  // initialBlob: pick-first path (touch fresh-add) — the provider already
+  // ran the OS picker inside the user's original tap; the modal opens
+  // seeded, straight into the cropper. See UploadImageProvider.
+  initialBlob,
   onSave,          // (path) => void — called with the new Storage path
   onRemove,        // () => void  — called when the user clears the existing
                    //               image (replace flow only). Optional.
   onClose,         // () => void
 }) {
-  const [imageBlob,       setImageBlob]       = useState(null)
+  const [imageBlob,       setImageBlob]       = useState(initialBlob ?? null)
   const [uploading,       setUploading]       = useState(false)
   const [loadingExisting, setLoadingExisting] = useState(false)
   // hasNewSource: flips true once the user pastes or picks a new image.
   // Used to hide the Remove UI — once they've supplied a replacement,
   // they're committed to replacing rather than removing.
-  const [hasNewSource,    setHasNewSource]    = useState(false)
+  const [hasNewSource,    setHasNewSource]    = useState(!!initialBlob)
   // pendingRemoval: set true when the user clicks "Remove image" in the
   // cropper. Clears the image from the cropper but doesn't commit the
   // removal — the user has to press Save (which sees pendingRemoval and
@@ -175,6 +189,32 @@ export default function UploadImageModal({
     setPasteFlattenedAlpha(false) // file source (pick/drop) preserves alpha
   }
 
+  // Button-initiated clipboard read — the touch-friendly sibling of the
+  // Ctrl+V paste-event path (there's no paste keystroke on a phone). Reads
+  // the first image representation on the clipboard. Feature-detected via
+  // canClipboardRead; browsers may prompt for paste permission on first use.
+  const handleClipboardPaste = async () => {
+    setErrorMessage(null)
+    try {
+      const items = await navigator.clipboard.read()
+      for (const item of items) {
+        const imageType = item.types.find((t) => t.startsWith('image/'))
+        if (imageType) {
+          const blob = await item.getType(imageType)
+          setImageBlob(blob)
+          setHasNewSource(true)
+          setPendingRemoval(false)
+          setPasteFlattenedAlpha(false)
+          return
+        }
+      }
+      setErrorMessage('No image on the clipboard — copy an image first, then try again.')
+    } catch (err) {
+      console.error('Clipboard read failed', err)
+      setErrorMessage("Couldn't read the clipboard — your browser may have blocked access.")
+    }
+  }
+
   const handleFilePick = (e) => {
     const file = e.target.files?.[0]
     e.target.value = ''
@@ -272,6 +312,12 @@ export default function UploadImageModal({
     }
   }
 
+  // Narrow viewports get a full-screen dialog (the desktop 46rem/32rem
+  // fixed geometry pushed Save below a phone's fold — 2026-07-02 audit,
+  // MB-5); touch-primary devices get touch copy instead of keyboard copy.
+  const isNarrow     = useIsNarrowViewport()
+  const touchPrimary = useTouchPrimary()
+
   // Save is enabled when there's an image to upload, OR when the user
   // has clicked Remove and is committing that removal.
   const saveDisabled = uploading || (!imageBlob && !pendingRemoval)
@@ -290,11 +336,14 @@ export default function UploadImageModal({
         onClick={onClose}
       />
 
-      {/* Modal */}
+      {/* Modal — desktop: centered 46rem dialog; narrow viewports: full
+          screen, so the footer (Save/Cancel) is always on-screen. */}
       <div className="fixed inset-0 z-[10001] flex items-center justify-center pointer-events-none">
         <div
-          className="pointer-events-auto rounded-[0.5rem] shadow-2xl bg-white flex flex-col overflow-hidden"
-          style={{ width: '46rem', maxHeight: '90vh' }}
+          className={isNarrow
+            ? 'pointer-events-auto bg-white flex flex-col overflow-hidden absolute inset-0'
+            : 'pointer-events-auto rounded-[0.5rem] shadow-2xl bg-white flex flex-col overflow-hidden'}
+          style={isNarrow ? undefined : { width: '46rem', maxHeight: '90vh' }}
           onClick={(e) => e.stopPropagation()}
         >
           {/* Title bar — neutral gray, system surface (not card-type colored) */}
@@ -319,8 +368,10 @@ export default function UploadImageModal({
           <div
             className={`m-4 border rounded relative flex items-center justify-center overflow-hidden bg-white transition-colors ${
               dragActive ? 'border-sky-500 ring-2 ring-sky-300' : 'border-gray-300'
-            }`}
-            style={{ minHeight: '32rem' }}
+            } ${isNarrow ? 'flex-1 min-h-0' : ''}`}
+            // Desktop keeps the roomy fixed canvas; narrow flexes to whatever
+            // height remains so the footer never leaves the screen.
+            style={isNarrow ? undefined : { minHeight: '32rem' }}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
@@ -342,6 +393,30 @@ export default function UploadImageModal({
             ) : loadingExisting ? (
               <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
                 <div className="w-8 h-8 rounded-full border-2 border-gray-300 border-t-gray-500 animate-spin" />
+              </div>
+            ) : touchPrimary ? (
+              // Touch empty state: no keyboard shortcuts, no drag copy — an
+              // Upload button (the phone's native picker offers Camera /
+              // Gallery / Files itself) plus clipboard paste where the
+              // browser exposes it (secure contexts only).
+              <div className="flex flex-col items-center gap-4 text-gray-700 pointer-events-none">
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="px-6 py-3 bg-sky-600 hover:bg-sky-700 text-white rounded font-semibold transition-colors pointer-events-auto"
+                >
+                  Upload image
+                </button>
+                {canClipboardRead && (
+                  <>
+                    <p className="text-gray-500 text-sm select-none">— or —</p>
+                    <button
+                      onClick={handleClipboardPaste}
+                      className="px-6 py-3 border border-sky-600 text-sky-600 rounded font-semibold hover:bg-sky-50 transition-colors pointer-events-auto"
+                    >
+                      Paste from clipboard
+                    </button>
+                  </>
+                )}
               </div>
             ) : (
               <div className="flex flex-col items-center gap-4 text-gray-700 pointer-events-none">
@@ -382,8 +457,35 @@ export default function UploadImageModal({
             </div>
           )}
 
-          {/* Footer — Cancel + Save bottom-right */}
-          <div className="flex justify-end gap-3 px-4 pb-4">
+          {/* Footer — Cancel + Save bottom-right. Touch devices with an image
+              loaded also get recovery actions bottom-left: swap the picked
+              image (re-opens the OS picker) or paste from the clipboard
+              (secure contexts only). Desktop recovers via drag/Ctrl+V, so it
+              doesn't need these. */}
+          <div className={`flex items-center gap-3 px-4 pb-4 ${
+            touchPrimary && imageBlob ? 'justify-between' : 'justify-end'
+          }`}>
+            {touchPrimary && imageBlob && (
+              <div className="flex gap-3 min-w-0">
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading}
+                  className="px-3 py-2 text-sky-600 rounded font-semibold hover:bg-sky-50 transition-colors text-sm disabled:text-gray-400 disabled:cursor-not-allowed"
+                >
+                  Choose different
+                </button>
+                {canClipboardRead && (
+                  <button
+                    onClick={handleClipboardPaste}
+                    disabled={uploading}
+                    className="px-3 py-2 text-sky-600 rounded font-semibold hover:bg-sky-50 transition-colors text-sm disabled:text-gray-400 disabled:cursor-not-allowed"
+                  >
+                    Paste
+                  </button>
+                )}
+              </div>
+            )}
+            <div className="flex gap-3">
             <button
               onClick={onClose}
               disabled={cancelDisabled}
@@ -398,6 +500,7 @@ export default function UploadImageModal({
             >
               {uploading ? 'Uploading…' : 'Save'}
             </button>
+            </div>
           </div>
         </div>
       </div>

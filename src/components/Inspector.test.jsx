@@ -465,7 +465,10 @@ describe('Inspector — avatar upload', () => {
     // sampleNode has avatar: null, so InspectorHeader renders the empty-state
     // "Add avatar" button. Clicking it should open the Upload Image modal
     // with the thumbnail-mode config.
-    fireEvent.click(screen.getByRole('button', { name: /add avatar/i }))
+    // Exact-match: the pencil button ("Add avatar"). The tile itself is now
+    // ALSO a labeled button ("Add avatar image") — the whole-tile tap target
+    // added for touch (2026-07-02) — so a loose /add avatar/i matches both.
+    fireEvent.click(screen.getByRole('button', { name: /^add avatar$/i }))
 
     expect(uploadOpenMock).toHaveBeenCalledTimes(1)
     const cfg = uploadOpenMock.mock.calls[0][0]
