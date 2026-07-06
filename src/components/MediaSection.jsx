@@ -22,6 +22,7 @@ import { contentImagePipeline } from '../lib/imageStorage'
 import { useLightbox } from './Lightbox'
 import { useUploadImage } from './UploadImageProvider'
 import SectionLabel from './SectionLabel'
+import { safeRandomUUID } from '../lib/uuid.js'
 
 function SortableImage({ id, value, onRemove, onLightbox }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
@@ -84,7 +85,7 @@ export default function MediaSection({
       onSave: (result) => {
         const entry = { ...result, alt: '', uploaded_at: new Date().toISOString() }
         const insertPosition = items.length
-        onChange([...items, { id: crypto.randomUUID(), src: entry }])
+        onChange([...items, { id: safeRandomUUID(), src: entry }])
         onAddItem?.({ item: entry, position: insertPosition })
       },
     })

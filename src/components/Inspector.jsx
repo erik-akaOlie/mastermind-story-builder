@@ -6,6 +6,7 @@ import { ACTION_TYPES, deepEqual } from '../lib/undo/index.js'
 import CreateTypeModal from './CreateTypeModal'
 import InspectorHeader from './InspectorHeader'
 import { useAutoSave } from '../hooks/useAutoSave'
+import { safeRandomUUID } from '../lib/uuid.js'
 import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
 import { useVisualViewportHeight } from '../hooks/useVisualViewportHeight'
 import { useMorphAnimation, TRANSITION_MS } from '../hooks/useMorphAnimation'
@@ -609,7 +610,7 @@ export default function Inspector({
         prev.some((c) => c.nodeId === targetNode.id)
           ? prev
           : [...prev, {
-              id: crypto.randomUUID(),
+              id: safeRandomUUID(),
               nodeId: targetNode.id,
               label: targetNode.data?.label,
               type: targetNode.data?.type,

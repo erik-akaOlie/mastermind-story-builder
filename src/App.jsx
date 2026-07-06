@@ -50,6 +50,7 @@ import { ACTION_TYPES } from './lib/undo/index.js'
 import { CanvasOpsProvider } from './lib/CanvasOpsContext.jsx'
 import { setPanToTargetImpl } from './lib/cameraOps.js'
 import { track } from './lib/analytics.js'
+import { safeRandomUUID } from './lib/uuid.js'
 import { toastDeleteCaptureFailed } from './lib/feedbackToasts.jsx'
 import { nextAltitude, MORPH_DURATION_MS, computeMinZoom } from './utils/altitude.js'
 
@@ -1534,7 +1535,7 @@ export default function App() {
     // race no client check can see.
     if (connectionExists(edgesRef.current, sourceId, targetId)) return
 
-    const id = crypto.randomUUID()
+    const id = safeRandomUUID()
     setEdges((eds) => (connectionExists(eds, sourceId, targetId) ? eds : [
       ...eds,
       { id, source: sourceId, target: targetId, type: 'floating' },

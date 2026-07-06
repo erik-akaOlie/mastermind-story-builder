@@ -15,6 +15,7 @@ import { useNodeTypes } from '../store/useTypeStore'
 import { sortKey } from '../utils/labelUtils'
 import SectionLabel from './SectionLabel'
 import { track } from '../lib/analytics.js'
+import { safeRandomUUID } from '../lib/uuid.js'
 
 // Same readability formula used elsewhere — chosen background determines
 // whether the chip's label/× text is dark or white. Inlined here to avoid
@@ -42,7 +43,7 @@ export default function ConnectionsSection({ localConns, setLocalConns, allOther
   const addConnection = (n) => {
     setLocalConns((prev) => [
       ...prev,
-      { id: crypto.randomUUID(), nodeId: n.id, label: n.data.label, type: n.data.type, isNew: true },
+      { id: safeRandomUUID(), nodeId: n.id, label: n.data.label, type: n.data.type, isNew: true },
     ])
     // Picker close path on selection is "completion," not abandonment.
     track('connection_completed', { targetType: n.data?.type })

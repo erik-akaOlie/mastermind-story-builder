@@ -15,10 +15,11 @@ import { SortableContext, useSortable, arrayMove, verticalListSortingStrategy } 
 import { CSS } from '@dnd-kit/utilities'
 import { DotsSixVertical } from '@phosphor-icons/react'
 import SectionLabel from './SectionLabel'
+import { safeRandomUUID } from '../lib/uuid.js'
 
 // Helper exported so Inspector can seed its initial state from the persisted
 // string arrays in node.data without depending on this file's internals.
-export const newItem = (value = '') => ({ id: crypto.randomUUID(), value })
+export const newItem = (value = '') => ({ id: safeRandomUUID(), value })
 
 function SortableBulletInput({ id, value, onChange, onKeyDown, onRemove, onFocus, onBlur, inputRef, placeholder, dotColor }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })

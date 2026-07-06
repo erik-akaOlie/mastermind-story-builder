@@ -15,6 +15,7 @@
 
 import { supabase } from './supabase.js'
 import { persistWrite } from './errorReporting.js'
+import { safeRandomUUID } from './uuid.js'
 
 // Bullet sections (narrative / hidden_lore / dm_notes) store
 // `[{id, value}, ...]` JSONB so each item has a stable identity. ID stability
@@ -40,7 +41,7 @@ export function normalizeBullets(content) {
   const out = []
   for (const item of content) {
     if (typeof item === 'string') {
-      out.push({ id: crypto.randomUUID(), value: item })
+      out.push({ id: safeRandomUUID(), value: item })
       continue
     }
     if (item && typeof item === 'object' && typeof item.value === 'string') {
@@ -49,12 +50,12 @@ export function normalizeBullets(content) {
       // mint a fresh one rather than rendering null/undefined as a React key.
       const id = typeof item.id === 'string' && item.id.length > 0
         ? item.id
-        : crypto.randomUUID()
+        : safeRandomUUID()
       out.push({ id, value: item.value })
       continue
     }
     // Malformed entry — coerce defensively to preserve user data.
-    out.push({ id: crypto.randomUUID(), value: String(item ?? '') })
+    out.push({ id: safeRandomUUID(), value: String(item ?? '') })
   }
   return out
 }
