@@ -29,6 +29,7 @@ import UserAvatar from './UserAvatar.jsx'
 import WorkspaceThumbnail from './WorkspaceThumbnail.jsx'
 import WorkspaceSortMenu from './WorkspaceSortMenu.jsx'
 import { readSortId, writeSortId, sortWorkspaces } from '../lib/workspaceSort.js'
+import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport.js'
 import { UploadImageProvider, useUploadImage } from './UploadImageProvider.jsx'
 import { workspaceCoverPipeline, deleteCardImage } from '../lib/imageStorage.js'
 import {
@@ -63,6 +64,11 @@ function CampaignPickerInner() {
   const { setActiveWorkspaceId } = useWorkspace()
   const upload = useUploadImage()
 
+  // MB-4: phone-narrow viewports get their own top-band layout (stacked sort,
+  // in-place input morph, slide-down action row) + tighter page top padding.
+  // Desktop keeps the original design untouched.
+  const narrow = useIsNarrowViewport()
+
   const [workspaces, setWorkspaces] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -70,6 +76,21 @@ function CampaignPickerInner() {
   // "new workspace" form state
   const [creating, setCreating] = useState(false)
   const [newName, setNewName] = useState('')
+
+  // Narrow-band sort visibility (MB-4): opening the create flow hides the
+  // sort control IMMEDIATELY (the user has declared "new workspace" intent —
+  // the input sweeps across the full row). On cancel, the input retracts
+  // first (300ms, matching the width transition) and only then does the sort
+  // return, so the two never fight over the same space mid-animation.
+  const [showSortNarrow, setShowSortNarrow] = useState(true)
+  useEffect(() => {
+    if (creating) {
+      setShowSortNarrow(false)
+      return
+    }
+    const t = setTimeout(() => setShowSortNarrow(true), 300)
+    return () => clearTimeout(t)
+  }, [creating])
 
   // inline rename state
   const [renamingId, setRenamingId] = useState(null)
@@ -219,7 +240,7 @@ function CampaignPickerInner() {
   const isEmpty = !loading && workspaces.length === 0
 
   return (
-    <div className="min-h-screen bg-gray-50 py-12 px-4">
+    <div className={`min-h-screen bg-gray-50 ${narrow ? 'pt-6' : 'pt-12'} pb-12 px-4`}>
       <div className="w-full max-w-6xl mx-auto">
         <div className="flex items-start justify-between mb-8">
           <div>
@@ -236,7 +257,8 @@ function CampaignPickerInner() {
           </div>
         )}
 
-        {/* New-workspace control — a secondary-button frame (white fill, blue
+        {/* New-workspace control. DESKTOP branch (the narrow branch below has
+            its own comment): a secondary-button frame (white fill, blue
             border) atop the grid that morphs by growing in width + height into
             the full-width "name your workspace" frame; the SAME frame persists,
             only its size and interior change. Input + Cancel + Create
@@ -251,6 +273,119 @@ function CampaignPickerInner() {
             leaving less — matching the Figma spacing. */}
         {/* z-20 lifts the whole band (and the sort dropdown that overhangs into
             the grid) above the tile grid below it. */}
+        {narrow ? (
+          // MB-4 phone layout (Erik's design, 2026-07-05) — no fixed-height
+          // band, no full-width sweep. The stacked sort control sits left and
+          // STAYS visible while creating; the New-workspace pill sits right
+          // and morphs IN PLACE into the name input; a Cancel/Create action
+          // row slides open beneath the row, pushing the gallery down.
+          <div className="relative z-20 mb-4">
+            {/* items-end: the sort control bottom-aligns with the pill. */}
+            <div className="flex items-end gap-4">
+              {workspaces.length > 1 && showSortNarrow && (
+                <WorkspaceSortMenu sortId={sortId} onChange={changeSort} stacked />
+              )}
+
+              <form
+                id="new-workspace-form"
+                onSubmit={handleCreate}
+                className="flex-1 min-w-0 flex justify-end"
+              >
+                {/* The morphing frame: closed = "+ New workspace" pill; open =
+                    the name input filling the same 40px bar. */}
+                <div
+                  className="relative h-10 overflow-hidden rounded-lg border bg-white shadow-sm"
+                  style={{
+                    width: creating ? '100%' : `${NEW_BTN_WIDTH}px`,
+                    borderColor: CTA_COLOR,
+                    transitionProperty: 'width',
+                    transitionDuration: '300ms',
+                    transitionTimingFunction: 'cubic-bezier(0.4, 0, 0.2, 1)',
+                  }}
+                >
+                  {/* Closed layer — the "+ New workspace" secondary button. */}
+                  <button
+                    type="button"
+                    onClick={openCreate}
+                    tabIndex={creating ? -1 : 0}
+                    aria-hidden={creating}
+                    className="absolute inset-0 flex items-center justify-center gap-1 rounded-lg hover:bg-sky-50"
+                    style={{
+                      color: CTA_COLOR,
+                      opacity: creating ? 0 : 1,
+                      pointerEvents: creating ? 'none' : 'auto',
+                      transition: 'opacity 150ms ease',
+                      transitionDelay: creating ? '0ms' : '160ms',
+                    }}
+                  >
+                    <Plus size={16} weight="bold" />
+                    <span className="text-xs font-medium whitespace-nowrap">
+                      New workspace
+                    </span>
+                  </button>
+
+                  {/* Open layer — the name input. text-base (16px) so mobile
+                      Safari doesn't auto-zoom into the focused field. */}
+                  <div
+                    className="absolute inset-0 flex items-center px-4"
+                    style={{
+                      opacity: creating ? 1 : 0,
+                      pointerEvents: creating ? 'auto' : 'none',
+                      transition: 'opacity 180ms ease',
+                      transitionDelay: creating ? '160ms' : '0ms',
+                    }}
+                  >
+                    <input
+                      ref={newNameRef}
+                      type="text"
+                      value={newName}
+                      onChange={(e) => setNewName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Escape') cancelCreate()
+                      }}
+                      placeholder="Name your workspace…"
+                      aria-label="Workspace name"
+                      tabIndex={creating ? 0 : -1}
+                      className="w-full min-w-0 bg-transparent outline-none text-base font-light text-gray-900 placeholder-gray-500"
+                    />
+                  </div>
+                </div>
+              </form>
+            </div>
+
+            {/* Action row — slides open beneath the input (CSS grid 0fr↔1fr,
+                the HoverReveal pattern), pushing the gallery down. */}
+            <div
+              className="grid"
+              style={{
+                gridTemplateRows: creating ? '1fr' : '0fr',
+                transition: 'grid-template-rows 300ms cubic-bezier(0.4, 0, 0.2, 1)',
+              }}
+            >
+              <div className="overflow-hidden">
+                <div className="flex items-center justify-end gap-4 pt-2">
+                  <button
+                    type="button"
+                    onClick={cancelCreate}
+                    tabIndex={creating ? 0 : -1}
+                    className="text-base font-light text-gray-600 hover:text-gray-900 whitespace-nowrap"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    form="new-workspace-form"
+                    tabIndex={creating ? 0 : -1}
+                    className="flex items-center justify-center h-10 px-4 rounded-lg text-base font-bold text-white whitespace-nowrap transition-[filter] hover:brightness-95"
+                    style={{ backgroundColor: CTA_COLOR }}
+                  >
+                    Create
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
         <div className="relative z-20 h-14 mb-4">
           {/* Sort control — left side, baseline-aligned to the BASE of the
               New workspace button (its bottom edge). The closed button is a
@@ -343,6 +478,7 @@ function CampaignPickerInner() {
             </div>
           </form>
         </div>
+        )}
 
         {loading ? (
           <div className="px-6 py-12 text-center text-sm text-gray-500">Loading…</div>

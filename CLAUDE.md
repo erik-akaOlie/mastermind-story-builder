@@ -248,12 +248,20 @@ src/
                                    create/rename/delete + per-tile cover via "…" menu). Top row has a
                                    "Sort by" control (left) + a New-workspace control (right) that
                                    container-morphs from a secondary button into a "name your workspace"
-                                   frame. Wrapped in UploadImageProvider for cover uploads.
+                                   frame. Phone-narrow viewports (useIsNarrowViewport, MB-4) get their
+                                   own band: stacked two-line sort (bottom-aligned with the pill), the
+                                   pill morphs IN PLACE into a full-row name input (sort hides while
+                                   creating, returns after the 300ms retract on cancel), and a Cancel/
+                                   Create action row slides open beneath (grid 0fr↔1fr), pushing the
+                                   gallery down; page top padding tightens 48→24px. Desktop unchanged.
+                                   Wrapped in UploadImageProvider for cover uploads.
     WorkspaceThumbnail.jsx         canonical workspace cover image; one place owns the render precedence
                                    cover_image_url → snapshot_path → bare canvas color. Used by the picker
                                    tiles (16:9) and the UserMenu switcher (circle).
     WorkspaceSortMenu.jsx          picker sort dropdown: Alphabetical / Date created / Last modified
                                    (single choice each). Pure presentation over lib/workspaceSort.js.
+                                   `stacked` prop (MB-4, phone-narrow only): two-line left-justified
+                                   trigger — "Sort by" label over the active choice.
     UserAvatar.jsx                 circular profile button with dropdown (sign-out, etc.)
     UserMenu.jsx                   top-left breadcrumb chip + UserAvatar overlay on the canvas; the
                                    breadcrumb home button uses HoverReveal to expand circle→pill on hover
