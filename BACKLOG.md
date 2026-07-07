@@ -642,6 +642,34 @@ and markdown export are Soon-after. **Honest sizing:** remaining Bucket-1 is
 > within the band reflects current sequencing intent, but is reviewed
 > sprint-by-sprint.
 
+### Evaluate TipTap as the text block editing engine
+- **Problem.** Text blocks use a hand-rolled contenteditable (HTML strings,
+  execCommand bold/italic, custom focus/caret handling, three React Flow
+  workarounds documented in CLAUDE.md). MB-6 (2026-07-06) hardened resize +
+  mobile selection around it, but the editing lifecycle remains bespoke. If
+  text blocks grow richer formatting (lists, links, checklists) or the mobile
+  editing experience still misses the beta bar, patching further is the wrong
+  marginal dollar.
+- **Why TipTap.** Proven in-canvas precedent: tldraw's rich text engine IS
+  TipTap (chosen by their team over raw ProseMirror). MIT core, no paid
+  service. Our Inspector already ships BlockNote, which is built on
+  TipTap/ProseMirror — the family is in our dependency tree, and a long-term
+  convergence of the two text surfaces is plausible.
+- **Scope note (from the MB-6 research pass).** All editor libraries render a
+  browser-native contenteditable — native mobile selection grabbers/magnifier
+  behavior is the browser's either way. A swap buys structured data +
+  formatting depth + lifecycle robustness, NOT selection feel by itself.
+  Migration: HTML strings → ProseMirror JSON (TipTap imports/exports HTML);
+  undo entries (editTextNode diffs HTML) and the RF workarounds need
+  re-validation. Size M–L.
+- **Trigger.** Text blocks need richer formatting, OR mobile text editing
+  still fails the beta bar after the MB-6 pass.
+- **Success criteria.** Decision memo (adopt / defer / reject) with a spike
+  behind it; if adopt: text blocks read/write TipTap JSON with zero content
+  loss on migration of existing HTML.
+- **Dependencies.** None hard; pairs naturally with any future "text block
+  rich formatting" feature work.
+
 ### Edge-hover dual-node expansion (Bead View) — ✅ SHIPPED 2026-06-22
 - **Status.** **Shipped** in `d717b34` (2026-06-22), browser-verified by Erik.
   Part A (highlight-only) shipped earlier in `d360640` (2026-06-16). Dwelling on

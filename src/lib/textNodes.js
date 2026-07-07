@@ -38,7 +38,7 @@ export async function createTextNode({
   positionY = 0,
   width = 256,
   height = null,
-  fontSize = 18,
+  fontSize = 48,   // new-block default set by Erik 2026-07-06; existing rows keep their saved size
   align = 'left',
 }) {
   return persistWrite(async () => {

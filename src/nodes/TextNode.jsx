@@ -10,6 +10,8 @@ import { useWorkspace } from '../lib/WorkspaceContext.jsx'
 import { useUndoStore } from '../store/useUndoStore'
 import { ACTION_TYPES } from '../lib/undo/index.js'
 import { useZoomInvariantScale } from '../hooks/useZoomInvariantScale.js'
+import { useTouchPrimary } from '../hooks/useTouchPrimary.js'
+import { lockTextBlockGeometry, unlockTextBlockGeometry } from '../lib/interactionLocks.js'
 import { CanvasToolbar, ToolbarDivider, placeFloatingToolbar } from '../components/CanvasToolbar.jsx'
 
 const DEFAULT_WIDTH = 240
@@ -18,21 +20,39 @@ const MIN_HEIGHT    = 32
 
 // Standard 8pt-scale presets offered in the font-size dropdown. The field also
 // accepts any custom value the user types (clamped to FONT_MIN..FONT_MAX).
-const FONT_SIZE_PRESETS = [12, 16, 24, 32, 48, 64, 96, 128]
+// Canvas-space px (text scales with zoom), hence larger than UI type —
+// list + 48 default set by Erik 2026-07-06.
+const FONT_SIZE_PRESETS = [32, 48, 64, 96, 128, 176, 224, 288]
+const DEFAULT_FONT_SIZE = 48
 const FONT_MIN = 8
-const FONT_MAX = 400
+const FONT_MAX = 800
 
-// ax/ay: which edge this handle moves ('left'|'right'|null, 'top'|'bottom'|null)
-const HANDLES = [
-  { id: 'nw', cx: 0,   cy: 0,   cursor: 'nwse-resize', ax: 'left',  ay: 'top'    },
-  { id: 'n',  cx: 0.5, cy: 0,   cursor: 'ns-resize',   ax: null,    ay: 'top'    },
-  { id: 'ne', cx: 1,   cy: 0,   cursor: 'nesw-resize', ax: 'right', ay: 'top'    },
-  { id: 'e',  cx: 1,   cy: 0.5, cursor: 'ew-resize',   ax: 'right', ay: null     },
-  { id: 'se', cx: 1,   cy: 1,   cursor: 'nwse-resize', ax: 'right', ay: 'bottom' },
-  { id: 's',  cx: 0.5, cy: 1,   cursor: 'ns-resize',   ax: null,    ay: 'bottom' },
-  { id: 'sw', cx: 0,   cy: 1,   cursor: 'nesw-resize', ax: 'left',  ay: 'bottom' },
-  { id: 'w',  cx: 0,   cy: 0.5, cursor: 'ew-resize',   ax: 'left',  ay: null     },
+// Text blocks resize like TEXT FIELDS on every platform (MB-6, Erik's call
+// 2026-07-06): ONLY the two side handles (e/w), width-only, height always
+// derived from the text. Any vertical-axis handle would commit a fixed pixel
+// height, breaking the auto-height model (height:null grows with the text).
+// Pattern per tldraw's mobile text handles. ax: which edge the handle moves.
+const SIDE_HANDLES = [
+  { id: 'e', cx: 1, cy: 0.5, cursor: 'ew-resize', ax: 'right', ay: null },
+  { id: 'w', cx: 0, cy: 0.5, cursor: 'ew-resize', ax: 'left',  ay: null },
 ]
+
+// Band geometry (screen px, multiplied by invZoom at render time — handles
+// are SCREEN-CONSTANT at every zoom, per the MB-6 research pass: every
+// mature canvas tool draws selection chrome at fixed screen size; Excalidraw
+// divides all handle dimensions by zoom).
+//
+// The visible pill is the affordance; the invisible band around it is the
+// grab target (hit > visible, industry-universal). The band sits almost
+// entirely OUTSIDE the box — the inward sliver stays within the box's own
+// 8px padding, so the band covers ZERO text pixels: the browser's native
+// selection grabbers at row starts must stay reachable — a 12px inward
+// overlap made select-to-start nearly impossible (MB-6 verification,
+// 2026-07-06). Touch: 44px target (Apple HIG minimum). Mouse: 24px.
+const BAND_WIDTH  = { touch: 44, mouse: 24 }
+const BAND_OUTSET = { touch: 40, mouse: 16 }
+const PILL_WIDTH  = 8
+const PILL_HEIGHT = 32
 
 // ─────────────────────────────────────────────────────────────────────────────
 // NativeButton — toolbar button that uses NATIVE pointerdown + click listeners
@@ -79,10 +99,11 @@ export default function TextNode({ id, data, xPos, yPos }) {
   // Counter-scale the in-canvas formatting toolbar so it stays a constant
   // on-screen size at any zoom (it lives inside the zoomable node layer).
   const invZoom = useZoomInvariantScale()
+  const touchPrimary = useTouchPrimary()
 
   const width    = data.width    ?? DEFAULT_WIDTH
   const height   = data.height   ?? null
-  const fontSize = data.fontSize ?? 24
+  const fontSize = data.fontSize ?? DEFAULT_FONT_SIZE
   const align    = data.align    ?? 'left'
 
   const [editing,   setEditing]   = useState(data.editing ?? false)
@@ -91,6 +112,7 @@ export default function TextNode({ id, data, xPos, yPos }) {
   const [sizeMenuOpen, setSizeMenuOpen] = useState(false)
 
   const editorRef   = useRef(null)
+  const pendingCaretPointRef = useRef(null)  // screen point of the enter-edit tap (touch caret placement)
   const boxRef      = useRef(null)
   const toolbarRef  = useRef(null)
   const fontInputRef = useRef(null)
@@ -147,10 +169,47 @@ export default function TextNode({ id, data, xPos, yPos }) {
     let attempts = 0
     let timer = null
     const setCaret = () => {
+      const sel = window.getSelection()
+      if (!sel) return
+      if (touchPrimary) {
+        // Touch (MB-6): NEVER pre-select everything — any keystroke would
+        // replace the whole block, and Android Chrome fires the context-menu
+        // gesture on taps over selected text (which surfaced the block action
+        // menu mid-editing). Place the caret at the double-tap point; fall
+        // back to the end of the text.
+        const pt = pendingCaretPointRef.current
+        pendingCaretPointRef.current = null
+        let range = null
+        if (pt) {
+          if (typeof document.caretRangeFromPoint === 'function') {
+            range = document.caretRangeFromPoint(pt.x, pt.y)
+          } else if (typeof document.caretPositionFromPoint === 'function') {
+            const pos = document.caretPositionFromPoint(pt.x, pt.y)
+            if (pos) {
+              range = document.createRange()
+              range.setStart(pos.offsetNode, pos.offset)
+            }
+          }
+          // The tap point can resolve outside this editor (padding, another
+          // element) — only trust it if it landed in our content.
+          if (range && !el.contains(range.startContainer)) range = null
+        }
+        if (range) {
+          range.collapse(true)
+        } else {
+          range = document.createRange()
+          range.selectNodeContents(el)
+          range.collapse(false) // caret at end
+        }
+        sel.removeAllRanges()
+        sel.addRange(range)
+        return
+      }
+      // Desktop: unchanged — entering edit selects all.
       const range = document.createRange()
       range.selectNodeContents(el)
-      window.getSelection()?.removeAllRanges()
-      window.getSelection()?.addRange(range)
+      sel.removeAllRanges()
+      sel.addRange(range)
     }
     const tryFocus = () => {
       if (document.activeElement === el) { setCaret(); return }
@@ -273,6 +332,12 @@ export default function TextNode({ id, data, xPos, yPos }) {
       if (e.key === 'Enter')  { e.preventDefault(); commitFontSize(el.value); editorRef.current?.focus() }
       else if (e.key === 'Escape') { e.preventDefault(); el.value = String(fontSize); editorRef.current?.focus() }
     }
+    // Select-all on focus (desktop AND mobile): tapping the field highlights
+    // the current value so typing replaces it — no manual backspacing. The
+    // field's inputMode="numeric" raises the numeric keypad on touch; the
+    // Enter commit above refocuses the editor, which returns the regular
+    // keyboard.
+    const onFocus = () => { el.select() }
     const onBlur = (e) => {
       commitFontSize(el.value)
       setSizeMenuOpen(false)
@@ -285,9 +350,11 @@ export default function TextNode({ id, data, xPos, yPos }) {
     }
     el.addEventListener('keydown', onKeyDown)
     el.addEventListener('blur', onBlur)
+    el.addEventListener('focus', onFocus)
     return () => {
       el.removeEventListener('keydown', onKeyDown)
       el.removeEventListener('blur', onBlur)
+      el.removeEventListener('focus', onFocus)
     }
   }, [commitFontSize, fontSize, save, editing])
 
@@ -312,15 +379,27 @@ export default function TextNode({ id, data, xPos, yPos }) {
   }, [])
 
   // ── Resize drag ───────────────────────────────────────────────────────────
+  // Pointer events (MB-6): one code path for mouse, touch, and pen. Pointer
+  // capture keeps the drag alive when a finger drifts off the handle and
+  // keeps the canvas/React Flow from seeing the pointer mid-drag.
   const startResize = useCallback((handle, e) => {
     e.stopPropagation()
     e.preventDefault()
+    try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* jsdom / older browsers */ }
+    // Freeze this block's geometry against Realtime echoes for the duration
+    // of the drag (released in onUp / pointercancel / unmount cleanup).
+    lockTextBlockGeometry(id)
     dragRef.current = {
       handle,
+      pointerId:   e.pointerId,
       startX:      e.clientX,
       startY:      e.clientY,
       startWidth:  width,
       startHeight: boxRef.current ? boxRef.current.offsetHeight : (height ?? MIN_HEIGHT),
+      // The STORED height (null = auto), distinct from the measured
+      // startHeight above — the undo diff must compare stored values, or
+      // undoing a resize on an auto-height block would commit a fixed height.
+      startHeightData: height,
       startNodeX:  xPos,
       startNodeY:  yPos,
       zoom:        getViewport().zoom,
@@ -335,6 +414,9 @@ export default function TextNode({ id, data, xPos, yPos }) {
     const onMove = (e) => {
       const drag = dragRef.current
       if (!drag) return
+      // A second finger on the screen fires its own pointermove stream —
+      // only the pointer that grabbed the handle drives the resize.
+      if (e.pointerId !== undefined && drag.pointerId !== undefined && e.pointerId !== drag.pointerId) return
       const { handle, zoom, startX, startY, startWidth, startHeight, startNodeX, startNodeY } = drag
 
       const rawDx = (e.clientX - startX) / zoom
@@ -365,7 +447,13 @@ export default function TextNode({ id, data, xPos, yPos }) {
 
       setNodes((nds) => nds.map((n) => {
         if (n.id !== id) return n
-        const committedHeight = handle.ay ? newHeight : n.data.height
+        // Width-only model (MB-6): a width resize RELEASES any fixed height
+        // back to automatic — the box re-fits its text. Erik's rule
+        // (2026-07-06): no bulk migration, no change on load; only an ACTIVE
+        // width-resize converts a legacy fixed-height block. (handle.ay is
+        // never set for SIDE_HANDLES; the branch is kept for the drag-math
+        // generality.)
+        const committedHeight = handle.ay ? newHeight : null
         latest.dirty  = true
         latest.x      = newX
         latest.y      = newY
@@ -383,9 +471,12 @@ export default function TextNode({ id, data, xPos, yPos }) {
       }))
     }
 
-    const onUp = () => {
+    const onUp = (e) => {
       const drag = dragRef.current
+      if (!drag) return
+      if (e && e.pointerId !== undefined && drag.pointerId !== undefined && e.pointerId !== drag.pointerId) return
       dragRef.current = null
+      unlockTextBlockGeometry(id)
       if (latest.dirty) {
         dbUpdateTextNode(id, {
           positionX: latest.x,
@@ -405,9 +496,12 @@ export default function TextNode({ id, data, xPos, yPos }) {
             before.width = drag.startWidth
             after.width  = latest.width
           }
-          if (drag.startHeight !== latest.height) {
-            before.height = drag.startHeight
-            after.height  = latest.height
+          // Compare STORED heights (null = auto), not the measured pixel
+          // height — a block that was already auto must not gain a height
+          // entry (undoing it would pin the box to a fixed height).
+          if ((drag.startHeightData ?? null) !== (latest.height ?? null)) {
+            before.height = drag.startHeightData ?? null
+            after.height  = latest.height ?? null
           }
           if (drag.startNodeX !== latest.x) {
             before.positionX = drag.startNodeX
@@ -424,11 +518,19 @@ export default function TextNode({ id, data, xPos, yPos }) {
         latest.dirty = false
       }
     }
-    document.addEventListener('mousemove', onMove)
-    document.addEventListener('mouseup',   onUp)
+    // pointercancel = the browser aborted the drag (e.g. an OS gesture took
+    // over). Treat it as a release so the latest size still persists and the
+    // drag state can't leak.
+    document.addEventListener('pointermove',   onMove)
+    document.addEventListener('pointerup',     onUp)
+    document.addEventListener('pointercancel', onUp)
     return () => {
-      document.removeEventListener('mousemove', onMove)
-      document.removeEventListener('mouseup',   onUp)
+      document.removeEventListener('pointermove',   onMove)
+      document.removeEventListener('pointerup',     onUp)
+      document.removeEventListener('pointercancel', onUp)
+      // Unmount mid-drag: never leave a stale lock behind.
+      if (dragRef.current) dragRef.current = null
+      unlockTextBlockGeometry(id)
     }
   }, [id, setNodes, recordEdit])
 
@@ -581,25 +683,48 @@ export default function TextNode({ id, data, xPos, yPos }) {
           ...(height ? { height } : {}),
         }}
       >
-        {/* 8 resize handles */}
-        {editing && HANDLES.map((h) => (
-          <div
-            key={h.id}
-            style={{
-              position:        'absolute',
-              width:           8,
-              height:          8,
-              left:            `calc(${h.cx * 100}% - 4px)`,
-              top:             `calc(${h.cy * 100}% - 4px)`,
-              backgroundColor: 'white',
-              border:          '2px solid #64748b',
-              borderRadius:    2,
-              cursor:          h.cursor,
-              zIndex:          10,
-            }}
-            onMouseDown={(e) => startResize(h, e)}
-          />
-        ))}
+        {/* Width-only side handles — SAME interface on desktop and touch
+            (MB-6): text blocks resize like text fields. Screen-constant
+            (× invZoom); the visible pill is the affordance, the invisible
+            band around it is the grab target, sized per input type. `nodrag`
+            = React Flow's opt-out class, so the canvas can never read a
+            handle drag as a node drag. */}
+        {editing && SIDE_HANDLES.map((h) => {
+          const bandWidth  = BAND_WIDTH[touchPrimary ? 'touch' : 'mouse']
+          const bandOutset = BAND_OUTSET[touchPrimary ? 'touch' : 'mouse']
+          return (
+            <div
+              key={h.id}
+              className="nodrag"
+              style={{
+                position:       'absolute',
+                top:            '50%',
+                transform:      'translateY(-50%)',
+                height:         '100%',
+                minHeight:      bandWidth * invZoom,
+                width:          bandWidth * invZoom,
+                [h.ax === 'left' ? 'left' : 'right']: -bandOutset * invZoom,
+                display:        'flex',
+                alignItems:     'center',
+                justifyContent: 'center',
+                cursor:         h.cursor,
+                zIndex:         10,
+                touchAction:    'none',
+              }}
+              onPointerDown={(e) => startResize(h, e)}
+            >
+              <div
+                style={{
+                  width:           PILL_WIDTH * invZoom,
+                  height:          PILL_HEIGHT * invZoom,
+                  borderRadius:    (PILL_WIDTH / 2) * invZoom,
+                  backgroundColor: 'white',
+                  border:          `${2 * invZoom}px solid #64748b`,
+                }}
+              />
+            </div>
+          )
+        })}
 
         {/* Editor: contenteditable for per-selection bold/italic */}
         {editing ? (
@@ -617,6 +742,18 @@ export default function TextNode({ id, data, xPos, yPos }) {
             onMouseUp={syncSelectionState}
             onSelect={syncSelectionState}
             onMouseDown={(e) => e.stopPropagation()}
+            onPaste={(e) => {
+              // Paste as PLAIN TEXT only (MB-6, Erik 2026-07-06): external
+              // formatting must never enter a text block — styled HTML from a
+              // source page pastes with its own font-size/color/background,
+              // which then overrides the block's styling (observed: dark-on-
+              // white Lorem Ipsum; font-size control moving line-height only).
+              // insertText replaces the selection and routes through the
+              // browser's undo + input events like normal typing.
+              e.preventDefault()
+              const text = e.clipboardData?.getData('text/plain') ?? ''
+              if (text) document.execCommand('insertText', false, text)
+            }}
             onBlur={onEditorBlur}
             onKeyDown={(e) => {
               if (e.key === 'Escape') { e.preventDefault(); save() }
@@ -626,7 +763,10 @@ export default function TextNode({ id, data, xPos, yPos }) {
           <div
             key="display"
             style={textStyle}
-            onDoubleClick={() => {
+            onDoubleClick={(e) => {
+              // Remember where the user tapped/clicked so the touch caret
+              // path can place the cursor there (see setCaret).
+              pendingCaretPointRef.current = { x: e.clientX, y: e.clientY }
               setNodes((nds) => nds.map((n) =>
                 n.id === id ? { ...n, draggable: true, dragHandle: '.text-node-drag-handle', data: { ...n.data, editing: true } } : n
               ))

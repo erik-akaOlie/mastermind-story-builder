@@ -43,6 +43,7 @@ import { loadConnections } from '../lib/connections.js'
 import { loadTextNodes, dbTextNodeToReactFlow } from '../lib/textNodes.js'
 import { supabase } from '../lib/supabase.js'
 import { deepEqual } from '../lib/undo/index.js'
+import { isTextBlockGeometryLocked } from '../lib/interactionLocks.js'
 
 const KIND_TO_FIELD = {
   narrative:   'storyNotes',
@@ -285,6 +286,22 @@ function subscribeRealtime({ workspaceId, keyById, setNodes, setEdges }) {
             // Preserve UI-only state (e.g., editing) so a remote update
             // doesn't kick this tab out of edit mode mid-keystroke.
             const merged = { ...fresh, data: { ...fresh.data, editing: n.data?.editing ?? false } }
+            // Geometry lock (MB-6): while THIS tab is actively resizing this
+            // text block, keep the local live position/size — a stale echo of
+            // an earlier save passes the no-op guard below (local is ahead of
+            // the row) and would snap the block back mid-drag. Content and
+            // all other fields still apply. See lib/interactionLocks.js.
+            if (isTextBlockGeometryLocked(row.id)) {
+              merged.position = n.position
+              merged.data.width  = n.data?.width
+              merged.data.height = n.data?.height
+              if (import.meta.env.DEV) {
+                console.info(
+                  `[resize-lock] Realtime update landed mid-resize on text block ${row.id} — ` +
+                  'geometry preserved. (If you saw position jumps BEFORE this fix, this log confirms the echo mechanism.)'
+                )
+              }
+            }
             // No-op echo guard. Compare position + data (with editing
             // already aligned via the merge above) against local state.
             // Any mismatch in any persisted field falls through to apply.

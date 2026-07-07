@@ -848,6 +848,12 @@ export default function App() {
 
   // ── Context menu plumbing ────────────────────────────────────────────────
   const onNodeContextMenu = useCallback((event, node) => {
+    // Text block in edit mode: the text owns every gesture (exclusive
+    // editing mode, per MB-6). Return WITHOUT preventDefault so the
+    // browser's native text menu works (desktop right-click copy/paste;
+    // Android's tap-on-selection, which fires contextmenu, gets the native
+    // selection toolbar) — the block's action menu stays out entirely.
+    if (node.type === 'textNode' && node.data?.editing) return
     event.preventDefault()
     setCanvasMenu(null)
     setContextMenu({ nodeId: node.id, x: event.clientX, y: event.clientY })
