@@ -50,6 +50,44 @@ export function insertNodeLink(editor, node, onAddConnection) {
   onAddConnection?.(node)
 }
 
+// Revert every [[link]] pointing at `nodeId` in a STORED zone document (plain
+// block JSON, no live editor). The counterpart of revertLinksForNode for the
+// connection's OTHER endpoint: its editors aren't mounted when the delete
+// happens, so its zones must be rewritten as data (ADR-0016 §7 applies to both
+// endpoints, not just the card being viewed). Immutable — returns new arrays/
+// objects only along changed paths, plus the revert count so the caller can
+// skip persisting untouched zones.
+export function revertLinksInBlocks(blocks, nodeId) {
+  if (!Array.isArray(blocks)) return { blocks, reverted: 0 }
+  let reverted = 0
+
+  const visitBlock = (block) => {
+    let next = block
+    if (Array.isArray(block.content)) {
+      let changed = false
+      const newContent = block.content.map((it) => {
+        if (it?.type === 'nodeLink' && it.props?.nodeId === nodeId) {
+          changed = true
+          reverted++
+          return { type: 'text', text: it.props.label ?? '', styles: {} }
+        }
+        return it
+      })
+      if (changed) next = { ...next, content: newContent }
+    }
+    if (Array.isArray(block.children) && block.children.length) {
+      const newChildren = block.children.map(visitBlock)
+      if (newChildren.some((c, i) => c !== block.children[i])) {
+        next = { ...next, children: newChildren }
+      }
+    }
+    return next
+  }
+
+  const out = blocks.map(visitBlock)
+  return { blocks: reverted > 0 ? out : blocks, reverted }
+}
+
 // Revert every [[link]] pointing at `nodeId` back to plain text (the words
 // stay; the link dies). Called when a connection is deleted (ADR-0016 §7) —
 // run across every mounted zone editor so links in either zone are cleaned up.

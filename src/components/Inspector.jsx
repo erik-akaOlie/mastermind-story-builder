@@ -14,7 +14,8 @@ import { UploadImageProvider } from './UploadImageProvider'
 import { SEARCH_BAND_REM } from './SearchBar'
 import { EditorProvider } from './editor/EditorContext.jsx'
 import { EditorErrorBoundary } from './editor/EditorErrorBoundary.jsx'
-import { revertLinksForNode } from './editor/editorLinks.js'
+import { revertLinksForNode, revertLinksInBlocks } from './editor/editorLinks.js'
+import { loadBlockZones, saveBlockZones, ZONE_KINDS } from '../lib/blockZones.js'
 
 // Lazy so the ~1 MB BlockNote bundle loads only when a card is opened, never in
 // the main app bundle. Block-editor Phase 2, Chunk A (ADR-0016).
@@ -623,6 +624,23 @@ export default function Inspector({
       const conn = localConns.find((c) => c.id === connectionId)
       if (conn) {
         for (const ed of editorsRef.current) revertLinksForNode(ed, conn.nodeId)
+        // The OTHER endpoint may hold [[links]] to THIS card. Its editors
+        // aren't mounted here, so rewrite its stored zones directly —
+        // otherwise its link text keeps the live styling after the line is
+        // gone (§7 is a both-endpoints contract). Fire-and-forget per the
+        // persistence pattern; Realtime mirrors the change to open canvases.
+        loadBlockZones(conn.nodeId)
+          .then((zones) => {
+            const changed = {}
+            for (const kind of ZONE_KINDS) {
+              const res = revertLinksInBlocks(zones[kind], node.id)
+              if (res.reverted > 0) changed[kind] = res.blocks
+            }
+            if (Object.keys(changed).length > 0) {
+              return saveBlockZones(conn.nodeId, changed)
+            }
+          })
+          .catch(console.error)
       }
       setLocalConns((prev) => prev.filter((c) => c.id !== connectionId))
     },
