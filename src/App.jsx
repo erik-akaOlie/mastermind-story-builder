@@ -53,6 +53,14 @@ import { track } from './lib/analytics.js'
 import { safeRandomUUID } from './lib/uuid.js'
 import { toastDeleteCaptureFailed } from './lib/feedbackToasts.jsx'
 import { nextAltitude, MORPH_DURATION_MS, computeMinZoom } from './utils/altitude.js'
+import {
+  computeEnvelope,
+  computeEntryViewport,
+  computeEnvelopeFitZoom,
+  RESERVED_INSPECTOR_BAND_PX,
+  RESERVED_RAIL_BAND_PX,
+  NARROW_VIEWPORT_MAX_PX,
+} from './utils/viewportFraming.js'
 
 // Analytics thresholds (per ADR-0009). pan_burst fires when the user
 // completes >= THRESHOLD discrete pan gestures in WINDOW_MS, then resets.
@@ -322,12 +330,54 @@ export default function App() {
   const dynamicMinZoom = useCanvasUiStore((s) => s.dynamicMinZoom)
   useEffect(() => {
     if (draggingNodeIdForMinZoom != null) return
-    useCanvasUiStore.getState().setDynamicMinZoom(computeMinZoom({
-      nodes,
+    // The floor is the LOWER of the legacy bbox floor and the envelope-fit
+    // zoom (MB-8): entry framing parks the camera at the envelope-fit zoom,
+    // and a floor above it would either cut wide graphs off at the window
+    // edge or make the first pinch snap inward. Same insets as entry framing
+    // so the two can never disagree.
+    const narrow = viewportSize.w <= NARROW_VIEWPORT_MAX_PX
+    const envelopeFitZoom = computeEnvelopeFitZoom({
+      envelope: computeEnvelope(nodes),
       viewportWidth:  viewportSize.w,
       viewportHeight: viewportSize.h,
-    }))
+      reservedLeftPx:  narrow ? 0 : RESERVED_RAIL_BAND_PX,
+      reservedRightPx: narrow ? 0 : RESERVED_INSPECTOR_BAND_PX,
+    })
+    useCanvasUiStore.getState().setDynamicMinZoom(Math.min(
+      envelopeFitZoom,
+      computeMinZoom({
+        nodes,
+        viewportWidth:  viewportSize.w,
+        viewportHeight: viewportSize.h,
+      }),
+    ))
   }, [nodes, viewportSize, draggingNodeIdForMinZoom])
+
+  // ── Entry framing (MB-8 Commit 1) ────────────────────────────────────────
+  // Replaces the bare `fitView` prop. Runs once per canvas mount — and the
+  // canvas remounts on every workspace entry (App renders the loading
+  // placeholder instead of <ReactFlow> while the next workspace's data
+  // loads), so every entry auto-reframes deterministically. Frames the
+  // virtual envelope (see viewportFraming.js) instead of tight node bounds:
+  // desktop centers the graph in the work area between the altitude-rail
+  // band (left) and the reserved docked-Inspector band (right); phone-narrow
+  // centers in the full window. Entry zoom = envelope-fit, capped at 1 —
+  // never floor-clamped, because the whole graph must fit the window no
+  // matter how wide it is; the dynamic minZoom effect above composes the
+  // floor down to match. Reads window dims directly — a one-shot imperative
+  // act at init, not a subscription; resize never re-frames.
+  const applyEntryFraming = useCallback((rf) => {
+    const vw = window.innerWidth
+    const vh = window.innerHeight
+    const narrow = vw <= NARROW_VIEWPORT_MAX_PX
+    rf.setViewport(computeEntryViewport({
+      envelope: computeEnvelope(nodesRef.current),
+      viewportWidth:  vw,
+      viewportHeight: vh,
+      reservedLeftPx:  narrow ? 0 : RESERVED_RAIL_BAND_PX,
+      reservedRightPx: narrow ? 0 : RESERVED_INSPECTOR_BAND_PX,
+    }))
+  }, [])
 
   // ── AltitudeRail click-to-zoom callback (Chunk: altitude rail Phase 1) ──
   // The rail UI calls this with a target zoom value (already clamped to
@@ -1811,7 +1861,7 @@ export default function App() {
         onPaneContextMenu={onPaneContextMenu}
         onMove={onMove}
         onMoveEnd={onMoveEnd}
-        onInit={(rf) => { rfInstanceRef.current = rf }}
+        onInit={(rf) => { rfInstanceRef.current = rf; applyEntryFraming(rf) }}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         panOnDrag={isPanning}
@@ -1837,7 +1887,8 @@ export default function App() {
         // they'd resurrect on refresh. Our own Delete/Backspace listener owns
         // the gesture and routes through the undoable delete paths.
         deleteKeyCode={null}
-        fitView
+        /* No `fitView` prop: entry framing is owned by applyEntryFraming
+           (onInit above) — envelope-based, Inspector-band aware (MB-8). */
       >
         <Background color="#1f2937" />
         {/* Screen-layer overlay (constant size) for aligning a multi-selection. */}
