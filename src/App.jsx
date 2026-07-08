@@ -39,6 +39,7 @@ import { useEdgeHoverSession } from './hooks/useEdgeHoverSession'
 import { useUndoShortcuts } from './hooks/useUndoShortcuts'
 import { useCustomMarquee } from './hooks/useCustomMarquee'
 import { useTouchCanvasGestures } from './hooks/useTouchCanvasGestures'
+import { useLongPressContextMenu } from './hooks/useLongPressContextMenu'
 import { useReducedMotion } from './hooks/useReducedMotion'
 import { useArrowKeyNavigation } from './hooks/useArrowKeyNavigation'
 import MarqueeRect from './components/MarqueeRect'
@@ -902,32 +903,53 @@ export default function App() {
   }, [finalizeDragStop])
 
   // ── Context menu plumbing ────────────────────────────────────────────────
-  const onNodeContextMenu = useCallback((event, node) => {
+  // Two triggers feed the same open functions: the browser's contextmenu
+  // event (desktop right-click; Android touch long-press) and the custom
+  // long-press timer (useLongPressContextMenu — iOS Safari never fires
+  // contextmenu on touch, iPhone QA Finding A).
+  const openNodeMenuFor = useCallback((node, x, y) => {
     // Text block in edit mode: the text owns every gesture (exclusive
-    // editing mode, per MB-6). Return WITHOUT preventDefault so the
-    // browser's native text menu works (desktop right-click copy/paste;
-    // Android's tap-on-selection, which fires contextmenu, gets the native
-    // selection toolbar) — the block's action menu stays out entirely.
+    // editing mode, per MB-6) — the block's action menu stays out entirely.
     if (node.type === 'textNode' && node.data?.editing) return
-    event.preventDefault()
     setCanvasMenu(null)
-    setContextMenu({ nodeId: node.id, x: event.clientX, y: event.clientY })
+    setContextMenu({ nodeId: node.id, x, y })
     track('right_click_menu_opened', { surface: 'node', nodeType: node.type })
   }, [])
+
+  const openCanvasMenuAt = useCallback((x, y) => {
+    if (!rfInstanceRef.current) return
+    const flowPos = rfInstanceRef.current.screenToFlowPosition({ x, y })
+    setContextMenu(null)
+    setCanvasMenu({ x, y, flowPos })
+    track('right_click_menu_opened', { surface: 'canvas' })
+  }, [])
+
+  const onNodeContextMenu = useCallback((event, node) => {
+    // Editing text block: return WITHOUT preventDefault so the browser's
+    // native text menu works (desktop right-click copy/paste; Android's
+    // tap-on-selection, which fires contextmenu, gets the native
+    // selection toolbar).
+    if (node.type === 'textNode' && node.data?.editing) return
+    event.preventDefault()
+    openNodeMenuFor(node, event.clientX, event.clientY)
+  }, [openNodeMenuFor])
 
   const closeContextMenu = useCallback(() => setContextMenu(null), [])
 
   const onPaneContextMenu = useCallback((event) => {
     event.preventDefault()
-    if (!rfInstanceRef.current) return
-    const flowPos = rfInstanceRef.current.screenToFlowPosition({
-      x: event.clientX,
-      y: event.clientY,
-    })
-    setContextMenu(null)
-    setCanvasMenu({ x: event.clientX, y: event.clientY, flowPos })
-    track('right_click_menu_opened', { surface: 'canvas' })
-  }, [])
+    openCanvasMenuAt(event.clientX, event.clientY)
+  }, [openCanvasMenuAt])
+
+  useLongPressContextMenu({
+    onLongPressPane: useCallback(({ x, y }) => {
+      openCanvasMenuAt(x, y)
+    }, [openCanvasMenuAt]),
+    onLongPressNode: useCallback((nodeId, { x, y }) => {
+      const node = rfInstanceRef.current?.getNode(nodeId)
+      if (node) openNodeMenuFor(node, x, y)
+    }, [openNodeMenuFor]),
+  })
 
   // ── Add card (DB-backed) ─────────────────────────────────────────────────
   const addCardNode = useCallback(async (typeKey, flowPos) => {

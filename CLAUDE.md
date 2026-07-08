@@ -232,6 +232,13 @@ src/
     useUndoShortcuts.js            global Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y listener with the Word-style typing
                                    exemption (Ctrl+Z inside an input/textarea/contenteditable is left to the
                                    browser; outside it reverses the last workspace action)
+    useLongPressContextMenu.js     iOS long-press parity (iPhone QA Finding A, 2026-07-08): a ~500ms
+                                   stationary touch/pen hold on the pane or a node opens the Canvas Tool
+                                   Menu / node menu via App's shared open functions — iOS Safari never
+                                   fires contextmenu on touch. Cancels on >10px move, second finger, or
+                                   early lift; dedupes both directions against Android's native
+                                   contextmenu; swallows the release click so the menu stays open.
+                                   Ignores mouse pointers and text-editing surfaces.
 
   nodes/
     CampaignNode.jsx               renders a node as a colored card; subscribes to useCanvasUiStore; adds .is-lifted
