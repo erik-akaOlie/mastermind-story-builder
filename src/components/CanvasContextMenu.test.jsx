@@ -76,6 +76,17 @@ describe('CanvasContextMenu — desktop (hover-capable)', () => {
     expect(props.onAddCard).toHaveBeenCalledWith('location')
     expect(props.onClose).toHaveBeenCalledTimes(1)
   })
+
+  it('menu container does not scroll-clip (the hover submenu must render outside it)', () => {
+    // Regression (2026-07-08): MB-3's overflowY:auto guard on the container
+    // forced overflow-x out of `visible` too, clipping the absolutely-
+    // positioned hover submenu and showing both scrollbars on desktop.
+    // The guard must be touch-only.
+    renderMenu()
+    const menuEl = addCardButton().closest('div.fixed')
+    expect(menuEl.style.overflowY).toBe('')
+    expect(menuEl.style.maxHeight).toBe('')
+  })
 })
 
 describe('CanvasContextMenu — touch-primary (MB-3)', () => {
@@ -111,6 +122,13 @@ describe('CanvasContextMenu — touch-primary (MB-3)', () => {
     renderMenu()
     fireEvent.mouseEnter(addCardButton().parentElement)
     expect(screen.queryByText('Character')).not.toBeInTheDocument()
+  })
+
+  it('menu container keeps the scroll guard (long inline type lists must scroll, not clip)', () => {
+    renderMenu()
+    const menuEl = addCardButton().closest('div.fixed')
+    expect(menuEl.style.overflowY).toBe('auto')
+    expect(menuEl.style.maxHeight).not.toBe('')
   })
 
   it('"Add text" still works with a single tap', () => {

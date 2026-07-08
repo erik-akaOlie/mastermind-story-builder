@@ -110,10 +110,17 @@ export default function CanvasContextMenu({ x, y, onAddCard, onAddText, onClose 
           left,
           top,
           width: menuWidth,
-          // Degenerate-case guard: many custom types could make the expanded
-          // inline list taller than the viewport — scroll rather than clip.
-          maxHeight: window.innerHeight - VIEWPORT_MARGIN * 2,
-          overflowY: 'auto',
+          // Degenerate-case guard, TOUCH ONLY: many custom types could make
+          // the expanded inline list taller than the viewport — scroll rather
+          // than clip. Must not apply on desktop: overflow-y:auto forces
+          // overflow-x out of `visible` too (CSS computed-value rule), which
+          // clips the hover submenu — an absolutely-positioned child placed
+          // outside this container's right edge — and shows both scrollbars
+          // instead (iPhone-QA follow-up regression, 2026-07-08). Desktop's
+          // menu is two fixed rows and can never outgrow the viewport.
+          ...(touchPrimary
+            ? { maxHeight: window.innerHeight - VIEWPORT_MARGIN * 2, overflowY: 'auto' }
+            : {}),
         }}
         onContextMenu={(e) => e.preventDefault()}
       >
