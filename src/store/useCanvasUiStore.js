@@ -80,6 +80,16 @@ export const useCanvasUiStore = create((set) => ({
   // any update — Zustand uses reference equality to detect change.
   nodeMorphPhases: new Map(),
 
+  // Id of the node a SEARCH RESULT row is currently previewing (hover or
+  // keyboard focus in the results drawer), or null. While set, that node is
+  // promoted bead→card exactly like a hovered/selected bead — a fourth
+  // expansion trigger alongside hover / single-select / edge-highlight
+  // (CampaignNode.isExpanded + App's currentlyExpandedIds both include it;
+  // keep the two derivations in sync). Presentation-only; cleared on row
+  // leave, query change, drawer close, and search exit so it can never
+  // stick a card open after search ends.
+  searchFocusNodeId: null,
+
   // Id of the node currently being dragged, or null. Set by App.jsx in
   // onNodeDragStart, cleared in onNodeDragStop. CampaignNode subscribes so
   // it can freeze its hover-expand clamp offset for the duration of the
@@ -296,6 +306,8 @@ export const useCanvasUiStore = create((set) => ({
       next.set(id, phase)
       return { nodeMorphPhases: next }
     }),
+  setSearchFocusNodeId: (id) =>
+    set((state) => state.searchFocusNodeId === id ? {} : { searchFocusNodeId: id }),
   setDraggingNodeId: (id) =>
     set((state) => state.draggingNodeId === id ? {} : { draggingNodeId: id }),
   setThresholdGridGapMm: (mm) =>

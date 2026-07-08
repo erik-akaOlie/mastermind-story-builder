@@ -49,14 +49,16 @@ import { useCanvasUiStore } from './store/useCanvasUiStore'
 import { ACTION_TYPES } from './lib/undo/index.js'
 import { CanvasOpsProvider } from './lib/CanvasOpsContext.jsx'
 import { setPanToTargetImpl } from './lib/cameraOps.js'
+import { setSearchOpsImpl } from './lib/searchOps.js'
 import { track } from './lib/analytics.js'
 import { safeRandomUUID } from './lib/uuid.js'
 import { toastDeleteCaptureFailed } from './lib/feedbackToasts.jsx'
-import { nextAltitude, MORPH_DURATION_MS, computeMinZoom } from './utils/altitude.js'
+import { nextAltitude, MORPH_DURATION_MS, computeMinZoom, currentThresholdZoom } from './utils/altitude.js'
 import {
   computeEnvelope,
   computeEntryViewport,
   computeEnvelopeFitZoom,
+  SEARCH_BEAD_ZOOM_FACTOR,
   RESERVED_INSPECTOR_BAND_PX,
   RESERVED_RAIL_BAND_PX,
   NARROW_VIEWPORT_MAX_PX,
@@ -405,12 +407,14 @@ export default function App() {
   const hoveredNodeIdForExp   = useCanvasUiStore((s) => s.hoveredNodeId)
   const selectedNodeIdsForExp = useCanvasUiStore((s) => s.selectedNodeIds)
   const hoveredEdgeNodeIdsForExp = useCanvasUiStore((s) => s.hoveredEdgeNodeIds)
-  // The SET of nodes currently expanded in Bead View. Union of three triggers,
+  const searchFocusNodeIdForExp  = useCanvasUiStore((s) => s.searchFocusNodeId)
+  // The SET of nodes currently expanded in Bead View. Union of four triggers,
   // mirroring CampaignNode.isExpanded exactly: hover-expand (the hovered node),
   // single-select expand (the lone selected node, only when nothing is
-  // hovered), and edge-hover expand (BOTH endpoints of the dwelled connection
-  // line). More than one id can be present — the dual-expand case is the two
-  // endpoints of a hovered edge.
+  // hovered), edge-hover expand (BOTH endpoints of the dwelled connection
+  // line), and search-result preview (the node whose result row is hovered/
+  // focused in the drawer). More than one id can be present — the dual-expand
+  // case is the two endpoints of a hovered edge.
   const currentlyExpandedIds = useMemo(() => {
     const ids = new Set()
     if (altitudeForExpand === 'beadView') {
@@ -421,9 +425,10 @@ export default function App() {
       if (hoveredEdgeNodeIdsForExp) {
         for (const id of hoveredEdgeNodeIdsForExp) ids.add(id)
       }
+      if (searchFocusNodeIdForExp) ids.add(searchFocusNodeIdForExp)
     }
     return ids
-  }, [altitudeForExpand, hoveredNodeIdForExp, selectedNodeIdsForExp, hoveredEdgeNodeIdsForExp])
+  }, [altitudeForExpand, hoveredNodeIdForExp, selectedNodeIdsForExp, hoveredEdgeNodeIdsForExp, searchFocusNodeIdForExp])
   const prevExpandedIdsRef   = useRef(new Set())
   const expandMorphTimersRef = useRef(new Map())
   const fireExpandMorph = useCallback((id) => {
@@ -1782,6 +1787,121 @@ export default function App() {
     })
     return unsub
   }, [evaluateAltitude])
+
+  // ── Search ops (simple search find-mode, 2026-07-07) ─────────────────────
+  // The search UI (SearchBar + results drawer) lives outside App as a canvas
+  // sibling; this registration gives it node titles, Inspector control, and
+  // the camera — same singleton-bridge pattern as cameraOps. Placed BELOW
+  // evaluateAltitude because the dep array reads it.
+  //
+  // Find-mode contract (Erik, 2026-07-07): submitting a query frames the
+  // WHOLE graph as beads; cancel rewinds (camera + displaced Inspector);
+  // selecting a result commits the navigation (no rewind — focus has
+  // intentionally moved). searchRestoreRef remembers the displaced
+  // Inspector's topic; preSearchViewportRef remembers the camera from
+  // before the first submit of the session.
+  const searchRestoreRef     = useRef(null)
+  const preSearchViewportRef = useRef(null)
+  const searchSessionRef     = useRef(false)
+  useEffect(() => {
+    setSearchOpsImpl({
+      // Text blocks are not searchable in beta — cards only.
+      getEntries: () => nodesRef.current
+        .filter((n) => n.type === 'campaignNode')
+        .map((n) => ({
+          id:         n.id,
+          title:      n.data.label ?? '',
+          typeKey:    n.data.type,
+          avatar:     n.data.avatar,
+          hideAvatar: n.data.hideAvatar,
+        })),
+
+      // Called on EVERY submit. First submit of a search session: capture
+      // the rewind point, then displace the open Inspector (commit + flush
+      // its pending edits FIRST — block zones await like the delete path,
+      // ADR-0016 E1). Every submit: frame the whole graph as beads — the
+      // zoom is capped below the card↔bead threshold (Approach B) so the
+      // real altitude system flips to Bead View on its own; the explicit
+      // evaluateAltitude call makes the flip deterministic rather than
+      // depending on RF emitting move events for animated setViewport.
+      resultsOpened: async () => {
+        const rf = rfInstanceRef.current
+        if (!searchSessionRef.current) {
+          searchSessionRef.current = true
+          preSearchViewportRef.current = rf ? rf.getViewport() : null
+          const prev = inspectorNodeRef.current
+          searchRestoreRef.current = prev?.topicNodeId ?? null
+          if (prev) {
+            try { await editorFlushApiRef.current?.() } catch (err) { console.error(err) }
+            inspectorCommitRef.current?.()
+            setInspectorEditingFlag(null)
+            setInspectorNode(null)
+          }
+        }
+        if (rf) {
+          const vw = window.innerWidth
+          const vh = window.innerHeight
+          const narrow = vw <= NARROW_VIEWPORT_MAX_PX
+          const thresholdMm = useCanvasUiStore.getState().thresholdGridGapMm
+          const vp = computeEntryViewport({
+            envelope: computeEnvelope(nodesRef.current),
+            viewportWidth:  vw,
+            viewportHeight: vh,
+            reservedLeftPx:  narrow ? 0 : RESERVED_RAIL_BAND_PX,
+            reservedRightPx: narrow ? 0 : RESERVED_INSPECTOR_BAND_PX,
+            maxZoom: currentThresholdZoom(thresholdMm) * SEARCH_BEAD_ZOOM_FACTOR,
+          })
+          rf.setViewport(vp, { duration: reducedMotion ? 0 : 500 })
+          evaluateAltitude(vp.zoom, thresholdMm, 'search')
+        }
+      },
+
+      // Drawer closed. Cancel (no selection) rewinds: camera back to the
+      // pre-search view, displaced Inspector restored (repoint:true = quick
+      // fade-in, remembered mode — no grow-from-card morph for a restore).
+      // A selection commits: no rewind, the graph stays search-framed.
+      resultsClosed: ({ selected } = {}) => {
+        useCanvasUiStore.getState().setSearchFocusNodeId(null)
+        searchSessionRef.current = false
+        const restoreId = searchRestoreRef.current
+        searchRestoreRef.current = null
+        const preVp = preSearchViewportRef.current
+        preSearchViewportRef.current = null
+        if (selected) return
+        const rf = rfInstanceRef.current
+        if (rf && preVp) {
+          rf.setViewport(preVp, { duration: reducedMotion ? 0 : 500 })
+          evaluateAltitude(preVp.zoom, useCanvasUiStore.getState().thresholdGridGapMm, 'search')
+        }
+        if (restoreId && nodesRef.current.some((n) => n.id === restoreId)) {
+          openInspector(restoreId, { repoint: true })
+        }
+      },
+
+      // Selecting a search result: NO camera move (the framing happened at
+      // submit) — select the node and open the Inspector on it. In the
+      // bead-range framing zoom, the existing single-select expansion
+      // promotes the node to card form, which is the intended end state.
+      openNode: (nodeId) => {
+        const node = nodesRef.current.find((n) => n.id === nodeId)
+        if (!node) return false
+        searchRestoreRef.current = null
+        // Select it — mirror onSelectionChange's store writes so bead-view
+        // expansion and dimming react even if RF doesn't re-fire the handler
+        // for a programmatic change.
+        setNodes((nds) => nds.map((n) =>
+          !!n.selected === (n.id === nodeId) ? n : { ...n, selected: n.id === nodeId }
+        ))
+        useCanvasUiStore.getState().setAnySelected(true)
+        useCanvasUiStore.getState().setSelectedNodeIds(new Set([nodeId]))
+        // repoint:true → remembered mode, centered position, quick fade-in.
+        openInspector(nodeId, { repoint: true })
+        track('card_edit_opened', { source: 'search', typeKey: node.data?.type })
+        return true
+      },
+    })
+    return () => setSearchOpsImpl(null)
+  }, [openInspector, setInspectorEditingFlag, setNodes, reducedMotion, evaluateAltitude])
 
   // ── Viewport analytics (per ADR-0009) ────────────────────────────────────
   // onMoveEnd fires once per discrete pan/zoom gesture, which is the right

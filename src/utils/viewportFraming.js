@@ -142,6 +142,67 @@ export function computeEnvelopeFitZoom({
 }
 
 // ----------------------------------------------------------------------------
+// Focus viewport (simple search, 2026-07-07): center a single flow-space
+// point in the work area at a fixed zoom. Implements Erik's standing camera
+// rule — "centered" on desktop means centered in the display area LEFT of
+// the reserved Inspector band (and right of the rail band), even when the
+// Inspector is not visible. Same inset logic and constants as
+// computeEntryViewport so the two centering rules can never disagree.
+// ----------------------------------------------------------------------------
+
+// Arrival zoom when the camera focuses one found node. 1 = cards at natural
+// size (256×180 CSS px) — comfortably readable, well above the card↔bead
+// threshold (~0.5), with surrounding context still visible. Tunable by feel.
+// NOTE: currently consumer-less — search's find-mode revision (2026-07-07)
+// frames the whole graph on submit instead of focus-zooming the selection.
+// Kept (with computeFocusViewport) as the tested implementation of the
+// standing centering rule for future camera work.
+export const FOCUS_ZOOM = 1
+
+// Search find-mode framing (2026-07-07): when a query is submitted, the
+// whole graph frames as BEADS. Rather than a search-only bead override
+// (which every altitude reader would have to respect), the framing zoom is
+// capped at this fraction of the card↔bead threshold zoom — genuinely below
+// the threshold, so the real zoom→altitude system flips to Bead View by
+// itself and exits cleanly when the camera is restored. 0.9 sits safely
+// inside the hysteresis dead-band on the way in.
+export const SEARCH_BEAD_ZOOM_FACTOR = 0.9
+
+// Flow-space center of a node, mirroring graphBounds' dimension rules
+// (canonical card footprint; stored size for text nodes).
+export function nodeCenter(node) {
+  const isTextNode = node?.type === 'textNode'
+  const w = isTextNode ? (node.width  ?? node.data?.width  ?? 200) : CARD_WIDTH
+  const h = isTextNode ? (node.height ?? node.data?.height ?? 50)  : CARD_HEIGHT
+  return {
+    x: (node?.position?.x ?? 0) + w / 2,
+    y: (node?.position?.y ?? 0) + h / 2,
+  }
+}
+
+export function computeFocusViewport({
+  center,
+  viewportWidth,
+  viewportHeight,
+  reservedLeftPx = 0,
+  reservedRightPx = 0,
+  zoom = FOCUS_ZOOM,
+}) {
+  if (!center || !viewportWidth || !viewportHeight) {
+    return { x: 0, y: 0, zoom }
+  }
+  const reserved = reservedLeftPx + reservedRightPx
+  const degenerate = viewportWidth - reserved <= 0
+  const availW = degenerate ? viewportWidth : viewportWidth - reserved
+  const leftInset = degenerate ? 0 : reservedLeftPx
+  return {
+    x: leftInset + availW / 2 - center.x * zoom,
+    y: viewportHeight / 2 - center.y * zoom,
+    zoom,
+  }
+}
+
+// ----------------------------------------------------------------------------
 // Entry viewport: fit the envelope into the available work area and center it
 // there. Returns a React Flow viewport transform { x, y, zoom }.
 //

@@ -90,17 +90,23 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
   // connection line (Part A's 200ms-dwell edge-hover set). In Bead View this
   // expands the node — so hovering a line pops BOTH its endpoints into cards.
   const isEdgeHighlighted = useCanvasUiStore(selectIsEdgeHighlighted(data.id))
+  // True when a SEARCH RESULT row is previewing this node (hover / keyboard
+  // focus in the results drawer) — search find-mode's spotlight.
+  const searchFocusNodeId = useCanvasUiStore((s) => s.searchFocusNodeId)
+  const isThisSearchFocused = searchFocusNodeId === data.id
   // A node expands when, in Bead View, any of these hold — this is a UNION, not
   // a winner-take-all: hover-expand (this node hovered), single-select expand
-  // (selected alone, no node hovered), OR edge-hover expand (an endpoint of the
-  // dwelled line). More than one node can therefore be expanded at once (the
+  // (selected alone, no node hovered), edge-hover expand (an endpoint of the
+  // dwelled line), OR search-result preview (its row hovered/focused in the
+  // results drawer). More than one node can therefore be expanded at once (the
   // two endpoints of a hovered line). This derivation mirrors App.jsx's
   // currentlyExpandedIds set so the local expansion and the store's published
   // records always agree on which nodes are expanded.
   const isExpanded        = isInBeadView && (
     isThisHovered ||
     (hoveredNodeId === null && isThisSingleSel) ||
-    isEdgeHighlighted
+    isEdgeHighlighted ||
+    isThisSearchFocused
   )
   // True when THIS card is open ONLY because an edge-hover session is holding
   // it (an endpoint of the dwelled line). Such a card is a read-only "peek":

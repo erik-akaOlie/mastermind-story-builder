@@ -8,6 +8,9 @@ import {
   computeEnvelope,
   computeEntryViewport,
   computeEnvelopeFitZoom,
+  computeFocusViewport,
+  nodeCenter,
+  FOCUS_ZOOM,
   STARTER_ROOM_WIDTH,
   STARTER_ROOM_HEIGHT,
   ENVELOPE_MARGIN_RATIO,
@@ -161,5 +164,54 @@ describe('computeEnvelopeFitZoom', () => {
       envelope: wide, viewportWidth: 1920, viewportHeight: 1080,
       reservedLeftPx: 64, reservedRightPx: 496,
     })).toBeCloseTo(1360 / 10000)
+  })
+})
+
+describe('nodeCenter', () => {
+  it('uses the canonical card footprint for card nodes', () => {
+    expect(nodeCenter(card(100, 50))).toEqual({ x: 228, y: 140 })
+  })
+
+  it('uses stored dimensions for text nodes', () => {
+    expect(nodeCenter(textNode(0, 0, 400, 120))).toEqual({ x: 200, y: 60 })
+  })
+})
+
+describe('computeFocusViewport', () => {
+  it('centers the point in the work area between the reserved bands', () => {
+    const vp = computeFocusViewport({
+      center: { x: 500, y: 300 },
+      viewportWidth: 1920, viewportHeight: 1080,
+      reservedLeftPx: 64, reservedRightPx: 496,
+    })
+    // Work area: x 64..1424 (1360 wide) → its center is 64 + 680 = 744.
+    // Screen position of the node center = vp.x + 500 * zoom — must be 744.
+    expect(vp.zoom).toBe(FOCUS_ZOOM)
+    expect(vp.x + 500 * vp.zoom).toBeCloseTo(744)
+    expect(vp.y + 300 * vp.zoom).toBeCloseTo(540)
+  })
+
+  it('centers in the full window when no bands are reserved (phone)', () => {
+    const vp = computeFocusViewport({
+      center: { x: 500, y: 300 },
+      viewportWidth: 390, viewportHeight: 844,
+    })
+    expect(vp.x + 500 * vp.zoom).toBeCloseTo(195)
+    expect(vp.y + 300 * vp.zoom).toBeCloseTo(422)
+  })
+
+  it('falls back to the full window when reserves exceed the window', () => {
+    const vp = computeFocusViewport({
+      center: { x: 0, y: 0 },
+      viewportWidth: 400, viewportHeight: 800,
+      reservedLeftPx: 64, reservedRightPx: 496,
+    })
+    expect(vp.x).toBeCloseTo(200)
+    expect(vp.y).toBeCloseTo(400)
+  })
+
+  it('returns a safe identity viewport for degenerate input', () => {
+    expect(computeFocusViewport({ center: null, viewportWidth: 800, viewportHeight: 600 }))
+      .toEqual({ x: 0, y: 0, zoom: FOCUS_ZOOM })
   })
 })
