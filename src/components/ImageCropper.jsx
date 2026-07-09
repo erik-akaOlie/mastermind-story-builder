@@ -49,6 +49,7 @@ import {
   cropBoxToSourceRect,
   outputSizeForMode,
 } from './cropGeometry.js'
+import { useTouchPrimary } from '../hooks/useTouchPrimary'
 
 const FRAME_PAD_PX       = 24   // padding inside the cropper container
 const BOTTOM_RESERVED_PX = 128  // space reserved below the image for the Remove UI
@@ -59,6 +60,9 @@ const isMac = typeof navigator !== 'undefined' &&
 const PASTE_KEY_LABEL = isMac ? 'Cmd+V' : 'Ctrl+V'
 
 const ImageCropper = forwardRef(function ImageCropper({ imageBlob, mode, onRemove }, ref) {
+  // Mobile paste was cut for beta (see UploadImageModal's top-of-file note):
+  // the keyboard paste hint under "Remove image" is desktop-only copy.
+  const touchPrimary = useTouchPrimary()
   const containerRef = useRef(null)
   const [containerSize, setContainerSize] = useState(null)   // { w, h }
   const [imageData,     setImageData]     = useState(null)   // { src, width, height }
@@ -321,10 +325,14 @@ const ImageCropper = forwardRef(function ImageCropper({ imageBlob, mode, onRemov
           >
             Remove image
           </button>
-          <p className="text-gray-700 text-sm select-none">— or —</p>
-          <p className="text-gray-700 text-sm">
-            <span className="font-bold">{PASTE_KEY_LABEL}</span> to paste a new image
-          </p>
+          {!touchPrimary && (
+            <>
+              <p className="text-gray-700 text-sm select-none">— or —</p>
+              <p className="text-gray-700 text-sm">
+                <span className="font-bold">{PASTE_KEY_LABEL}</span> to paste a new image
+              </p>
+            </>
+          )}
         </div>
       )}
     </div>

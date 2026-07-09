@@ -110,7 +110,7 @@ export default function UploadImageModal({
       } catch (err) {
         if (!cancelled) {
           console.error('Failed to load existing image', err)
-          setErrorMessage("Couldn't load the existing image — pick or paste to start fresh.")
+          setErrorMessage("Couldn't load the existing image — choose a new one to start fresh.")
         }
       } finally {
         if (!cancelled) setLoadingExisting(false)
