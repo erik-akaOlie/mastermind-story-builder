@@ -51,6 +51,15 @@ Do not spend context budget analyzing your own behavior unless explicitly reques
 
 Do not confuse visible salience with structural invariance. Recommendations should be grounded in stable system references, not visually prominent elements.
 
+## Definition of done — documentation (every session)
+
+A session's work is not done until the docs reflect it, in the same session:
+
+- **CHANGELOG.md** gets an entry for every user-facing commit (convention: committed, not deploy-gated).
+- **BACKLOG.md / QA docs / ADRs** get updated whenever launch status, product decisions, accepted deferrals, or bug status change.
+
+Added 2026-07-09 after CHANGELOG silently drifted ~6 weeks while the explicitly-named docs stayed current — name the doc or it drifts.
+
 ---
 
 ## Tech Stack (actual)

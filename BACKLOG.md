@@ -120,7 +120,9 @@ They reorder relative to each other based on what #1 + #2 reveal.
   deferred (mobile clipboard paste cut for beta; C1/C2 are post-beta
   follow-ups). Dispositions in `QA/iphone-safari-qa-results-2026-07-07-final.md`
   (untracked, Erik's main folder only). Finding E (signup success panel) is
-  built + tested but parked in `stash@{0}` pending Erik's decision.
+  **approved + committed `c29cae8` (2026-07-09)** — email-first "Check your
+  email" panel replaces the form, no primary CTA, "Back to sign in" text
+  link (Figma 223-102); push/production verification pending.
 
 **Verification closed** ✅
 - ✅ PostHog-side display of the enriched `identify` props — **VERIFIED

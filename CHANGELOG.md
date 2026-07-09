@@ -4,6 +4,26 @@ A running log of meaningful changes to MasterMind: Story Builder. Append-only. N
 
 ## [Unreleased]
 
+### Signup success panel — email-first confirmation step (2026-07-09)
+
+After creating an account, the signup form is replaced by a green
+"Check your email" panel (iPhone QA Finding E; the old inline gray banner
+mid-form was easy to miss). The panel is **email-first**: the real next
+step lives in the user's inbox — the confirmation link brings them back
+to MasterMind — so there is deliberately **no primary button**. Three
+scannable sections (bold heading, the destination email bold on its own
+line, the open-the-link instruction) per Figma node 223-102, with 14px
+supporting text and the mode toggle relabeled to a real "Back to sign in"
+text link (sky-600 + underline) as the escape hatch. Panel state resets
+when leaving signup. Commit `c29cae8`.
+
+**Added**
+- Email-first signup success panel + escape-hatch link
+  ([`src/components/Login.jsx`](./src/components/Login.jsx)).
+- 3 Login tests: panel replaces form, no-primary-CTA hierarchy +
+  escape hatch + reset, error keeps the form
+  ([`src/components/Login.test.jsx`](./src/components/Login.test.jsx)).
+
 ### Inspector — float-or-dock card editing surface (2026-05-30)
 
 The card-editing surface (formerly "EditModal") is now the **Inspector**,
