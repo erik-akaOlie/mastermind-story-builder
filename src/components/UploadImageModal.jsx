@@ -208,7 +208,18 @@ export default function UploadImageModal({
           return
         }
       }
-      setErrorMessage('No image on the clipboard — copy an image first, then try again.')
+      // No image data on the clipboard. Distinguish the iOS-Safari trap
+      // (iPhone QA Finding C, 2026-07-07): "Copy Image" on a web image
+      // usually copies the image's LINK (text), not the image itself, so
+      // "copy an image first" reads as wrong to a user who just did. When
+      // the clipboard holds text, assume that case and point at the
+      // photo-picker path, which works.
+      const hasTextInstead = items.some((item) =>
+        item.types.some((t) => t.startsWith('text/'))
+      )
+      setErrorMessage(hasTextInstead
+        ? 'Your clipboard has a link to the image, not the image itself — phones often copy web images this way. Save the image to your Photos first, then tap "Upload image" to pick it.'
+        : 'No image on the clipboard — copy an image first, then try again.')
     } catch (err) {
       console.error('Clipboard read failed', err)
       setErrorMessage("Couldn't read the clipboard — your browser may have blocked access.")
