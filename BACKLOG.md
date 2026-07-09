@@ -105,7 +105,7 @@ They reorder relative to each other based on what #1 + #2 reveal.
 
 ## Mox free-beta launch readiness (pre-launch) — CURRENT FOCUS
 
-### Current Mox launch snapshot (2026-06-29)
+### Current Mox launch snapshot (2026-07-09)
 
 **Hard gates closed** ✅
 - Signup / waitlist / attribution (how-heard) / in-flow recording notice /
@@ -113,23 +113,54 @@ They reorder relative to each other based on what #1 + #2 reveal.
 - Custom SMTP + Site URL + confirmation round-trip — **verified end-to-end
   once, configured for expected beta volume (not load-tested)**; see
   [ADR-0018](./docs/decisions/0018-transactional-email-infrastructure.md)
+- ✅ **Simple search shipped** (2026-07-06, `2ba2eb0` — title predictions,
+  results drawer, find mode)
+- ✅ **Mobile hardening / iPhone QA track (MB-1–MB-6 + Findings A–G) CLOSED
+  for beta** (2026-07-08) — each finding resolved, accepted, or consciously
+  deferred (mobile clipboard paste cut for beta; C1/C2 are post-beta
+  follow-ups). Dispositions in `QA/iphone-safari-qa-results-2026-07-07-final.md`
+  (untracked, Erik's main folder only). Finding E (signup success panel) is
+  built + tested but parked in `stash@{0}` pending Erik's decision.
 
-**Pending verification** (not a hard gate)
-- PostHog-side display of the enriched `identify` props (email + display_name +
-  how_heard) — DB/code shipped 2026-06-26; replay-side display not yet eyeballed
+**Verification closed** ✅
+- ✅ PostHog-side display of the enriched `identify` props — **VERIFIED
+  2026-07-09** in the PostHog dashboard: the `+iphone` iPhone-QA test account
+  (note: `+iphone`, not `+iosqa` as earlier session notes said) is findable
+  by email in Persons, shows `email` + `display_name` + `how_heard` person
+  properties with the signup values, and has session recordings attached to
+  the identified person. The `+iphone` Supabase test account and the iPhone
+  QA workspace are now safe to delete (housekeeping, Erik's call — deleting
+  the Supabase account does not remove PostHog history).
 
 **Candidate must-fix before the Mox post** (pending re-triage against the
 "required to launch + learn" bar — the next product-lead decision)
-- Simple search · First-run creation affordance (FTUE) · Mobile login +
-  best-on-desktop expectation
+- First-run creation affordance (FTUE) — now includes a design review of
+  surfacing primary canvas tools; see the updated FTUE entry below
+- Mobile login + best-on-desktop expectation (no shipped evidence —
+  `Login.jsx` untouched since the signup cluster)
+- Terms of Service / Privacy Policy operator-name update (see entry below)
+
+**Launch bugs — Erik-reported 2026-07-09, not yet code-verified** (see the
+"Launch bugs" entry below for detail)
+- Profile image no longer displays in the user avatar
+- Node thumbnail click opens the lightbox from the canvas (card AND bead
+  form) — likely desired behavior is lightbox from the Inspector only
+- Inspector "hide thumbnail" needs close/reopen + a second try — Erik to
+  confirm this one is still real before work starts
+
+**Decision pending (not a launch gate)**
+- Per-user workspace cap (leaning 3) to support a future paid tier — see
+  entry below; decide after the must-fix list is done
 
 **Launch-post copy** (write at post time)
 - Beta-promise + Discord redirect script + support-expectation copy
+- MB-9: email-template copy edit
 
 **Likely fast-follow** (post-launch polish, not blockers)
 - In-app Contact/Feedback link · workspace-delete confirmation · markdown export
   · custom app domain · company-level DMARC · re-home Resend account to a
-  company identity
+  company identity · iOS long-press native selection-highlight flash (S, logged
+  in the QA dispositions file)
 
 ---
 
@@ -151,11 +182,12 @@ coordinated build on migration 014; see the ✅ items below); and the
 **custom-SMTP + Site-URL email-deliverability gate** (shipped + verified
 end-to-end 2026-06-29 — see the ✅ item below and [ADR-0018](./docs/decisions/0018-transactional-email-infrastructure.md)).
 **Remaining candidate must-fix before the Mox post** (pending re-triage, see
-snapshot above): simple search → first-run creation affordance → mobile entry,
-judged against the stricter "required to launch + learn" bar. Also still **pending verification** (lighter,
-not a hard gate): the **PostHog-side display of the enriched `identify` props**
-(email + display_name + how_heard) — the DB/code side shipped 2026-06-26 but the
-replay-side display hasn't been eyeballed. Workspace-delete custom confirmation
+snapshot above): first-run creation affordance → mobile entry → ToS/Privacy
+operator update (simple search shipped 2026-07-06), judged against the
+stricter "required to launch + learn" bar. The **PostHog-side display of the
+enriched `identify` props** (email + display_name + how_heard) was **verified
+in the dashboard 2026-07-09** — see the snapshot above; that verification
+thread is closed. Workspace-delete custom confirmation
 and markdown export are Soon-after. **Honest sizing:** remaining Bucket-1 is
 ~1 sprint.
 
@@ -272,6 +304,9 @@ and markdown export are Soon-after. **Honest sizing:** remaining Bucket-1 is
 - **Size:** S (one-time setup; mostly copy-paste).
 
 ### Simple search (titles + types) — beta scope
+- ✅ **SHIPPED 2026-07-06** (`2ba2eb0` — title predictions, results drawer,
+  find mode). Searching **inside** card body text remains deferred to a
+  fast-follow as specced. Original spec retained below for history.
 - **Problem.** A search control is **visible** top-right (`SearchBar.jsx`) and
   expands to a `Search…` input on hover, but it is **presentational only —
   typing does nothing**. The only "coming soon" cue is a hidden screen-reader
@@ -307,6 +342,17 @@ and markdown export are Soon-after. **Honest sizing:** remaining Bucket-1 is
   docked `+`) is the leading concept, built minimal-first; a fuller toolbar
   awaits a dedicated design pass. Bottom-center placement must clear the docked
   Inspector (bottom-right) and the feedback strip (bottom-left).
+- **Design stance UPDATE (2026-07-09).** The minimal-`+` leading concept above
+  is **stale**: Erik has drafted designs for a **toolbar at the base of the
+  canvas** that surfaces the primary canvas tools (currently discoverable only
+  via right-click / long-press). FTUE scope now **includes a design review of
+  how primary canvas tools are surfaced** — the toolbar is a **direction under
+  active design review, not a settled decision**. The success bar is unchanged:
+  a new user creates AND names a first node in ~10s without knowing about
+  right-click/long-press. Next step: review Erik's toolbar designs together
+  before any implementation. MB-8 envelope-framing caveat still applies (a
+  first-created node at far-out zoom can render as a tiny bead, undermining
+  the "I just created something" moment).
 - **Dependencies.** None hard; touches the canvas (App.jsx) + the Inspector open
   path.
 - **Size:** M (minimal version); the center→dock spotlight choreography is a
@@ -324,15 +370,78 @@ and markdown export are Soon-after. **Honest sizing:** remaining Bucket-1 is
   best on desktop. Full mobile canvas authoring stays deferred.
 - **Decision (2026-06-25).** Promoted to must-fix (was deferred). Mobile
   light-capture / comments-on-nodes is a separate post-beta idea, not in scope.
+- **Status UPDATE (2026-07-09).** The mobile-state description in the problem
+  above is **stale**: the mobile hardening track (MB-1–MB-6 + iPhone QA
+  Findings A–G) is **closed for beta** — touch now has long-press for the
+  Canvas Tool Menu + node menu, two-finger pan/zoom, a full-screen Inspector,
+  the phone workspace-picker layout, and photo-picker upload. What **remains
+  open** from this item is exactly its title: (a) login/signup responsiveness
+  on a ~380px screen, and (b) the in-app "building is best on desktop"
+  expectation-setting. Full mobile canvas authoring is still **not** being
+  expanded for this launch.
 - **Dependencies.** None.
 - **Size:** S.
 
+### Launch bugs (Erik-reported 2026-07-09 — not yet code-verified)
+
+> None of these three have been reproduced against the code or production
+> yet. First step for each is verification (reproduce + locate), then sizing.
+> Do not treat the sizes below as commitments.
+
+1. **Profile image no longer displays in the user avatar.** The top-left
+   UserAvatar chip (and possibly the Profile page) no longer shows the
+   uploaded profile photo. Regression — this worked when profile avatars
+   shipped. Verify in production first; suspect areas: signed-URL
+   resolution (`useImageUrl` with `profile-media` bucket) or the
+   ProfileContext load. Likely S once located.
+2. **Node thumbnail opens the lightbox from the canvas.** Clicking a node's
+   thumbnail on the canvas opens the lightbox — easy to hit accidentally in
+   card form, worse in bead form. **Likely desired behavior (Erik, to be
+   confirmed at fix time): the lightbox opens for node thumbnails only from
+   the Inspector**; canvas clicks on the thumbnail should select/open the
+   node like any other click. Content-image lightbox behavior elsewhere is
+   unaffected. Likely S once verified.
+3. **Inspector "hide thumbnail" needs close/reopen + a second try.**
+   Reported from prior session context; **Erik to confirm it is still real
+   before any work starts** — recorded here so it isn't lost, not yet
+   accepted as a confirmed bug.
+
+### Terms of Service / Privacy Policy — operator-name update
+- **Problem.** The ToS and Privacy Policy don't yet name **Just Living the
+  Dream LLC** as the operating entity. This was blocked on the LLC's
+  reinstatement status; the LLC is **confirmed reinstated via WA SoS
+  statement received 2026-06-30** — this copy change is unblocked. (Exact
+  registered capitalization of the entity name should be read off the WA SoS
+  statement before it goes into the legal docs.)
+- **Success.** Both documents name the LLC as operator. **Narrow scope:**
+  operator/entity language only — preserve the existing recording-consent,
+  data-handling, and deletion posture verbatim unless legal review says
+  otherwise.
+- **Dependencies.** None for this copy change. DOR/Bellevue re-registration
+  and trademark are separate lanes, not blockers here.
+- **Size:** S.
+
+### Per-user workspace cap — DECISION PENDING (not a launch gate)
+- **Idea (Erik, 2026-07-09).** Cap the number of workspaces a free user can
+  create — **2 or 3, leaning 3** — so a future paid tier can expand it for
+  people who adopt the tool beyond one campaign. Keeping the free cap low
+  from day one avoids ever taking something away from existing users.
+- **Stance.** Record now, **decide last** — after the must-fix list is done.
+  This is the one launch-list item driven by future monetization rather than
+  beta learning; it must not add launch friction. If implemented for beta it
+  needs: enforcement at `createWorkspace`, clear picker UX at the cap (why
+  the button is disabled + what to do about it), and a support story.
+- **Dependencies.** None hard. Enforcement is client + a DB-level guard
+  (trigger or RLS check) so it can't be bypassed.
+- **Size:** S–M (dominated by the cap-reached UX, not the enforcement).
+
 ### Beta user identification (display name + PostHog identify)
-- ✅ **SHIPPED 2026-06-26 (code).** Required display name collected at signup +
-  stored in `profiles` via the trigger; `analytics.identify()` now sends email
-  + display_name + how_heard. **Not yet verified end to end** that PostHog's
-  replay list actually shows the enriched properties — confirm during the next
-  test pass. Original spec below.
+- ✅ **SHIPPED 2026-06-26 (code) + VERIFIED end to end 2026-07-09.** Required
+  display name collected at signup + stored in `profiles` via the trigger;
+  `analytics.identify()` sends email + display_name + how_heard. Verified in
+  the PostHog dashboard against the `+iphone` iPhone-QA signup: person
+  findable by email, all three person properties present with signup values,
+  recordings attached to the identified person. Original spec below.
 - **Problem.** Signup collects only email + password + terms timestamp — **no
   name**; `profiles.display_name` is always NULL (the column + `setDisplayName`
   exist but nothing in the UI calls them). PostHog `identify` is called with
