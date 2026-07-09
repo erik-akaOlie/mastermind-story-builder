@@ -20,6 +20,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { DownloadSimple, CaretDown } from '@phosphor-icons/react'
 import { useImageUrl } from '../lib/useImageUrl'
 import { getImageUrl, isStoragePath } from '../lib/imageStorage'
+import { useTouchPrimary } from '../hooks/useTouchPrimary'
 
 const LightboxContext = createContext(null)
 
@@ -87,6 +88,20 @@ export function LightboxProvider({ children }) {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [value, close])
+
+  // Touch: release focus when the lightbox opens (iPhone QA Finding D,
+  // 2026-07-07). Opening from inside the Inspector leaves the text editor
+  // focused, so the on-screen keyboard stays up — it shrinks and shifts the
+  // visual viewport, pushing the top-anchored Download/Close controls out of
+  // view until the user scrolls. Blurring dismisses the keyboard and lets
+  // the viewport realign. Touch-only so a desktop user's caret survives a
+  // quick image peek.
+  const touchPrimary = useTouchPrimary()
+  useEffect(() => {
+    if (!value || !touchPrimary) return
+    const el = document.activeElement
+    if (el && el !== document.body && typeof el.blur === 'function') el.blur()
+  }, [value, touchPrimary])
 
   // Content entries are objects; the printable artifact is download-only.
   const entry = value && typeof value === 'object' ? value : null
