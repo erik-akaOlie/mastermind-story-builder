@@ -23,13 +23,14 @@ const isMac = typeof navigator !== 'undefined' &&
   /mac/i.test(navigator.platform || navigator.userAgent || '')
 const PASTE_KEY_LABEL = isMac ? 'Cmd+V' : 'Ctrl+V'
 
-// Clipboard-read support (the "Paste from clipboard" button). Requires a
-// secure context (HTTPS or localhost) — on the LAN dev server (http://192.…)
-// the API is absent and the button simply doesn't render, so this can only
-// be verified against production. iOS Safari shows a paste-permission bubble
-// on first use — on the Safari verification list.
-const canClipboardRead = typeof navigator !== 'undefined' &&
-  typeof navigator.clipboard?.read === 'function'
+// NOTE (2026-07-08): mobile clipboard paste was CUT for beta — the touch
+// "Paste from clipboard" buttons were removed. Android Chrome never exposed
+// the clipboard image-read API, and on iOS Safari the common cases (copy a
+// web image → clipboard holds a LINK; even copied screenshots in testing)
+// failed user expectations. Photo-picker upload is the one mobile path.
+// Post-beta follow-ups: C1 paste-by-link ingestion (server-assisted, fixes
+// both platforms), C2 iOS real-image clipboard diagnostic. Desktop Ctrl+V
+// (the document paste-event path below) is unaffected.
 
 export default function UploadImageModal({
   // mode: 'image-section' | 'thumbnail' | 'profile-avatar' | 'workspace-cover'
@@ -187,43 +188,6 @@ export default function UploadImageModal({
     setPendingRemoval(false)
     setErrorMessage(null)
     setPasteFlattenedAlpha(false) // file source (pick/drop) preserves alpha
-  }
-
-  // Button-initiated clipboard read — the touch-friendly sibling of the
-  // Ctrl+V paste-event path (there's no paste keystroke on a phone). Reads
-  // the first image representation on the clipboard. Feature-detected via
-  // canClipboardRead; browsers may prompt for paste permission on first use.
-  const handleClipboardPaste = async () => {
-    setErrorMessage(null)
-    try {
-      const items = await navigator.clipboard.read()
-      for (const item of items) {
-        const imageType = item.types.find((t) => t.startsWith('image/'))
-        if (imageType) {
-          const blob = await item.getType(imageType)
-          setImageBlob(blob)
-          setHasNewSource(true)
-          setPendingRemoval(false)
-          setPasteFlattenedAlpha(false)
-          return
-        }
-      }
-      // No image data on the clipboard. Distinguish the iOS-Safari trap
-      // (iPhone QA Finding C, 2026-07-07): "Copy Image" on a web image
-      // usually copies the image's LINK (text), not the image itself, so
-      // "copy an image first" reads as wrong to a user who just did. When
-      // the clipboard holds text, assume that case and point at the
-      // photo-picker path, which works.
-      const hasTextInstead = items.some((item) =>
-        item.types.some((t) => t.startsWith('text/'))
-      )
-      setErrorMessage(hasTextInstead
-        ? 'Your clipboard has a link to the image, not the image itself — phones often copy web images this way. Save the image to your Photos first, then tap "Upload image" to pick it.'
-        : 'No image on the clipboard — copy an image first, then try again.')
-    } catch (err) {
-      console.error('Clipboard read failed', err)
-      setErrorMessage("Couldn't read the clipboard — your browser may have blocked access.")
-    }
   }
 
   const handleFilePick = (e) => {
@@ -406,10 +370,10 @@ export default function UploadImageModal({
                 <div className="w-8 h-8 rounded-full border-2 border-gray-300 border-t-gray-500 animate-spin" />
               </div>
             ) : touchPrimary ? (
-              // Touch empty state: no keyboard shortcuts, no drag copy — an
-              // Upload button (the phone's native picker offers Camera /
-              // Gallery / Files itself) plus clipboard paste where the
-              // browser exposes it (secure contexts only).
+              // Touch empty state: no keyboard shortcuts, no drag copy — one
+              // Upload button; the phone's native picker offers Camera /
+              // Gallery / Files itself. Clipboard paste was cut for beta
+              // (see the note at the top of this file).
               <div className="flex flex-col items-center gap-4 text-gray-700 pointer-events-none">
                 <button
                   onClick={() => fileInputRef.current?.click()}
@@ -417,17 +381,6 @@ export default function UploadImageModal({
                 >
                   Upload image
                 </button>
-                {canClipboardRead && (
-                  <>
-                    <p className="text-gray-500 text-sm select-none">— or —</p>
-                    <button
-                      onClick={handleClipboardPaste}
-                      className="px-6 py-3 border border-sky-600 text-sky-600 rounded font-semibold hover:bg-sky-50 transition-colors pointer-events-auto"
-                    >
-                      Paste from clipboard
-                    </button>
-                  </>
-                )}
               </div>
             ) : (
               <div className="flex flex-col items-center gap-4 text-gray-700 pointer-events-none">
@@ -469,10 +422,9 @@ export default function UploadImageModal({
           )}
 
           {/* Footer — Cancel + Save bottom-right. Touch devices with an image
-              loaded also get recovery actions bottom-left: swap the picked
-              image (re-opens the OS picker) or paste from the clipboard
-              (secure contexts only). Desktop recovers via drag/Ctrl+V, so it
-              doesn't need these. */}
+              loaded also get a recovery action bottom-left: swap the picked
+              image (re-opens the OS picker). Desktop recovers via drag/Ctrl+V,
+              so it doesn't need it. */}
           <div className={`flex items-center gap-3 px-4 pb-4 ${
             touchPrimary && imageBlob ? 'justify-between' : 'justify-end'
           }`}>
@@ -485,15 +437,6 @@ export default function UploadImageModal({
                 >
                   Choose different
                 </button>
-                {canClipboardRead && (
-                  <button
-                    onClick={handleClipboardPaste}
-                    disabled={uploading}
-                    className="px-3 py-2 text-sky-600 rounded font-semibold hover:bg-sky-50 transition-colors text-sm disabled:text-gray-400 disabled:cursor-not-allowed"
-                  >
-                    Paste
-                  </button>
-                )}
               </div>
             )}
             <div className="flex gap-3">
