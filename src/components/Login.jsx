@@ -48,6 +48,7 @@ export default function Login() {
   const [error, setError] = useState(null)
   const [info, setInfo] = useState(null)
   const [waitlisted, setWaitlisted] = useState(false)
+  const [signedUp, setSignedUp] = useState(false)  // signup succeeded; email confirmation pending
   const [submitting, setSubmitting] = useState(false)
 
   // Read the launch switch once on mount. Stays true (the fail-safe default)
@@ -118,9 +119,11 @@ export default function Login() {
     }
 
     // Supabase requires email confirmation by default: a null session after
-    // signUp means the user must confirm via email first.
+    // signUp means the user must confirm via email first. Replace the form
+    // with a success panel (same pattern as the waitlist) — the old inline
+    // gray banner mid-form was easy to miss (iPhone QA Finding E).
     if (!data.session) {
-      setInfo('Account created. Check your email to confirm before signing in.')
+      setSignedUp(true)
     }
   }
 
@@ -147,6 +150,9 @@ export default function Login() {
   function goTo(nextMode) {
     setMode(nextMode)
     clearMessages()
+    // Leaving the signup success panel (e.g. to sign in) resets it, so
+    // returning to signup later shows the form, not a stale confirmation.
+    setSignedUp(false)
   }
 
   const subtitle =
@@ -203,7 +209,39 @@ export default function Login() {
         {/* ---------------------------------------------------------------- */}
         {/* SIGN UP                                                          */}
         {/* ---------------------------------------------------------------- */}
-        {mode === 'signup' && (
+        {/* The primary action after signup happens OUTSIDE the app (open the
+            confirmation email; its link returns the user to MasterMind), so
+            the panel has no primary button — the mode toggle below becomes
+            "Back to sign in" as the escape hatch for users who confirmed in
+            another tab/app and come back here. */}
+        {/* Layout per Figma node 223-102 (2026-07-09): three scannable
+            sections at 16px inside the green panel, 14px supporting text
+            below, link in the interactive blue. */}
+        {mode === 'signup' && signedUp && (
+          <div className="space-y-6">
+            <div className="flex items-start gap-1 bg-green-50 border border-green-200 rounded-lg p-4">
+              <CheckCircle size={16} weight="fill" className="flex-shrink-0 mt-0.5 text-green-600" />
+              <div className="space-y-4 text-base text-gray-600">
+                <p className="font-bold">Check your email.</p>
+                <p>
+                  We sent a confirmation link to:
+                  <br />
+                  <span className="font-bold">{email}</span>
+                </p>
+                <p>
+                  Open the email and click the link to finish setting up your
+                  account and sign in.
+                </p>
+              </div>
+            </div>
+            <p className="text-sm text-gray-600">
+              After confirming, the link will bring you back to MasterMind. If you
+              return here later, you can sign in normally.
+            </p>
+          </div>
+        )}
+
+        {mode === 'signup' && !signedUp && (
           <form onSubmit={handleSignup} className="space-y-4">
             {/* Beta promise (ADR-0017 §6) */}
             <p className="text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded-md px-3 py-2 leading-relaxed">
@@ -359,11 +397,19 @@ export default function Login() {
               ? goTo(betaOpen ? 'signup' : 'waitlist')
               : goTo('signin')
           }
-          className="mt-4 w-full text-xs text-gray-500 hover:text-gray-700"
+          className={
+            mode === 'signup' && signedUp
+              ? // Post-signup it's a real text link (Figma 223-102): the
+                // interactive blue + underline, sized with the 14px footer.
+                'mt-2 w-full text-sm text-sky-600 hover:text-sky-800 underline'
+              : 'mt-4 w-full text-xs text-gray-500 hover:text-gray-700'
+          }
         >
           {mode === 'signin'
             ? "Don't have an account? Create one"
-            : 'Already have an account? Sign in'}
+            : signedUp
+              ? 'Back to sign in'
+              : 'Already have an account? Sign in'}
         </button>
       </div>
     </div>
