@@ -1,12 +1,21 @@
 import { useState, useEffect, useRef } from 'react'
-import { TextT, CaretRight } from '@phosphor-icons/react'
+import { TextT, CaretRight, Article } from '@phosphor-icons/react'
+
+// Plain diagonal stroke, per the Figma toolbar icons — deliberately NO
+// endpoint dots (Phosphor's LineSegment has them, which reads as a node
+// connection: exactly what a line annotation is not).
+export const LineToolIcon = ({ size = 14, color = '#6b7280' }) => (
+  <svg width={size} height={size} viewBox="0 0 16 16" aria-hidden="true">
+    <line x1="2.5" y1="13.5" x2="13.5" y2="2.5" stroke={color} strokeWidth="2" strokeLinecap="round" />
+  </svg>
+)
 import { useNodeTypes } from '../store/useTypeStore'
 import { useTouchPrimary } from '../hooks/useTouchPrimary'
 
 const HOVER_INTENT_CLOSE_MS = 200
 const BRIDGE_WIDTH = 16  // overlaps 6px into parent + 4px gap + 6px into submenu
 
-export default function CanvasContextMenu({ x, y, onAddCard, onAddText, onClose }) {
+export default function CanvasContextMenu({ x, y, onAddCard, onAddText, onAddLine, onClose }) {
   const NODE_TYPES = useNodeTypes()
   const [showSub, setShowSub] = useState(false)
 
@@ -55,8 +64,9 @@ export default function CanvasContextMenu({ x, y, onAddCard, onAddText, onClose 
   const VIEWPORT_MARGIN = 16
   const menuWidth  = 192
   // Calibrated against the actual rendered menu (verified via DOM measurement):
-  //   Parent: 4px py-top + 27px section header + 36px Add card + 9px divider
-  //         + 36px Add text + 4px py-bottom + 2px borders = 118px
+  //   Parent chrome: 4px py-top + 27px section header + 4px py-bottom
+  //                + 2px borders = 37px, plus three EQUAL rows (no dividers —
+  //                the three creation tools are peers, Erik 2026-07-10)
   //   Wrapper offsetTop: 4px py-top + 27px section header = 31px
   //   Each submenu row: 14px line-height + 16px py-2 padding = 36px
   //   Submenu chrome: 8px py-1 container + 2px borders = 10px
@@ -65,7 +75,7 @@ export default function CanvasContextMenu({ x, y, onAddCard, onAddText, onClose 
   const typeEntries = Object.entries(NODE_TYPES)
   const rowPad     = touchPrimary ? 'py-3' : 'py-2'
   const rowHeight  = touchPrimary ? 44 : 36
-  const menuHeight = 46 + rowHeight * 2
+  const menuHeight = 37 + rowHeight * 3   // three rows: Add node / Add text / Add line
     + (touchPrimary && expanded ? typeEntries.length * rowHeight : 0)
   const WRAPPER_OFFSET_TOP = 31
 
@@ -128,12 +138,14 @@ export default function CanvasContextMenu({ x, y, onAddCard, onAddText, onClose 
           Add to canvas
         </p>
 
-        {/* Add card — desktop: click adds the user's first available type;
+        {/* Add node — desktop: click adds the user's first available type;
             hover opens the type submenu for a deliberate pick. Touch: tap
             toggles the inline type list instead (no hover, and a silent
             first-type add gives the user no choice). If the user has no
             types at all (shouldn't happen — ensureBuiltinTypes seeds five
-            on first sign-in), addCardNode logs an error and no-ops. */}
+            on first sign-in), addCardNode logs an error and no-ops.
+            Label is "Add node" (product language: node = the entity;
+            card/bead are display states). */}
         <div
           className="relative"
           onMouseEnter={openSub}
@@ -146,7 +158,8 @@ export default function CanvasContextMenu({ x, y, onAddCard, onAddText, onClose 
               onAddCard(typeEntries[0]?.[0]); onClose()
             }}
           >
-            <span className="flex-1">Add card</span>
+            <Article size={14} weight="fill" color="#6b7280" />
+            <span className="flex-1">Add node</span>
             <CaretRight
               size={12}
               className={`text-gray-400 transition-transform ${expanded ? 'rotate-90' : ''}`}
@@ -219,8 +232,6 @@ export default function CanvasContextMenu({ x, y, onAddCard, onAddText, onClose 
           )}
         </div>
 
-        <div className="my-1 border-t border-gray-100" />
-
         {/* Add text */}
         <button
           className={`w-full text-left px-4 ${rowPad} text-sm text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-2.5`}
@@ -228,6 +239,15 @@ export default function CanvasContextMenu({ x, y, onAddCard, onAddText, onClose 
         >
           <TextT size={14} weight="bold" color="#6b7280" />
           Add text
+        </button>
+
+        {/* Add line — arms the two-anchor placement mode (LinePlacementOverlay) */}
+        <button
+          className={`w-full text-left px-4 ${rowPad} text-sm text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-2.5`}
+          onClick={() => { onAddLine(); onClose() }}
+        >
+          <LineToolIcon />
+          Add line
         </button>
       </div>
     </>

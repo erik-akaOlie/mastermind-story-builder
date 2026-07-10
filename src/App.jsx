@@ -11,6 +11,7 @@ import Inspector from './components/Inspector'
 import { LightboxProvider } from './components/Lightbox'
 import CampaignNode from './nodes/CampaignNode'
 import TextNode from './nodes/TextNode'
+import LineNode from './nodes/LineNode'
 import { useWorkspace } from './lib/WorkspaceContext.jsx'
 import {
   createNode as dbCreateNode,
@@ -29,6 +30,13 @@ import {
   deleteTextNode as dbDeleteTextNode,
 } from './lib/textNodes.js'
 import { buildBatchDeleteSnapshot, deleteBatch } from './lib/batchDelete.js'
+import {
+  createLine as dbCreateLine,
+  updateLine as dbUpdateLine,
+  deleteLine as dbDeleteLine,
+  buildLineDbRow,
+  linePositionFor,
+} from './lib/lines.js'
 import { findNodeIdAtPoint, validateQuickConnectTarget, connectionExists } from './lib/quickConnect.js'
 import QuickConnectLine from './components/QuickConnectLine.jsx'
 import { useSpacebarPan } from './hooks/useSpacebarPan'
@@ -45,6 +53,8 @@ import { useArrowKeyNavigation } from './hooks/useArrowKeyNavigation'
 import MarqueeRect from './components/MarqueeRect'
 import AltitudeRail from './components/AltitudeRail'
 import AlignmentToolbar from './components/AlignmentToolbar'
+import LinePlacementOverlay from './components/LinePlacementOverlay'
+import LineStyleToolbar from './components/LineStyleToolbar'
 import { useUndoStore } from './store/useUndoStore'
 import { useCanvasUiStore } from './store/useCanvasUiStore'
 import { ACTION_TYPES } from './lib/undo/index.js'
@@ -77,6 +87,7 @@ const RECENT_CREATE_WINDOW_MS = 10000
 const nodeTypes = {
   campaignNode: CampaignNode,
   textNode:     TextNode,
+  lineNode:     LineNode,
 }
 
 const edgeTypes = {
@@ -689,6 +700,36 @@ export default function App() {
           // Sub-threshold nudge — still persist, just no undo entry.
           persist.catch(console.error)
         }
+      } else if (n.type === 'lineNode' && start) {
+        // RF dragged the line's padded bounding box; the anchors (absolute
+        // canvas coords in data) must follow by the same delta. The box
+        // position RF settled on already equals linePositionFor(after)
+        // (translation-invariant), so only data needs syncing.
+        const dx = pos.x - start.x
+        const dy = pos.y - start.y
+        const before = { ax: n.data.ax, ay: n.data.ay, bx: n.data.bx, by: n.data.by }
+        const after  = { ax: before.ax + dx, ay: before.ay + dy, bx: before.bx + dx, by: before.by + dy }
+        setNodes((nds) => nds.map((nd) =>
+          nd.id === n.id ? { ...nd, data: { ...nd.data, ...after } } : nd,
+        ))
+        const persist = dbUpdateLine(n.id, after)
+        if (movedFar) {
+          useUndoStore.getState().recordAction({
+            type: ACTION_TYPES.MOVE_LINE,
+            workspaceId: activeWorkspaceId,
+            label: 'Move line',
+            timestamp: new Date().toISOString(),
+            lineId: n.id,
+            before,
+            after,
+          })
+          persist.catch((err) => {
+            console.error(err)
+            useUndoStore.getState().popLastAction()
+          })
+        } else {
+          persist.catch(console.error)
+        }
       }
     }
 
@@ -705,7 +746,7 @@ export default function App() {
     useUndoStore.getState().recordAction({
       type: ACTION_TYPES.MOVE_CARD,
       workspaceId: activeWorkspaceId,
-      label: cardMoves.length === 1 ? 'Move card' : `Move ${cardMoves.length} cards`,
+      label: cardMoves.length === 1 ? 'Move node' : `Move ${cardMoves.length} nodes`,
       timestamp: new Date().toISOString(),
       cards: cardMoves,
     })
@@ -760,7 +801,7 @@ export default function App() {
       useUndoStore.getState().recordAction({
         type: ACTION_TYPES.MOVE_CARD,
         workspaceId: activeWorkspaceId,
-        label: cardMoves.length === 1 ? `${verb} card` : `${verb} ${cardMoves.length} cards`,
+        label: cardMoves.length === 1 ? `${verb} node` : `${verb} ${cardMoves.length} nodes`,
         timestamp: new Date().toISOString(),
         cards: cardMoves,
       })
@@ -985,7 +1026,7 @@ export default function App() {
       useUndoStore.getState().recordAction({
         type: ACTION_TYPES.CREATE_CARD,
         workspaceId: activeWorkspaceId,
-        label: 'Add card',
+        label: 'Add node',
         timestamp: new Date().toISOString(),
         cardId: newNode.id,
         dbRow: {
@@ -1056,6 +1097,99 @@ export default function App() {
     } catch (err) {
       console.error('Failed to create text node:', err)
     }
+  }, [activeWorkspaceId, setNodes])
+
+  // ── Add line (DB-backed annotation, ADR pending) ─────────────────────────
+  // Lines are free-standing two-anchor annotations — organization, NOT
+  // relationships. The Line tool arms a full-viewport placement overlay
+  // (LinePlacementOverlay) that owns the whole gesture; on completion the
+  // line is created with default styling, selected, and the floating style
+  // toolbar appears via the selection.
+  const [linePlacing, setLinePlacing] = useState(false)
+
+  const addLineFromPlacement = useCallback(async ({ ax, ay, bx, by }) => {
+    setLinePlacing(false)
+    try {
+      const newLine = await dbCreateLine({ workspaceId: activeWorkspaceId, ax, ay, bx, by })
+      setNodes((nds) => [
+        ...nds.map((n) => (n.selected ? { ...n, selected: false } : n)),
+        { ...newLine, selected: true },
+      ])
+      // Mirror programmatic selection into the UI store (RF's
+      // onSelectionChange doesn't reliably fire for it — same as duplicate).
+      useCanvasUiStore.getState().setSelectedNodeIds(new Set([newLine.id]))
+      useCanvasUiStore.getState().setAnySelected(true)
+
+      track('line_created')
+
+      // Record AFTER the persist succeeds (same invariant as card/text
+      // create); dbRow carries the DB shape redo replays via createLine({id}).
+      useUndoStore.getState().recordAction({
+        type: ACTION_TYPES.CREATE_LINE,
+        workspaceId: activeWorkspaceId,
+        label: 'Add line',
+        timestamp: new Date().toISOString(),
+        lineId: newLine.id,
+        dbRow: buildLineDbRow(newLine, activeWorkspaceId),
+      })
+    } catch (err) {
+      console.error('Failed to create line:', err)
+    }
+  }, [activeWorkspaceId, setNodes])
+
+  // Live endpoint re-anchor while a handle drags (LineNode via CanvasOps —
+  // App's setNodes is the source of truth; see CanvasOpsContext header for
+  // why the renderer can't mutate through useReactFlow().setNodes).
+  const setLineAnchors = useCallback((id, anchors) => {
+    setNodes((nds) => nds.map((n) =>
+      n.id === id && n.type === 'lineNode'
+        ? { ...n, position: linePositionFor(anchors), data: { ...n.data, ...anchors } }
+        : n,
+    ))
+  }, [setNodes])
+
+  // Commit an endpoint drag: one editLine undo entry + persist, rolled back
+  // if the write fails. State is already live from setLineAnchors.
+  const commitLineAnchors = useCallback((id, before, after) => {
+    useUndoStore.getState().recordAction({
+      type: ACTION_TYPES.EDIT_LINE,
+      workspaceId: activeWorkspaceId,
+      label: 'Edit line',
+      timestamp: new Date().toISOString(),
+      lineId: id,
+      before,
+      after,
+    })
+    dbUpdateLine(id, after).catch((err) => {
+      console.error(err)
+      useUndoStore.getState().popLastAction()
+    })
+  }, [activeWorkspaceId])
+
+  // Style-toolbar change: optimistic + one editLine undo entry per click
+  // (matches text-toolbar behavior: toolbar clicks record immediately).
+  const onRestyleLine = useCallback((id, patch) => {
+    const target = nodesRef.current.find((n) => n.id === id && n.type === 'lineNode')
+    if (!target) return
+    const before = {}
+    for (const k of Object.keys(patch)) before[k] = target.data[k]
+
+    setNodes((nds) => nds.map((n) =>
+      n.id === id && n.type === 'lineNode' ? { ...n, data: { ...n.data, ...patch } } : n,
+    ))
+    useUndoStore.getState().recordAction({
+      type: ACTION_TYPES.EDIT_LINE,
+      workspaceId: activeWorkspaceId,
+      label: 'Restyle line',
+      timestamp: new Date().toISOString(),
+      lineId: id,
+      before,
+      after: patch,
+    })
+    dbUpdateLine(id, patch).catch((err) => {
+      console.error(err)
+      useUndoStore.getState().popLastAction()
+    })
   }, [activeWorkspaceId, setNodes])
 
   // ── Edit modal: building state ───────────────────────────────────────────
@@ -1133,13 +1267,6 @@ export default function App() {
     setInspectorNode(prev => (prev ? { ...prev, mode: 'undocked', isRepoint: false } : prev))
   }, [])
 
-  const openEdit = useCallback((nodeId) => {
-    if (openInspector(nodeId)) {
-      const node = nodes.find((n) => n.id === nodeId)
-      track('card_edit_opened', { source: 'context_menu', typeKey: node?.data?.type })
-    }
-  }, [openInspector, nodes])
-
   // Single-click repoints the open inspector onto another card. A plain click
   // only — additive multi-select gestures (Shift/Ctrl/Cmd-click) and marquee
   // selection don't repoint, so assembling a group to drag doesn't yank the
@@ -1157,6 +1284,7 @@ export default function App() {
   }, [inspectorNode, openInspector])
 
   const onNodeDoubleClick = useCallback((_, node) => {
+    if (node.type === 'lineNode') return   // nothing to open on a line
     if (node.type === 'textNode') {
       setNodes((nds) => nds.map((n) =>
         n.id === node.id ? { ...n, draggable: true, dragHandle: '.text-node-drag-handle', data: { ...n.data, editing: true } } : n
@@ -1278,6 +1406,24 @@ export default function App() {
       }
     }
 
+    if (source.type === 'lineNode') {
+      try {
+        return await dbCreateLine({
+          workspaceId: activeWorkspaceId,
+          ax: source.data.ax + 40, ay: source.data.ay + 40,
+          bx: source.data.bx + 40, by: source.data.by + 40,
+          weight:     source.data.weight,
+          dashed:     source.data.dashed,
+          dashLength: source.data.dashLength,
+          dashGap:    source.data.dashGap,
+          color:      source.data.color,
+        })
+      } catch (err) {
+        console.error('Failed to duplicate line:', err)
+        return null
+      }
+    }
+
     if (source.type !== 'campaignNode') return null
     const typeId = useTypeStore.getState().idByKey[source.data.type]
     if (!typeId) {
@@ -1323,7 +1469,8 @@ export default function App() {
     const selectedIds = useCanvasUiStore.getState().selectedNodeIds
     if (selectedIds.size === 0) return
     const sources = nodesRef.current.filter(
-      (n) => selectedIds.has(n.id) && (n.type === 'campaignNode' || n.type === 'textNode'),
+      (n) => selectedIds.has(n.id) &&
+        (n.type === 'campaignNode' || n.type === 'textNode' || n.type === 'lineNode'),
     )
     if (sources.length === 0) return
 
@@ -1355,15 +1502,6 @@ export default function App() {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [duplicateSelectedNodes])
-
-  // ── Lock toggle — in-memory only (feature scoped out of V1) ─────────────
-  const onLockToggle = useCallback((nodeId) => {
-    setNodes((nds) =>
-      nds.map((n) =>
-        n.id === nodeId ? { ...n, data: { ...n.data, locked: !n.data.locked } } : n
-      )
-    )
-  }, [setNodes])
 
   // Tear down the open inspector WITHOUT committing it (no flush/undo, no
   // card_edit_closed event) — used when the card it shows is being deleted, so
@@ -1418,6 +1556,31 @@ export default function App() {
       return
     }
 
+    if (target.type === 'lineNode') {
+      // Same single-row snapshot shape as text: capture BEFORE the
+      // optimistic removal; lines have no dependent rows.
+      const dbRow = buildLineDbRow(target, activeWorkspaceId)
+
+      setNodes((nds) => nds.filter((n) => n.id !== nodeId))
+
+      useUndoStore.getState().recordAction({
+        type: ACTION_TYPES.DELETE_LINE,
+        workspaceId: activeWorkspaceId,
+        label: 'Delete line',
+        timestamp: new Date().toISOString(),
+        lineId: target.id,
+        dbRow,
+      })
+
+      track('line_deleted')
+
+      dbDeleteLine(nodeId).catch((err) => {
+        console.error(err)
+        useUndoStore.getState().popLastAction()
+      })
+      return
+    }
+
     // ── Card delete (async, content-complete, fail-closed) ────────────────
     // Order is a correctness invariant (ADR-0016 Chunk E1):
     //   flush pending editor saves → fetch full snapshot from DB → remove →
@@ -1464,7 +1627,7 @@ export default function App() {
       useUndoStore.getState().recordAction({
         type: ACTION_TYPES.DELETE_CARD,
         workspaceId: activeWorkspaceId,
-        label: `Delete "${snapshot.dbCardRow.label || 'card'}"`,
+        label: `Delete "${snapshot.dbCardRow.label || 'node'}"`,
         timestamp: new Date().toISOString(),
         dbCardRow:        snapshot.dbCardRow,
         dbSectionRows:    snapshot.dbSectionRows,
@@ -1531,6 +1694,7 @@ export default function App() {
       const doomed = new Set([
         ...snapshot.cards.map((c) => c.dbCardRow.id),
         ...snapshot.textNodes.map((t) => t.textNodeId),
+        ...snapshot.lines.map((l) => l.lineId),
       ])
 
       // 3. Optimistic removal + selection cleanup.
@@ -1548,17 +1712,20 @@ export default function App() {
         cards:       snapshot.cards,
         connections: snapshot.connections,
         textNodes:   snapshot.textNodes,
+        lines:       snapshot.lines,
       })
 
       track('batch_deleted', {
         cardCount:     snapshot.cards.length,
         textNodeCount: snapshot.textNodes.length,
+        lineCount:     snapshot.lines.length,
       })
 
       // 5. Persist; rollback the undo entry if the write fails.
       deleteBatch({
         cardIds:     snapshot.cards.map((c) => c.dbCardRow.id),
         textNodeIds: snapshot.textNodes.map((t) => t.textNodeId),
+        lineIds:     snapshot.lines.map((l) => l.lineId),
       }).catch((err) => {
         console.error(err)
         useUndoStore.getState().popLastAction()
@@ -1978,7 +2145,7 @@ export default function App() {
 
   return (
     <LightboxProvider>
-    <CanvasOpsProvider value={{ onDeleteNode, beginQuickConnect }}>
+    <CanvasOpsProvider value={{ onDeleteNode, beginQuickConnect, setLineAnchors, commitLineAnchors }}>
     <div
       className={`app-viewport ${isPanning ? 'is-panning' : ''}`}
     >
@@ -2029,13 +2196,28 @@ export default function App() {
         // they'd resurrect on refresh. Our own Delete/Backspace listener owns
         // the gesture and routes through the undoable delete paths.
         deleteKeyCode={null}
+        // Attribution removal cleared 2026-07-10: reactflow + @reactflow/core
+        // are plain MIT (LICENSE files verified, no extra binding terms). The
+        // visible tag is a maintainer request tied to React Flow Pro, not a
+        // license condition; the required MIT notice ships in the package.
+        proOptions={{ hideAttribution: true }}
         /* No `fitView` prop: entry framing is owned by applyEntryFraming
            (onInit above) — envelope-based, Inspector-band aware (MB-8). */
       >
         <Background color="#1f2937" />
         {/* Screen-layer overlay (constant size) for aligning a multi-selection. */}
         <AlignmentToolbar onAlign={alignSelectedNodes} />
+        {/* Floating style controls for a single selected line. */}
+        <LineStyleToolbar onRestyleLine={onRestyleLine} onDeleteNode={onDeleteNode} />
       </ReactFlow>
+
+      {linePlacing && (
+        <LinePlacementOverlay
+          rfInstanceRef={rfInstanceRef}
+          onComplete={addLineFromPlacement}
+          onCancel={() => setLinePlacing(false)}
+        />
+      )}
 
       <MarqueeRect marquee={marqueeOverlay} rfInstanceRef={rfInstanceRef} />
       <QuickConnectLine quickConnect={quickConnect} rfInstanceRef={rfInstanceRef} />
@@ -2053,14 +2235,11 @@ export default function App() {
           <ContextMenu
             x={contextMenu.x}
             y={contextMenu.y}
-            node={node}
             selectedCount={targetsSelection ? sel.size : 1}
-            onEdit={() => openEdit(contextMenu.nodeId)}
             onDuplicate={() => {
               if (targetsSelection) duplicateSelectedNodes()
               else onDuplicate(contextMenu.nodeId)
             }}
-            onLockToggle={() => onLockToggle(contextMenu.nodeId)}
             onDelete={() => {
               if (targetsSelection) deleteSelectedNodes()
               else onDeleteNode(contextMenu.nodeId)
@@ -2076,6 +2255,7 @@ export default function App() {
           y={canvasMenu.y}
           onAddCard={(type) => addCardNode(type, canvasMenu.flowPos)}
           onAddText={() => addTextNode(canvasMenu.flowPos)}
+          onAddLine={() => setLinePlacing(true)}
           onClose={() => setCanvasMenu(null)}
         />
       )}

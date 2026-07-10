@@ -150,6 +150,13 @@ src/
     connections.js                 CRUD for connections (edges)
     textNodes.js                   CRUD for text annotations; includes restoreTextNode for undo's delete-text
                                    round-trip.
+    lines.js                       CRUD for free-standing straight-line annotations (ADR-0019): two absolute
+                                   canvas anchors (A/B) + style (weight default 8 / dashed / dash length /
+                                   dash gap / color), own `lines` table (migration 015) — an organization
+                                   tool, structurally NOT a relationship (never references nodes). Exports
+                                   LINE_PAD/LINE_DEFAULTS + pure helpers (linePositionFor, snapToAxis for
+                                   Shift 4-axis constraint, dbLineToReactFlow, buildLineDbRow; unit-tested
+                                   in lines.test.js).
     imageStorage.js                Storage helpers for all image domains. UI-identity card images
                                    (node thumbnail): thumb/full WebP → workspace-media (uploadCardImage,
                                    cardImagePipeline). Content/handout images (Image Section + Album):
@@ -215,12 +222,13 @@ src/
                                    (canApplyInverse / canApplyForward / applyInverse / applyForward). Routes
                                    each entry to its per-type handler via a Map<type, handlers> lookup.
     _shared.js                     deepEqual + universals
-    _cardHelpers.js, _connectionHelpers.js, _listItemHelpers.js, _textNodeHelpers.js
+    _cardHelpers.js, _connectionHelpers.js, _listItemHelpers.js, _textNodeHelpers.js, _lineHelpers.js
                                    family-specific helpers (drift checks, persist-call shapes)
     createCard.js, editCardField.js, moveCard.js, deleteCard.js,
     addConnection.js, removeConnection.js,
     addListItem.js, removeListItem.js, editListItem.js, reorderListItem.js,
-    createTextNode.js, editTextNode.js, moveTextNode.js, deleteTextNode.js
+    createTextNode.js, editTextNode.js, moveTextNode.js, deleteTextNode.js,
+    createLine.js, editLine.js, moveLine.js, deleteLine.js
                                    one file per action type, each exporting
                                    { canApplyInverse, canApplyForward, applyInverse, applyForward }
 
@@ -253,6 +261,16 @@ src/
     CampaignNode.jsx               renders a node as a colored card; subscribes to useCanvasUiStore; adds .is-lifted
                                    class so :has() in index.css promotes the wrapper z-index
     TextNode.jsx                   freestanding text annotation blocks (persists directly via lib/textNodes)
+    LineNode.jsx                   free-standing line annotation (ADR-0019). Position = padded bbox top-left
+                                   (lib/lines.js linePositionFor); anchors are absolute canvas coords in
+                                   data. Only the widened invisible hit-stroke + endpoint handles take
+                                   pointer events (clicks land near the line, not its whole box); endpoint
+                                   drags re-anchor live via CanvasOps (setLineAnchors / commitLineAnchors)
+                                   and commit ONE editLine undo entry on release; Shift snaps to the 4 axes
+                                   through the fixed endpoint. Handle + hit sizes counter-scale with zoom.
+                                   Cap policy: solid = round, dashed = BUTT (round caps extend each dash by
+                                   weight/2 per end, visually coupling weight to dash length — never
+                                   reintroduce round caps on dashed strokes).
     iconRegistry.js                70+ Phosphor icons with keywords; getIcon(), recommendIcons()
 
   edges/
@@ -305,14 +323,30 @@ src/
     ConnectionsSection.jsx         chip list + node picker with click-outside-to-dismiss
     TypePicker.jsx                 type dropdown (used inside InspectorHeader) + "Create new type…" row
     SectionLabel.jsx               tiny uppercase-tracked label utility used across sections
-    ContextMenu.jsx                right-click menu on canvas card nodes (Edit/Duplicate/Delete)
-    CanvasContextMenu.jsx          right-click / long-press menu on empty canvas (Add card / Add text) —
-                                   "Canvas Tool Menu" in product language. Desktop: hover opens the type
-                                   submenu (16px invisible hover-bridge + 200ms hover-intent close delay),
-                                   click quick-adds the first type. Touch-primary (useTouchPrimary): tap
-                                   on "Add card" expands the type list INLINE (accordion) instead — hover
-                                   handlers no-op so synthetic tap-hover can't open the side panel; rows
-                                   grow to 44px tap targets (MB-3)
+    ContextMenu.jsx                right-click menu on canvas elements — nodes, text blocks, lines
+                                   (Duplicate/Delete only; Edit + Lock rows removed 2026-07-10 — opening
+                                   lives on double-click/repoint, lock is scoped out of V1)
+    CanvasContextMenu.jsx          right-click / long-press menu on empty canvas (Add node / Add text /
+                                   Add line — three EQUAL rows, no dividers) — "Canvas Tool Menu" in
+                                   product language. Icons per the Figma toolbar set: Article (fill) /
+                                   TextT / exported LineToolIcon (plain diagonal SVG — deliberately no
+                                   endpoint dots, which would read as a node connection). Desktop: hover
+                                   opens the type submenu (16px invisible hover-bridge + 200ms
+                                   hover-intent close delay), click quick-adds the first type.
+                                   Touch-primary (useTouchPrimary): tap on "Add node" expands the type list
+                                   INLINE (accordion) instead — hover handlers no-op so synthetic tap-hover
+                                   can't open the side panel; rows grow to 44px tap targets (MB-3)
+    LinePlacementOverlay.jsx       the "draw a line" mode: full-viewport overlay owning every pointer
+                                   event while the Line tool is armed (so it can't collide with marquee or
+                                   MB-1 touch gestures; pan/zoom paused mid-placement). One state machine
+                                   covers desktop click-move-click AND touch press-drag-lift; Esc or
+                                   right-click cancels.
+    LineStyleToolbar.jsx           floating contextual styling for ONE selected line (AlignmentToolbar
+                                   pattern: screen-layer child of <ReactFlow> + placeFloatingToolbar).
+                                   Weight · dash length+gap (dashed only) as direct TYPE-IN fields
+                                   (Enter/blur commits, invalid reverts, out-of-range clamps — matches the
+                                   text block's editable px field) · solid/dashed toggle · delete. Every
+                                   committed change = one discrete editLine undo entry.
     CreateTypeModal.jsx            custom card type creation (label + icon + color picker)
     Lightbox.jsx                   shared <LightboxProvider>; any consumer calls useLightbox().open(value)
     MigrateImages.jsx              one-shot tool at #migrate to backfill base64 → Storage; safe to delete
@@ -406,6 +440,7 @@ docs/
 | `node_sections` | modular sections inside each card: `kind` ∈ `narrative` \| `hidden_lore` \| `dm_notes` \| `media` \| `custom`; `content` is JSONB |
 | `connections` | edges between two nodes in the same workspace |
 | `text_nodes` | free-floating text annotations on the canvas |
+| `lines` | free-standing straight-line annotations (migration 015, ADR-0019): two absolute anchors (`a_x/a_y/b_x/b_y`) + style (`stroke_width` — client default 8; the applied migration's column default of 4 is inert since the app always supplies it — `dashed`, `dash_length`, `dash_gap`, `color` — no color UI yet). Organization tool — never references nodes, structurally cannot become a connection. Realtime publication member + REPLICA IDENTITY FULL; counted in `list_workspaces_with_activity` |
 | `beta_config` | single-row launch switch (`seat_limit`, `beta_open`) read pre-auth by the login screen; anon-readable, **no write policy** (flip only via the dashboard). `handle_new_user` auto-flips `beta_open` off at the seat cap. Migration 014 (ADR-0017). |
 | `waitlist` | overflow signups when the beta is closed (email + how-heard); **anon insert-only**, unique email + email-format CHECK. Migration 014. |
 
@@ -789,8 +824,8 @@ Custom user-created types are persisted per-user as rows in the `node_types` tab
 - [x] Auto-save (400ms debounce, flush on close) — writes to Supabase
 - [x] Drag-to-reorder bullets and images in edit modal
 - [x] Image lightbox in edit modal
-- [x] Right-click canvas → "Add card" (submenu) or "Add text" (persists to DB)
-- [x] Right-click node → Edit / Duplicate / Delete (persists to DB)
+- [x] Right-click canvas → "Add node" (type submenu) / "Add text" / "Add line" — three equal rows (persists to DB)
+- [x] Right-click element (node / text block / line) → Duplicate / Delete (persists to DB; Edit + Lock rows removed 2026-07-10)
 - [x] Freestanding text nodes (contenteditable, rich text, resize, formatting toolbar, all persisted)
 - [x] Canvas pan (spacebar + drag), zoom, marquee selection, shift-click multi-select
 - [x] Floating edge routing (border intersection points, dot spreading)
@@ -807,7 +842,7 @@ Custom user-created types are persisted per-user as rows in the `node_types` tab
 - [x] **Inspector decomposition** — the card editor is an orchestration shell composing `<InspectorHeader>`, `<BulletSection>` (×3), `<MediaSection>`, `<ConnectionsSection>`, `<TypePicker>` + `useAutoSave` and `useMorphAnimation` hooks.
 - [x] **Float-or-dock Inspector** — the card editor (renamed from EditModal → Inspector, 2026-05-30) opens as a draggable floating modal or a docked bottom-right panel; single-click repoints it to another card, the header drag-detaches between modes, mode persists to localStorage, and the close morph flies toward the node's live position. Non-functional top-right search placeholder reserves the 80px band the docked panel respects. Node-selection dimming softened 0.15→0.45. See [ADR-0015](./docs/decisions/0015-float-or-dock-inspector.md).
 - [x] **Component tests** — Vitest + React Testing Library + jsdom; `Inspector.test.jsx` covers open/populate, auto-save, connections, close, avatar upload, per-item bullet undo, repoint commit, docked close, and directional close. Run with `npm test`.
-- [x] **Undo / redo** — Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y reverses recent workspace actions. Per-tab, per-(user × workspace), capped at 75. Conflict-aware in both directions (refuses + toasts when state has drifted from another tab's Realtime updates). 14 action types covered; sessionStorage-backed for F5 protection. Word-style typing exemption: `Ctrl+Z` inside an input/textarea/contenteditable is left to the browser. See [ADR-0006](./docs/decisions/0006-undo-redo.md).
+- [x] **Undo / redo** — Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y reverses recent workspace actions. Per-tab, per-(user × workspace), capped at 75. Conflict-aware in both directions (refuses + toasts when state has drifted from another tab's Realtime updates). 15 action types covered (line family added 2026-07-10); sessionStorage-backed for F5 protection. Word-style typing exemption: `Ctrl+Z` inside an input/textarea/contenteditable is left to the browser. See [ADR-0006](./docs/decisions/0006-undo-redo.md).
 - [x] **Bottom-left feedback strip** — `FeedbackChipBar` composes the existing `SyncIndicator` (light, ambient "Edited Nm ago") with a chip-toast slot (dark, transient action feedback). Toasts slide in from behind the chip via CSS @keyframes (no JS state ping-pong, no entry delay), masked by an `overflow:hidden` container so no toast pixels are visible left of the chip's left edge. Undo/redo toasts lead with a Phosphor curved-arrow icon (`ArrowUUpLeft` / `ArrowUUpRight`) followed by the entry's label. 2s visible, 300ms fadeout, hover pauses both phases (including freezing the visual opacity transition mid-fadeout). Replaces Sonner for these toasts; persist-fail uses the same chip family with a sticky id.
 - [x] **Sign-out cleanup** — `AuthContext.signOut` calls `useUndoStore.clearAllForUser(userId)` before Supabase clears the session, wiping the in-memory undo stack AND every `mastermind:undo:${userId}:*` sessionStorage entry across any workspaces the user touched in this tab.
 - [x] **Profile avatars** — Profile page lets the user upload, replace, and remove a profile photo (1:1 crop, 256×256 WebP, stored in the new `profile-media` Supabase Storage bucket). `public.profiles` row holds `avatar_path` + `display_name` (latter has no UI yet). Auto-create trigger on `auth.users` INSERT so every sign-up gets a profile row. Shared `ProfileContext` so the top-left UserAvatar chip updates immediately when the photo changes — same source of truth as the Profile page header. Cropper gains a `profile-avatar` mode (square frame, 256×256 output); UploadImageModal becomes pipeline-agnostic via `cardImagePipeline()` / `profileAvatarPipeline()` factories so the same UI shell handles both image domains. See migration 003.
@@ -819,6 +854,7 @@ Custom user-created types are persisted per-user as rows in the `node_types` tab
   - **Dual-expand machinery.** The single-expanded-node model was generalized to a keyed collection: `useCanvasUiStore.expandedNodes` is now a `Map<id, record>` (each card publishes/clears its own entry, so two never contend); `CampaignNode.isExpanded` gains an edge-highlight clause; `useEdgeGeometry.formOf` looks up per-node; `App.jsx` fires the per-node line-fade morph by diffing a *set* of expanded ids; `QuickConnectLine` reads the map. The clamp/drift/counter-scale and `nodeMorphPhases` were already per-node, so they came along unchanged.
   - **Hover stabilization (`useEdgeHoverSession.js`).** Expanding tall cards re-routes the hovered line off the cursor and slides cards under it, which made naive React-Flow edge hover flicker and steal. Fix: **separate activation from persistence.** React Flow's `onEdgeMouseEnter` (after a 200ms dwell) *starts* a session via `beginEdgeSession({edgeId, sourceId, targetId, aFlow, bFlow})` — plain data, so a future custom picker can call the same seam. Once active, the **session** owns deactivation via its own screen-space hit-test against a **UNION** alive region (no contiguity assumed): the frozen original corridor + the live re-routed line (from `edgesRef`) + the band between them (two triangles over the 4 endpoints) + both card rects. It **ignores** React Flow's leave event; exits only on leaving that union for `EDGE_SESSION_EXIT_GRACE_MS` (~150ms). Session-expanded cards are `pointer-events:none` (scoped to edge-hover expansion only, gated on `isEdgeHighlighted`, so selection/node-hover expansion keep normal pointer behavior). RF `interactionWidth` widened (40, tunable) as an activation aid only. "Ignore other edges during a session" is a single localized guard — the seam where Pass 2 (nearest-edge arbitration) plugs in.
   - **Geometry fidelity.** (a) Card-view dot declustering is now **screen-constant** like bead view — `getSpreadBorderPoints` takes a `minGap`/`cornerPad` param and `useEdgeGeometry` feeds `(dot+pad)/zoom`, so aligned connection dots no longer collapse together when zoomed out. (b) **Pairwise card repulsion**: two close cards push apart on expansion (visual-only offset added to the transform + published center, never `node.position`; restored on collapse). Repulsion reads each partner's published **natural** (pre-clamp, pre-repel) center to stay loop-free, and chooses its push axis from the **beads' dominant separation axis** (`|dx|` vs `|dy|`) so side-by-side beads stay side-by-side and stacked stay stacked, with a viewport-overflow fallback that keeps the upper node's card higher. Decoupled from the viewport-clamp (purely additive). Constants (`EDGE_*`, `REPEL_PAD_FRACTION`) centralized in `altitude.js`. Deferred (future-compatible, not built): click-to-pin, Pass 2 nearest-edge arbitration / zoom-adaptive corridor.
+- [x] **Line tool — free-standing canvas annotations (ADR-0019, migration 015)** — Straight two-anchor lines for organizing the canvas visually without creating false node relationships. Own `lines` table (never references nodes); rendered as a `lineNode` RF node whose position is the padded anchor-bbox top-left (`linePositionFor`, translation-invariant so whole-node drag = anchor translation). Placement via Canvas Tool Menu → "Add line" → `LinePlacementOverlay` (desktop click-move-click, touch press-drag-lift; **Shift constrains to the 4 axes** through the fixed anchor via `snapToAxis` — drawing AND endpoint re-anchoring; Esc/right-click cancels; pan/zoom paused mid-placement). Selection shows `LineStyleToolbar` (weight default 8 + dash length/gap as direct type-in fields, solid/dashed toggle, delete) + draggable endpoint handles; right-click a line for Duplicate/Delete (same simplified menu as nodes + text blocks). Full undo family (create/move/edit/deleteLine), batch-delete + multi-duplicate membership, Realtime mirroring, activity-sort inclusion. Deliberately narrow: no curves, no polylines, no color UI (column exists, default only). React Flow attribution removed in the same pass (MIT verified; maintainer request only — revisit if we ever subscribe to RF Pro).
 
 ## What Is NOT Built (roadmap)
 

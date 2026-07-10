@@ -4,6 +4,66 @@ A running log of meaningful changes to MasterMind: Story Builder. Append-only. N
 
 ## [Unreleased]
 
+### Line tool — free-standing canvas lines (2026-07-10)
+
+A third primary canvas element joins nodes and text blocks: **lines** —
+straight two-anchor annotations for organizing the canvas visually
+*without* creating false node relationships (they live in their own
+`lines` table and are structurally incapable of becoming connections; see
+ADR-0019). Canvas Tool Menu → "Add line" arms a placement mode: click
+anchors point A, move to preview, click anchors point B — or, in one
+gesture (and on touch), press-drag-lift. **Shift** while drawing or
+re-anchoring constrains the line to the four axes through the fixed
+anchor (horizontal, vertical, both 45° diagonals). The finished line is
+selected and a floating style toolbar appears: stroke weight (default 8),
+solid/dashed, and — only while dashed — dash length + gap, all as direct
+type-in fields (click in, type, Enter/blur commits; invalid input
+reverts). Lines are selectable, movable (drag the stroke), re-anchorable
+(drag an endpoint handle), duplicatable + deletable (right-click menu,
+toolbar trash, Delete key, multi-delete/duplicate); every action
+round-trips through Ctrl+Z (duplicate excepted — same known gap as
+cards/text), and Realtime mirrors lines across tabs like every other
+canvas element.
+**Requires migration 015** — but loading is fail-soft: if the table is
+missing (e.g. a deploy lands before the migration runs), workspaces still
+open normally with lines disabled for the session + a console warning,
+instead of failing the whole load.
+
+**Added**
+- `lines` table + RLS + Realtime (migration 015; `schema.sql` updated) —
+  also folds line edits into the picker's "Last modified" sort.
+- Data layer [`src/lib/lines.js`](./src/lib/lines.js); renderer
+  [`src/nodes/LineNode.jsx`](./src/nodes/LineNode.jsx); placement overlay +
+  style toolbar ([`src/components/LinePlacementOverlay.jsx`](./src/components/LinePlacementOverlay.jsx),
+  [`src/components/LineStyleToolbar.jsx`](./src/components/LineStyleToolbar.jsx)).
+- Undo family `createLine` / `moveLine` / `editLine` / `deleteLine` +
+  batch-delete support; 23 new unit tests (incl. the Shift axis-snap).
+- Canvas Tool Menu reworked so the three creation tools read as equal
+  peers: **"Add node"** (relabeled from "Add card" — node is the entity,
+  card/bead are display states) / "Add text" / "Add line", divider
+  removed, icons per the Figma toolbar set (filled article square /
+  TextT / plain diagonal line — deliberately no endpoint dots, which
+  would read as a node connection).
+
+**Changed**
+- Element right-click menus (nodes, text blocks, and now lines)
+  simplified to **Duplicate + Delete** — Edit and Lock rows removed
+  (opening lives on double-click/repoint; lock is scoped out of V1).
+- Undo/redo toast labels now use **node** language ("Add node",
+  "Move 3 nodes") — card is a display state, not the entity.
+- Dashed lines use **butt end caps** (solid lines keep round caps),
+  per the Figma/Illustrator convention: a round cap extends every dash
+  by half the stroke weight per end, so weight 8 / dash 8 / gap 8
+  rendered as solid. With butt caps, dash + gap values are literal and
+  weight affects thickness ONLY.
+
+**Removed**
+- React Flow attribution tag (bottom-right). License verification
+  2026-07-10: `reactflow` + `@reactflow/core` are plain MIT with no extra
+  binding terms; the visible tag is a maintainer request tied to React
+  Flow Pro, not a license condition. The MIT notice ships intact in the
+  package. Revisit only if the project ever subscribes to Pro.
+
 ### Signup success panel — email-first confirmation step (2026-07-09)
 
 After creating an account, the signup form is replaced by a green

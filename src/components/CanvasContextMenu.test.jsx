@@ -2,11 +2,12 @@
 // CanvasContextMenu tests — MB-3 (Canvas Tool Menu tap support)
 // ----------------------------------------------------------------------------
 // Pins down the two input models:
-//   Desktop (hover-capable): click "Add card" quick-adds the first type;
+//   Desktop (hover-capable): click "Add node" quick-adds the first type;
 //     hovering it opens the side-panel type submenu.
-//   Touch-primary: tapping "Add card" expands the type list INLINE instead
+//   Touch-primary: tapping "Add node" expands the type list INLINE instead
 //     of silently quick-adding; synthetic hover events from taps must NOT
 //     open the desktop side panel.
+// (Relabeled "Add card" to "Add node" + equal-rows grouping, 2026-07-10.)
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -45,20 +46,21 @@ function renderMenu() {
     y: 100,
     onAddCard: vi.fn(),
     onAddText: vi.fn(),
+    onAddLine: vi.fn(),
     onClose: vi.fn(),
   }
   render(<CanvasContextMenu {...props} />)
   return props
 }
 
-const addCardButton = () => screen.getByRole('button', { name: /add card/i })
+const addNodeButton = () => screen.getByRole('button', { name: /add node/i })
 
 describe('CanvasContextMenu — desktop (hover-capable)', () => {
   beforeEach(() => mockMatchMedia(() => false))
 
-  it('click on "Add card" quick-adds the first type and closes', () => {
+  it('click on "Add node" quick-adds the first type and closes', () => {
     const props = renderMenu()
-    fireEvent.click(addCardButton())
+    fireEvent.click(addNodeButton())
     expect(props.onAddCard).toHaveBeenCalledWith('character')
     expect(props.onClose).toHaveBeenCalledTimes(1)
   })
@@ -70,7 +72,7 @@ describe('CanvasContextMenu — desktop (hover-capable)', () => {
 
   it('hover opens the type submenu; clicking a type adds it', () => {
     const props = renderMenu()
-    fireEvent.mouseEnter(addCardButton().parentElement)
+    fireEvent.mouseEnter(addNodeButton().parentElement)
     expect(screen.getByText('Location')).toBeInTheDocument()
     fireEvent.click(screen.getByText('Location'))
     expect(props.onAddCard).toHaveBeenCalledWith('location')
@@ -83,18 +85,31 @@ describe('CanvasContextMenu — desktop (hover-capable)', () => {
     // positioned hover submenu and showing both scrollbars on desktop.
     // The guard must be touch-only.
     renderMenu()
-    const menuEl = addCardButton().closest('div.fixed')
+    const menuEl = addNodeButton().closest('div.fixed')
     expect(menuEl.style.overflowY).toBe('')
     expect(menuEl.style.maxHeight).toBe('')
+  })
+
+  it('"Add line" fires onAddLine and closes', () => {
+    const props = renderMenu()
+    fireEvent.click(screen.getByRole('button', { name: /add line/i }))
+    expect(props.onAddLine).toHaveBeenCalledTimes(1)
+    expect(props.onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('the three creation rows are equal peers — no divider between them (Erik 2026-07-10)', () => {
+    renderMenu()
+    const menuEl = addNodeButton().closest('div.fixed')
+    expect(menuEl.querySelector('.border-t')).toBeNull()
   })
 })
 
 describe('CanvasContextMenu — touch-primary (MB-3)', () => {
   beforeEach(() => mockMatchMedia((q) => q.includes('hover: none')))
 
-  it('tap on "Add card" expands the inline type list instead of quick-adding', () => {
+  it('tap on "Add node" expands the inline type list instead of quick-adding', () => {
     const props = renderMenu()
-    fireEvent.click(addCardButton())
+    fireEvent.click(addNodeButton())
     expect(props.onAddCard).not.toHaveBeenCalled()
     expect(props.onClose).not.toHaveBeenCalled()
     expect(screen.getByText('Character')).toBeInTheDocument()
@@ -104,29 +119,29 @@ describe('CanvasContextMenu — touch-primary (MB-3)', () => {
 
   it('tapping a type in the expanded list adds that type and closes', () => {
     const props = renderMenu()
-    fireEvent.click(addCardButton())
+    fireEvent.click(addNodeButton())
     fireEvent.click(screen.getByText('Item'))
     expect(props.onAddCard).toHaveBeenCalledWith('item')
     expect(props.onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('second tap on "Add card" collapses the list again', () => {
+  it('second tap on "Add node" collapses the list again', () => {
     renderMenu()
-    fireEvent.click(addCardButton())
+    fireEvent.click(addNodeButton())
     expect(screen.getByText('Character')).toBeInTheDocument()
-    fireEvent.click(addCardButton())
+    fireEvent.click(addNodeButton())
     expect(screen.queryByText('Character')).not.toBeInTheDocument()
   })
 
   it('synthetic hover (fired by taps on touch) does not open the side panel', () => {
     renderMenu()
-    fireEvent.mouseEnter(addCardButton().parentElement)
+    fireEvent.mouseEnter(addNodeButton().parentElement)
     expect(screen.queryByText('Character')).not.toBeInTheDocument()
   })
 
   it('menu container keeps the scroll guard (long inline type lists must scroll, not clip)', () => {
     renderMenu()
-    const menuEl = addCardButton().closest('div.fixed')
+    const menuEl = addNodeButton().closest('div.fixed')
     expect(menuEl.style.overflowY).toBe('auto')
     expect(menuEl.style.maxHeight).not.toBe('')
   })
