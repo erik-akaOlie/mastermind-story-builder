@@ -356,17 +356,40 @@ and markdown export are Soon-after. **Honest sizing:** remaining Bucket-1 is
   first-created node at far-out zoom can render as a tiny bead, undermining
   the "I just created something" moment).
 - **APPROVED first cut (2026-07-10, design review of Figma nodes 225-1970 /
-  225-1971).** Bottom-center toolbar, collapsed to a single active-tool chip,
-  expanding on hover/tap to five tools: **Pointer** (select) · **Hand** (pan)
-  · divider · **Node** · **Text Block** · **Line**. Active = sky-600 chip;
-  creation tools are one-shot (place once, revert to Pointer). **Spacebar =
-  temporary while-held switch** between Pointer and Hand (hold flips to the
-  opposite of the selected tool; release restores it) — NOT a persistent
-  toggle. Line tool shipped first as prerequisite (ADR-0019; commit pending
-  migration 015 + Erik's live test). Remaining: toolbar build, then the FTUE
-  handwritten-style introduction (Figma 225-1971) — in that order, FTUE only
-  after the toolbar exists. Toolbar stays creation/navigation-only; styling
-  lives in contextual toolbars (per-line, per-text-block).
+  225-1971; alignment finalized at session close after the line tool
+  shipped + passed production smoke tests).**
+  - **Desktop:** bottom-center toolbar, collapsed to a single active-tool
+    chip, expanding on hover to five tools: **Pointer** (select) · **Hand**
+    (pan) · divider · **Node** · **Text Block** · **Line**. Active =
+    sky-600 chip; creation tools are one-shot (place once, revert to
+    Pointer). Pointer/Hand FORMALIZE today's behavior (Pointer:
+    drag-on-empty = marquee; Hand: drag = pan) — no interaction change.
+  - **Mobile portrait:** toolbar VISIBLE and **fully expanded** (no
+    collapsed chip — it is the primary creation/tool surface on phones),
+    but **creation tools only: Node · Text Block · Line.** Pointer/Hand
+    are EXCLUDED on mobile — one-finger = select/marquee, two-finger =
+    pan/zoom are conventional enough to need no visible mode (MB-1 model
+    unchanged). Landscape out of scope for the first cut. To de-crowd the
+    bottom edge, **hide the passive "Edited Nm ago" sync pill on mobile**
+    — visibility-off/deferred, NOT a permanent product decision; transient
+    feedback (undo toasts, save-fail warnings) STAYS.
+  - **Spacebar (final rule, Erik 2026-07-10):** a temporary while-held
+    switch that always ends on the tool you started with.
+    - Pointer / Node / Text Block / Line active → holding spacebar
+      temporarily becomes **Hand** (click+drag pans); release restores
+      the previous tool. Placement tools are suspended while held,
+      restored on release.
+    - **Hand active → holding spacebar temporarily becomes Pointer**
+      (select/marquee); release returns to Hand.
+    If an in-progress placement gesture conflicts (e.g. spacebar
+    mid-line-draw), STOP and present the fork — Erik's likely preference:
+    not-yet-started placement → spacebar pans; gesture mid-flight →
+    ignore spacebar or cancel/preserve intentionally, never guess.
+  - Toolbar stays creation/navigation-only; styling lives in contextual
+    toolbars (per-line, per-text-block). Line tool shipped as prerequisite
+    (ADR-0019). Next-session order: toolbar build → desktop/mobile toolbar
+    QA → FTUE handwritten introduction (Figma 225-1971) — NO FTUE work
+    until toolbar behavior is real and tested.
 - **Dependencies.** None hard; touches the canvas (App.jsx) + the Inspector open
   path.
 - **Size:** M (minimal version); the center→dock spotlight choreography is a
