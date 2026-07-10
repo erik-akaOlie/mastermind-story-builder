@@ -355,6 +355,18 @@ and markdown export are Soon-after. **Honest sizing:** remaining Bucket-1 is
   before any implementation. MB-8 envelope-framing caveat still applies (a
   first-created node at far-out zoom can render as a tiny bead, undermining
   the "I just created something" moment).
+- **APPROVED first cut (2026-07-10, design review of Figma nodes 225-1970 /
+  225-1971).** Bottom-center toolbar, collapsed to a single active-tool chip,
+  expanding on hover/tap to five tools: **Pointer** (select) · **Hand** (pan)
+  · divider · **Node** · **Text Block** · **Line**. Active = sky-600 chip;
+  creation tools are one-shot (place once, revert to Pointer). **Spacebar =
+  temporary while-held switch** between Pointer and Hand (hold flips to the
+  opposite of the selected tool; release restores it) — NOT a persistent
+  toggle. Line tool shipped first as prerequisite (ADR-0019; commit pending
+  migration 015 + Erik's live test). Remaining: toolbar build, then the FTUE
+  handwritten-style introduction (Figma 225-1971) — in that order, FTUE only
+  after the toolbar exists. Toolbar stays creation/navigation-only; styling
+  lives in contextual toolbars (per-line, per-text-block).
 - **Dependencies.** None hard; touches the canvas (App.jsx) + the Inspector open
   path.
 - **Size:** M (minimal version); the center→dock spotlight choreography is a
@@ -543,6 +555,40 @@ and markdown export are Soon-after. **Honest sizing:** remaining Bucket-1 is
 ---
 
 ## Quick Win
+
+### CHANGELOG catch-up — June–July documentation debt
+- **Problem.** CHANGELOG's newest entry before 2026-07-09 was 2026-05-30.
+  Assessment (2026-07-09, from `git log master --since=2026-05-30`): **8
+  user-facing feature clusters have no entry.** Writing them at the
+  established CHANGELOG quality is ~1.5–2 focused hours — too big for a
+  session-opening chore, sized as its own mini-session.
+- **The missing clusters** (commit ranges verifiable in git log):
+  1. Block editor (ADR-0016) — migration Phase 1, Phase 2 chunks A–D,
+     E-series legacy cutover, F0–F5g Inspector alignment (Jun 3–8)
+  2. Canvas multi-select power tools — align/distribute toolbar,
+     multi-duplicate, multi-delete, quick-connect drag, one-connection-
+     per-pair constraint (Jun 8–11)
+  3. Image pipeline upgrade — tiered display/printable variants, crop-box
+     cropper, paste resolver + drag-and-drop, lightbox compound download
+     (Jun 18)
+  4. Workspace picker overhaul — gallery grid, morphing create control,
+     custom covers, auto-snapshot fallback, sort (Jun 19)
+  5. Canvas navigation & UX — edge-hover highlight + dual-expand session,
+     bookmarkable workspace URLs, global zoom gesture, shift-lock-axis
+     drag, per-node thumbnail hide, recent-activity ordering (Jun 16–23)
+  6. Beta signup / launch-ops cluster — capped signup, waitlist,
+     how-heard, recording notice, identify enrichment (Jun 26)
+  7. Simple search — title predictions, results drawer, find mode (Jul 7)
+  8. Mobile hardening — MB-1–6 + iPhone QA Findings A–G fixes, incl. the
+     mobile-paste beta cut (Jul 2–8)
+- **Success.** One CHANGELOG entry per cluster (prose + Added/Changed
+  lists, matching the existing entry style); entries dated by ship date;
+  no invented detail — write from commit messages + CLAUDE.md sections.
+- **Dependencies.** None. **Size:** S (one sitting, ~2h).
+- **Note (2026-07-10).** A second assessment grouped the same commits into
+  11 finer clusters (splitting block editor vs. Inspector alignment, and
+  the Jun 16–23 canvas work into three). Same coverage either way — the
+  backfill session should reconcile granularity before writing.
 
 ### Undo support for duplicate (single + multi)
 - **Problem.** Duplicating a card or text node — whether one (context menu →
