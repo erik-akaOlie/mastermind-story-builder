@@ -41,6 +41,7 @@ import { ensureBuiltinTypes, getWorkspaceLastEditedAt } from '../lib/workspaces.
 import { loadNodes, dbNodeToReactFlow, normalizeBullets } from '../lib/nodes.js'
 import { loadConnections } from '../lib/connections.js'
 import { loadTextNodes, dbTextNodeToReactFlow } from '../lib/textNodes.js'
+import { loadLines, dbLineToReactFlow } from '../lib/lines.js'
 import { supabase } from '../lib/supabase.js'
 import { deepEqual } from '../lib/undo/index.js'
 import { isTextBlockGeometryLocked } from '../lib/interactionLocks.js'
@@ -88,20 +89,33 @@ export function useWorkspaceData({ workspaceId, setNodes, setEdges }) {
           keyById[t.id] = { key: t.key, color: t.color, label: t.label, iconName: t.icon_name }
         }
 
-        const [workspaceNodes, workspaceConnections, workspaceTextNodes, lastEditedAt] = await Promise.all([
+        const [workspaceNodes, workspaceConnections, workspaceTextNodes, workspaceLines, lastEditedAt] = await Promise.all([
           loadNodes(workspaceId, keyById),
           loadConnections(workspaceId),
           loadTextNodes(workspaceId),
+          // FAIL-SOFT (unlike the loads above): lines are annotations, and a
+          // missing/unmigrated `lines` table must not brick workspace loading
+          // — e.g. the window between a deploy and running migration 015.
+          // `null` (vs a normal []) marks the table unavailable so the
+          // Realtime listener is skipped too (a bad listener would poison
+          // the shared channel for every other table).
+          loadLines(workspaceId).catch((err) => {
+            console.warn('[lines] Table unavailable — has migration 015 been applied? Lines disabled for this session.', err)
+            return null
+          }),
           getWorkspaceLastEditedAt(workspaceId),
         ])
 
         if (cancelled) return
 
-        setNodes([...workspaceNodes, ...workspaceTextNodes])
+        setNodes([...workspaceNodes, ...workspaceTextNodes, ...(workspaceLines ?? [])])
         setEdges(workspaceConnections)
         if (lastEditedAt) useSyncStore.getState().setLastSavedAt(lastEditedAt)
 
-        channel = subscribeRealtime({ workspaceId, keyById, setNodes, setEdges })
+        channel = subscribeRealtime({
+          workspaceId, keyById, setNodes, setEdges,
+          linesAvailable: workspaceLines !== null,
+        })
       } catch (err) {
         if (!cancelled) setLoadError(err.message)
       } finally {
@@ -133,7 +147,7 @@ export function useWorkspaceData({ workspaceId, setNodes, setEdges }) {
 // (Self-writes also bump via writeSucceeded; setLastSavedAt only rolls
 // forward, so the double-bump is harmless.)
 // ============================================================================
-function subscribeRealtime({ workspaceId, keyById, setNodes, setEdges }) {
+function subscribeRealtime({ workspaceId, keyById, setNodes, setEdges, linesAvailable = true }) {
   const channel = supabase.channel(`workspace:${workspaceId}`)
   const bumpLastSaved = () => useSyncStore.getState().setLastSavedAt(new Date())
 
@@ -311,6 +325,42 @@ function subscribeRealtime({ workspaceId, keyById, setNodes, setEdges }) {
               deepEqual(n.data, merged.data)
             ) return n
             return merged
+          })
+        )
+      } else if (eventType === 'DELETE') {
+        setNodes((nds) => nds.filter((n) => n.id !== old.id))
+      }
+    }
+  )
+
+  // --- lines -------------------------------------------------------------------
+  // Skipped entirely when the load marked the table unavailable (pre-migration
+  // 015): a listener on a missing table errors the WHOLE shared channel,
+  // which would silently kill Realtime for nodes/sections/connections/text.
+  if (linesAvailable) channel.on(
+    'postgres_changes',
+    { event: '*', schema: 'public', table: 'lines', filter: `workspace_id=eq.${workspaceId}` },
+    (payload) => {
+      bumpLastSaved()
+      const { eventType, new: row, old } = payload
+      if (eventType === 'INSERT') {
+        setNodes((nds) => {
+          if (nds.some((n) => n.id === row.id)) return nds
+          return [...nds, dbLineToReactFlow(row)]
+        })
+      } else if (eventType === 'UPDATE') {
+        setNodes((nds) =>
+          nds.map((n) => {
+            if (n.id !== row.id) return n
+            const fresh = dbLineToReactFlow(row)
+            // No-op echo guard — lines have no UI-only data fields, so a
+            // straight position + data comparison suffices.
+            if (
+              n.position?.x === fresh.position.x &&
+              n.position?.y === fresh.position.y &&
+              deepEqual(n.data, fresh.data)
+            ) return n
+            return fresh
           })
         )
       } else if (eventType === 'DELETE') {

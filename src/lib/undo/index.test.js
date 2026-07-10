@@ -27,7 +27,7 @@ describe('undo dispatcher — exports + catalog', () => {
     expect(typeof applyForward).toBe('function')
   })
 
-  it('catalogs the ADR-0006 §1 baseline ten plus batchDelete', () => {
+  it('catalogs the ADR-0006 §1 baseline ten plus batchDelete plus the line family', () => {
     expect(KNOWN).toEqual(
       expect.arrayContaining([
         // ADR §1 baseline ten
@@ -35,11 +35,13 @@ describe('undo dispatcher — exports + catalog', () => {
         'addConnection', 'removeConnection',
         'createTextNode', 'editTextNode', 'moveTextNode', 'deleteTextNode',
         // Multi-delete (2026-06-11): one entry restores a whole deleted
-        // selection — cards + text nodes + deduped shared connections.
+        // selection — cards + text nodes + lines + deduped shared connections.
         'batchDelete',
+        // Line annotations (2026-07-10): free-standing two-anchor lines.
+        'createLine', 'editLine', 'moveLine', 'deleteLine',
       ]),
     )
-    expect(KNOWN).toHaveLength(11)
+    expect(KNOWN).toHaveLength(15)
     // The phase-7c list-item families (add/remove/edit/reorderListItem) were
     // retired in E5 (ADR-0016) along with the legacy fielded editor.
     expect(KNOWN).not.toContain('addListItem')

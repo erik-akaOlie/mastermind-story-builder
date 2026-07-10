@@ -348,6 +348,68 @@ create policy "Owner can delete text nodes in their workspaces"
 
 
 -- ============================================================================
+-- TABLE: lines (migration 015)
+-- Free-standing straight-line annotations (two absolute anchors A/B + style).
+-- Organization tool, NOT a relationship — never references nodes.
+-- ============================================================================
+create table public.lines (
+  id            uuid        primary key default gen_random_uuid(),
+  workspace_id  uuid        not null references public.workspaces(id) on delete cascade,
+  a_x           numeric     not null,
+  a_y           numeric     not null,
+  b_x           numeric     not null,
+  b_y           numeric     not null,
+  stroke_width  integer     not null default 8  check (stroke_width between 1 and 64),
+  dashed        boolean     not null default false,
+  dash_length   integer     not null default 12 check (dash_length between 1 and 128),
+  dash_gap      integer     not null default 8  check (dash_gap between 1 and 128),
+  color         text        not null default '#9CA3AF',
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now()
+);
+
+create index lines_workspace_id_idx on public.lines(workspace_id);
+
+create trigger lines_set_updated_at
+  before update on public.lines
+  for each row execute function public.set_updated_at();
+
+alter table public.lines enable row level security;
+
+create policy "Owner can read lines in their workspaces"
+  on public.lines for select
+  using (exists (
+    select 1 from public.workspaces c
+    where c.id = lines.workspace_id and c.owner_id = auth.uid()
+  ));
+
+create policy "Owner can insert lines in their workspaces"
+  on public.lines for insert
+  with check (exists (
+    select 1 from public.workspaces c
+    where c.id = lines.workspace_id and c.owner_id = auth.uid()
+  ));
+
+create policy "Owner can update lines in their workspaces"
+  on public.lines for update
+  using (exists (
+    select 1 from public.workspaces c
+    where c.id = lines.workspace_id and c.owner_id = auth.uid()
+  ));
+
+create policy "Owner can delete lines in their workspaces"
+  on public.lines for delete
+  using (exists (
+    select 1 from public.workspaces c
+    where c.id = lines.workspace_id and c.owner_id = auth.uid()
+  ));
+
+-- Realtime (same two-step every content table needs — see CLAUDE.md):
+alter publication supabase_realtime add table public.lines;
+alter table public.lines replica identity full;
+
+
+-- ============================================================================
 -- FUNCTION: list_workspaces_with_activity (migration 011)
 -- Returns every workspace the caller owns, enriched with last_activity_at —
 -- the newest edit across the workspace row and all its content (cards, card
@@ -385,7 +447,9 @@ as $$
       coalesce((select max(c.created_at) from public.connections c
                   where c.workspace_id = w.id), w.created_at),
       coalesce((select max(t.updated_at) from public.text_nodes t
-                  where t.workspace_id = w.id), w.created_at)
+                  where t.workspace_id = w.id), w.created_at),
+      coalesce((select max(l.updated_at) from public.lines l
+                  where l.workspace_id = w.id), w.created_at)
     ) as last_activity_at
   from public.workspaces w
   where w.owner_id = auth.uid()

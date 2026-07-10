@@ -112,7 +112,9 @@ describe('batchDelete — canApply*', () => {
 describe('batchDelete — applyInverse (one Ctrl+Z restores everything)', () => {
   it('persists the restore with the full snapshot (deduped connections intact)', async () => {
     await applyInverse(batchEntry(), {})
-    expect(restoreBatchDelete).toHaveBeenCalledWith({ cards, connections, textNodes })
+    // `lines: []` — this entry PRE-DATES the line family; the default proves
+    // old sessionStorage entries restore unchanged.
+    expect(restoreBatchDelete).toHaveBeenCalledWith({ cards, connections, textNodes, lines: [] })
   })
 
   it('optimistically restores both cards AND the text node in one setNodes pass', async () => {
@@ -176,6 +178,7 @@ describe('batchDelete — applyForward (redo re-deletes everything)', () => {
     expect(deleteBatch).toHaveBeenCalledWith({
       cardIds:     ['card-a', 'card-b'],
       textNodeIds: ['text-1'],
+      lineIds:     [],
     })
   })
 })

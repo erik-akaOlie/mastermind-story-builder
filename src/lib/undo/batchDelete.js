@@ -6,7 +6,8 @@
 //   { type: 'batchDelete', workspaceId, label: 'Delete N items', timestamp,
 //     cards:       [{ dbCardRow, dbSectionRows }, ...],
 //     connections: [dbConnectionRow, ...],     // de-duplicated at capture time
-//     textNodes:   [{ textNodeId, dbRow }, ...] }
+//     textNodes:   [{ textNodeId, dbRow }, ...],
+//     lines:       [{ lineId, dbRow }, ...] }  // absent on pre-line entries
 //
 // Connections live in ONE top-level deduped list — not inside the per-card
 // snapshots — so a connection between two deleted cards is restored exactly
@@ -15,20 +16,24 @@
 import { restoreBatchDelete, deleteBatch } from '../batchDelete.js'
 import { dbNodeToReactFlow } from '../nodes.js'
 import { dbTextNodeToReactFlow } from '../textNodes.js'
+import { dbLineToReactFlow } from '../lines.js'
 import { buildNodeTypesById } from './_cardHelpers.js'
 
 function entryIds(entry) {
   return [
     ...(entry.cards ?? []).map((c) => c.dbCardRow?.id),
     ...(entry.textNodes ?? []).map((t) => t.textNodeId),
+    ...(entry.lines ?? []).map((l) => l.lineId),
   ].filter(Boolean)
 }
 
 function isMalformed(entry) {
   const cardsOk = (entry.cards ?? []).every((c) => c.dbCardRow?.id)
   const textsOk = (entry.textNodes ?? []).every((t) => t.textNodeId && t.dbRow)
-  const nonEmpty = (entry.cards?.length ?? 0) + (entry.textNodes?.length ?? 0) > 0
-  return !cardsOk || !textsOk || !nonEmpty
+  const linesOk = (entry.lines ?? []).every((l) => l.lineId && l.dbRow)
+  const nonEmpty =
+    (entry.cards?.length ?? 0) + (entry.textNodes?.length ?? 0) + (entry.lines?.length ?? 0) > 0
+  return !cardsOk || !textsOk || !linesOk || !nonEmpty
 }
 
 export function canApplyInverse(entry, { nodes = [] } = {}) {
@@ -53,7 +58,7 @@ export function canApplyForward(entry, { nodes = [] } = {}) {
 
 export async function applyInverse(entry, { setNodes, setEdges } = {}) {
   if (isMalformed(entry)) throw new Error('[undoActions] batchDelete: malformed entry')
-  const { cards = [], connections = [], textNodes = [] } = entry
+  const { cards = [], connections = [], textNodes = [], lines = [] } = entry
 
   // Rebuild React shapes from the DB snapshots for the optimistic update.
   const nodeTypesById = buildNodeTypesById()
@@ -64,6 +69,7 @@ export async function applyInverse(entry, { setNodes, setEdges } = {}) {
       return dbNodeToReactFlow(c.dbCardRow, sectionsByKind, nodeTypesById)
     }),
     ...textNodes.map((t) => dbTextNodeToReactFlow(t.dbRow)),
+    ...lines.map((l) => dbLineToReactFlow(l.dbRow)),
   ]
   const reactEdges = connections.map((r) => ({
     id:     r.id,
@@ -87,7 +93,7 @@ export async function applyInverse(entry, { setNodes, setEdges } = {}) {
     })
   }
 
-  await restoreBatchDelete({ cards, connections, textNodes })
+  await restoreBatchDelete({ cards, connections, textNodes, lines })
 }
 
 export async function applyForward(entry, { setNodes, setEdges } = {}) {
@@ -104,5 +110,6 @@ export async function applyForward(entry, { setNodes, setEdges } = {}) {
   await deleteBatch({
     cardIds:     (entry.cards ?? []).map((c) => c.dbCardRow.id),
     textNodeIds: (entry.textNodes ?? []).map((t) => t.textNodeId),
+    lineIds:     (entry.lines ?? []).map((l) => l.lineId),
   })
 }

@@ -34,6 +34,10 @@ import * as createTextNode   from './createTextNode.js'
 import * as editTextNode     from './editTextNode.js'
 import * as moveTextNode     from './moveTextNode.js'
 import * as deleteTextNode   from './deleteTextNode.js'
+import * as createLine       from './createLine.js'
+import * as editLine         from './editLine.js'
+import * as moveLine         from './moveLine.js'
+import * as deleteLine       from './deleteLine.js'
 
 export { deepEqual } from './_shared.js'
 
@@ -49,6 +53,10 @@ export const ACTION_TYPES = Object.freeze({
   EDIT_TEXT_NODE:      'editTextNode',
   MOVE_TEXT_NODE:      'moveTextNode',
   DELETE_TEXT_NODE:    'deleteTextNode',
+  CREATE_LINE:         'createLine',
+  EDIT_LINE:           'editLine',
+  MOVE_LINE:           'moveLine',
+  DELETE_LINE:         'deleteLine',
 })
 
 const handlers = new Map([
@@ -63,6 +71,10 @@ const handlers = new Map([
   [ACTION_TYPES.EDIT_TEXT_NODE,     editTextNode],
   [ACTION_TYPES.MOVE_TEXT_NODE,     moveTextNode],
   [ACTION_TYPES.DELETE_TEXT_NODE,   deleteTextNode],
+  [ACTION_TYPES.CREATE_LINE,        createLine],
+  [ACTION_TYPES.EDIT_LINE,          editLine],
+  [ACTION_TYPES.MOVE_LINE,          moveLine],
+  [ACTION_TYPES.DELETE_LINE,        deleteLine],
 ])
 
 // Is `type` a currently-handled action? Derived from the handlers Map so the

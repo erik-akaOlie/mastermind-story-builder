@@ -24,6 +24,7 @@
 import { supabase } from './supabase.js'
 import { persistWrite } from './errorReporting.js'
 import { buildDeleteCardSnapshot } from './nodes.js'
+import { buildLineDbRow } from './lines.js'
 
 // React text node → DB-shape row (the inverse of dbTextNodeToReactFlow).
 // Mirrors the single-delete snapshot App.jsx builds; exported so both paths
@@ -56,6 +57,7 @@ export function buildTextNodeDbRow(node, workspaceId) {
 //     cards:       [{ dbCardRow, dbSectionRows }, ...],   // connections lifted out
 //     connections: [dbConnectionRow, ...],                // de-duplicated by id
 //     textNodes:   [{ textNodeId, dbRow }, ...],
+//     lines:       [{ lineId, dbRow }, ...],
 //   }
 // Ids not found in local state are skipped (parallels the single-delete null
 // return); returns null if nothing in `ids` resolved to a deletable node.
@@ -65,12 +67,14 @@ export async function buildBatchDeleteSnapshot(ids, { nodes, edges, workspaceId,
 
   const cardNodes = []
   const textNodes = []
+  const lineNodes = []
   for (const n of nodes) {
     if (!idSet.has(n.id)) continue
     if (n.type === 'campaignNode') cardNodes.push(n)
     else if (n.type === 'textNode') textNodes.push(n)
+    else if (n.type === 'lineNode') lineNodes.push(n)
   }
-  if (cardNodes.length === 0 && textNodes.length === 0) return null
+  if (cardNodes.length === 0 && textNodes.length === 0 && lineNodes.length === 0) return null
 
   // Per-card snapshots (sections come from the DB — throws on fetch failure).
   const cardSnapshots = await Promise.all(
@@ -97,11 +101,17 @@ export async function buildBatchDeleteSnapshot(ids, { nodes, edges, workspaceId,
     dbRow: buildTextNodeDbRow(n, workspaceId),
   }))
 
-  if (cards.length === 0 && textSnapshots.length === 0) return null
+  const lineSnapshots = lineNodes.map((n) => ({
+    lineId: n.id,
+    dbRow: buildLineDbRow(n, workspaceId),
+  }))
+
+  if (cards.length === 0 && textSnapshots.length === 0 && lineSnapshots.length === 0) return null
   return {
     cards,
     connections: [...connectionsById.values()],
     textNodes: textSnapshots,
+    lines: lineSnapshots,
   }
 }
 
@@ -110,7 +120,7 @@ export async function buildBatchDeleteSnapshot(ids, { nodes, edges, workspaceId,
 // sections and connections cascade at the DB level, same as single deleteNode.
 // One persistWrite wrapper so a transient failure retries the whole batch.
 // ----------------------------------------------------------------------------
-export async function deleteBatch({ cardIds = [], textNodeIds = [] }) {
+export async function deleteBatch({ cardIds = [], textNodeIds = [], lineIds = [] }) {
   return persistWrite(async () => {
     if (cardIds.length) {
       const { error } = await supabase.from('nodes').delete().in('id', cardIds)
@@ -118,6 +128,10 @@ export async function deleteBatch({ cardIds = [], textNodeIds = [] }) {
     }
     if (textNodeIds.length) {
       const { error } = await supabase.from('text_nodes').delete().in('id', textNodeIds)
+      if (error) throw error
+    }
+    if (lineIds.length) {
+      const { error } = await supabase.from('lines').delete().in('id', lineIds)
       if (error) throw error
     }
   }, 'this deletion')
@@ -132,7 +146,7 @@ export async function deleteBatch({ cardIds = [], textNodeIds = [] }) {
 // handlers are idempotent (skip rows whose ids already exist locally), so
 // the dispatcher's optimistic update isn't double-applied.
 // ----------------------------------------------------------------------------
-export async function restoreBatchDelete({ cards = [], connections = [], textNodes = [] }) {
+export async function restoreBatchDelete({ cards = [], connections = [], textNodes = [], lines = [] }) {
   return persistWrite(async () => {
     if (cards.length) {
       const { error } = await supabase
@@ -156,6 +170,13 @@ export async function restoreBatchDelete({ cards = [], connections = [], textNod
       const { error } = await supabase
         .from('text_nodes')
         .insert(textNodes.map((t) => t.dbRow))
+      if (error) throw error
+    }
+
+    if (lines.length) {
+      const { error } = await supabase
+        .from('lines')
+        .insert(lines.map((l) => l.dbRow))
       if (error) throw error
     }
   }, 'this restore')
