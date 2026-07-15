@@ -390,6 +390,37 @@ and markdown export are Soon-after. **Honest sizing:** remaining Bucket-1 is
     (ADR-0019). Next-session order: toolbar build → desktop/mobile toolbar
     QA → FTUE handwritten introduction (Figma 225-1971) — NO FTUE work
     until toolbar behavior is real and tested.
+  - **Build status (2026-07-10, rev 2 after Erik's first QA pass).**
+    Chunk 1 implemented (useToolStore + BottomToolbar.jsx +
+    useSpacebarToolSwitch replacing useSpacebarPan; creation buttons
+    render but are inert) — harness-verified (geometry, hover expand,
+    spacebar flip, unit tests) and awaiting Erik's signed-in re-QA
+    before commit. QA-pass-1 findings addressed: (1) geometry rebuilt
+    to the Figma structure (invisible hotspot, rest tab with chip
+    display, grow-into-tray morph with the chip sliding into its slot);
+    QA-2 halved the raw Figma values (too small); QA-3 FINALIZED sizing
+    between the two — rest tab 48×44 with a 32px chip (8px side/top,
+    4px bottom borders), expanded tray 288×72 (height 56+16 per Erik,
+    width re-composed on the 8→4→2 grid rule since a pure scale is not
+    8-divisible: 40px buttons, 20px icons, 8px in-group gaps, 16px
+    padding + divider gaps) — and made tool selection an instant on/off
+    (the chip slides ONLY during the open/close morph, never between
+    slots on selection);
+    (2) flaky native tooltips replaced with custom ones; (3) Hand+
+    spacebar→Pointer not working root-caused to React Flow's OWN
+    `panActivationKeyCode` defaulting to Space (ORed into panOnDrag
+    internally) — disabled via `panActivationKeyCode={null}`, recorded
+    as RF gotcha #4 in CLAUDE.md. Spacebar mid-line-draw fork RESOLVED
+    per Erik: before anchor A, spacebar suspends placement and pans;
+    after anchor A, spacebar is ignored until the line completes or
+    cancels. Chunk 2 (one-shot placement) and Chunk 3 (mobile variant +
+    sync-pill hide; scope = mobile PORTRAIT, detect conservatively —
+    not every touch-capable laptop) not started. QA-3 additions: tray
+    top-corner radius 12; Inspector-aware centering (docked Inspector →
+    toolbar slides to the display-area center between rail band and
+    Inspector band, reusing viewportFraming constants; closed/floating →
+    window center) — this also resolved the earlier tray-vs-Inspector
+    overlap note; the hotspot never blocks clicks.
 - **Dependencies.** None hard; touches the canvas (App.jsx) + the Inspector open
   path.
 - **Size:** M (minimal version); the center→dock spotlight choreography is a

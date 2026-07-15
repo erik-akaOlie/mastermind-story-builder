@@ -233,7 +233,12 @@ src/
                                    { canApplyInverse, canApplyForward, applyInverse, applyForward }
 
   hooks/                           reusable hooks extracted from App.jsx and the Inspector
-    useSpacebarPan.js              spacebar-held-down panning state
+    useSpacebarToolSwitch.js       spacebar = temporary while-held tool switch (bottom toolbar,
+                                   2026-07-10; replaced useSpacebarPan): writes `spacebarHeld` into
+                                   useToolStore; the flip itself is the pure effectiveTool()
+                                   derivation (non-Hand tools → Hand, Hand → Pointer), so key
+                                   release restores the prior tool by construction. Keeps the
+                                   typing exemption; clears the flag on window blur.
     useWorkspaceData.js             load lifecycle for the active workspace (types + nodes + edges + text)
                                    AND Supabase Realtime subscriptions that mirror remote INSERT/UPDATE/DELETE
                                    into setNodes/setEdges. Calls useUndoStore.setScope() so undo rehydrates
@@ -347,6 +352,28 @@ src/
                                    (Enter/blur commits, invalid reverts, out-of-range clamps — matches the
                                    text block's editable px field) · solid/dashed toggle · delete. Every
                                    committed change = one discrete editLine undo entry.
+    BottomToolbar.jsx              bottom-center tool tray (approved first cut 2026-07-10; sizing
+                                   finalized in Erik's QA-3 pass — constants in the file header).
+                                   Invisible 288×72 hotspot; at rest a 48×44 tab shows the active
+                                   tool as a 32px sky chip DISPLAY (8px side/top borders, 4px
+                                   bottom); mouse-in grows the tab into the full 288×72 tray
+                                   (Pointer · Hand · divider · Node · Text Block · Line, 40px
+                                   buttons / 20px icons) with the chip sliding into the active
+                                   slot DURING THE MORPH ONLY — tool selection is an instant
+                                   on/off, never a slide (Erik: a sliding highlight reads as the
+                                   toolbar reorganizing). Tray top radius 12. Inspector-aware
+                                   centering: docked Inspector → slides to the display-area center
+                                   (viewportFraming band constants); closed/floating → window
+                                   center. Unlike the camera, the toolbar follows the Inspector
+                                   LIVE rather than reserving the band while closed. Hover detection = document mousemove
+                                   hit-test, so the hotspot never eats canvas clicks while collapsed;
+                                   a held primary button suppresses pop-open during drags. Custom
+                                   tooltips (native title was ~70% reliable). The chip shows the
+                                   EFFECTIVE tool so a held spacebar flips it live. Chunk 1: creation
+                                   tools render but are inert (placement = Chunk 2); hidden on
+                                   touch-primary (mobile variant = Chunk 3). NOT the same file as
+                                   CanvasToolbar.jsx — that's the shared shell for floating
+                                   contextual toolbars.
     CreateTypeModal.jsx            custom card type creation (label + icon + color picker)
     Lightbox.jsx                   shared <LightboxProvider>; any consumer calls useLightbox().open(value)
     MigrateImages.jsx              one-shot tool at #migrate to backfill base64 → Storage; safe to delete
@@ -378,6 +405,11 @@ src/
                                    writes new custom types straight to the DB. The legacy `dnd-node-types`
                                    localStorage key is actively cleaned up on store init for users who had it from
                                    the old persist-middleware build.
+    useToolStore.js                Zustand store for the active canvas tool ('pointer' | 'hand' |
+                                   'node' | 'text' | 'line') + the spacebarHeld flag. Exports the pure
+                                   effectiveTool(activeTool, spacebarHeld) derivation — the while-held
+                                   spacebar switch never mutates activeTool, so release restores it by
+                                   construction. Introduced with the bottom toolbar (2026-07-10).
     useCanvasUiStore.js            Zustand store for transient canvas UI flags (anySelected, anyHovered,
                                    hoveredEdgeNodeIds). Cards subscribe via narrow selectors so a hover event
                                    only re-renders cards whose computed state actually changed.
@@ -583,7 +615,7 @@ const flowPos = rfInstance.project({ x: event.clientX, y: event.clientY })
 
 `App.jsx` was 700+ lines after Sprint 1; the post-Sprint-1 refactor pulled four focused hooks out of it. They were extracted so Sprint 1.5 Realtime work had clean places to land instead of more sediment in App.jsx:
 
-- `useSpacebarPan()` — keyboard listeners; returns the `isPanning` boolean.
+- `useSpacebarToolSwitch()` — keyboard listeners for the spacebar's temporary tool switch (replaced `useSpacebarPan` with the bottom toolbar, 2026-07-10); writes `spacebarHeld` into `useToolStore`. App derives `isPanning = effectiveTool(activeTool, spacebarHeld) === 'hand'`.
 - `useWorkspaceData({ workspaceId, setNodes, setEdges })` — owns the load lifecycle (types + nodes + connections + text) AND the Supabase Realtime subscriptions. Returns `{ loading, loadError }`.
 - `useEdgeGeometry({ nodes, edges, setNodes, setEdges })` — recomputes spread border points + connection-dot positions on node movement. Pure derivation; mutates state via the supplied setters.
 - `useNodeHoverSelection({ setEdges })` — returns the four ReactFlow handlers (`onSelectionChange`, `onNodeMouseEnter`, `onNodeMouseLeave`, `onEdgeMouseEnter`, `onEdgeMouseLeave`). All five mutate `useCanvasUiStore`; only `onEdgeMouseEnter`/`onEdgeMouseLeave` also touch the edges array (for stroke styling).
@@ -763,6 +795,8 @@ Three issues we've hit in practice that future sessions need to know about. Each
 2. **RF v11's NodeWrapper interferes with React's synthetic event delegation for SELECTED nodes.** `onMouseDown`/`onClick` on toolbar buttons inside a custom node fail to fire after the node has been selected. Native pointer events DO reach the buttons, but React's root-level event listener never sees them — something between the button and React's root is calling `stopPropagation` in the bubble phase. **Workaround:** the `NativeButton` wrapper inside [`src/nodes/TextNode.jsx`](./src/nodes/TextNode.jsx) attaches native `pointerdown` + `click` listeners directly to each toolbar button via a ref + `useEffect`, bypassing React's event delegation. Native `pointerdown` also calls `preventDefault()` so contenteditable focus isn't shifted mid-click (which would otherwise blur, fire save, and unmount the toolbar mid-click).
 
 3. **Programmatic `el.focus()` on a freshly-mounted contenteditable inside a React Flow node is unreliable in Edge/Chromium.** Even with `tabindex=0`, `contenteditable=true`, the element connected, and `document.hasFocus()` returning true, `el.focus()` can be a silent no-op. **Workaround:** [`src/nodes/TextNode.jsx`](./src/nodes/TextNode.jsx) uses HTML `autoFocus` + a retry loop (up to 10 attempts at 50ms intervals) that bails as soon as `document.activeElement === el`.
+
+4. **RF v11 has a BUILT-IN spacebar pan activation: `panActivationKeyCode` defaults to `'Space'`.** Internally RF computes `panOnDrag = spacePressed || panOnDragProp` — so while Space is held, RF forces pan mode ON no matter what the prop says. This was invisible while our spacebar behavior agreed with it (space = pan), then broke the bottom toolbar's Hand+spacebar→Pointer switch (chip flipped, drags kept panning). **Workaround:** `panActivationKeyCode={null}` on `<ReactFlow>` (App.jsx) — `useSpacebarToolSwitch` + `useToolStore` are the single owners of the spacebar. Never remove that prop while the tool system exists.
 
 If you find yourself fighting RF for any of these, don't reinvent — look at the existing workarounds first.
 

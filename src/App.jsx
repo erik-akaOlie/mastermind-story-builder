@@ -39,7 +39,7 @@ import {
 } from './lib/lines.js'
 import { findNodeIdAtPoint, validateQuickConnectTarget, connectionExists } from './lib/quickConnect.js'
 import QuickConnectLine from './components/QuickConnectLine.jsx'
-import { useSpacebarPan } from './hooks/useSpacebarPan'
+import { useSpacebarToolSwitch } from './hooks/useSpacebarToolSwitch'
 import { useWorkspaceData } from './hooks/useWorkspaceData'
 import { useEdgeGeometry } from './hooks/useEdgeGeometry'
 import { useNodeHoverSelection } from './hooks/useNodeHoverSelection'
@@ -52,11 +52,13 @@ import { useReducedMotion } from './hooks/useReducedMotion'
 import { useArrowKeyNavigation } from './hooks/useArrowKeyNavigation'
 import MarqueeRect from './components/MarqueeRect'
 import AltitudeRail from './components/AltitudeRail'
+import BottomToolbar from './components/BottomToolbar'
 import AlignmentToolbar from './components/AlignmentToolbar'
 import LinePlacementOverlay from './components/LinePlacementOverlay'
 import LineStyleToolbar from './components/LineStyleToolbar'
 import { useUndoStore } from './store/useUndoStore'
 import { useCanvasUiStore } from './store/useCanvasUiStore'
+import { useToolStore, effectiveTool } from './store/useToolStore'
 import { ACTION_TYPES } from './lib/undo/index.js'
 import { CanvasOpsProvider } from './lib/CanvasOpsContext.jsx'
 import { setPanToTargetImpl } from './lib/cameraOps.js'
@@ -122,7 +124,16 @@ export default function App() {
     setEdges,
   })
 
-  const isPanning = useSpacebarPan()
+  // Active-tool system (bottom toolbar). The spacebar hook writes the
+  // while-held flag into useToolStore; `isPanning` is true whenever the
+  // EFFECTIVE tool is Hand — either Hand selected in the toolbar or the
+  // spacebar's temporary switch. Everything downstream (panOnDrag, the
+  // .is-panning CSS that makes canvas elements inert, marquee suppression)
+  // keys off this one boolean, exactly as it did under useSpacebarPan.
+  useSpacebarToolSwitch()
+  const activeTool = useToolStore((s) => s.activeTool)
+  const spacebarHeld = useToolStore((s) => s.spacebarHeld)
+  const isPanning = effectiveTool(activeTool, spacebarHeld) === 'hand'
   const reducedMotion = useReducedMotion()
 
   // When the user enters spacebar pan mode, every element on the canvas
@@ -2174,6 +2185,12 @@ export default function App() {
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         panOnDrag={isPanning}
+        // React Flow's OWN spacebar pan activation (panActivationKeyCode
+        // defaults to 'Space'!) is disabled — internally RF computes
+        // `panOnDrag = spacePressed || panOnDrag`, which fought the tool
+        // system's Hand+spacebar→Pointer switch: the chip flipped but drags
+        // kept panning. useSpacebarToolSwitch is the single spacebar owner.
+        panActivationKeyCode={null}
         minZoom={dynamicMinZoom}
         panOnScroll={true}
         panOnScrollMode="free"
@@ -2222,6 +2239,7 @@ export default function App() {
       <MarqueeRect marquee={marqueeOverlay} rfInstanceRef={rfInstanceRef} />
       <QuickConnectLine quickConnect={quickConnect} rfInstanceRef={rfInstanceRef} />
       <AltitudeRail onZoomTo={onZoomToFromRail} />
+      <BottomToolbar inspectorDocked={inspectorNode?.mode === 'docked'} />
 
       {contextMenu && (() => {
         const node = nodes.find((n) => n.id === contextMenu.nodeId)

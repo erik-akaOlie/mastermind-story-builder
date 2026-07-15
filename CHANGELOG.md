@@ -4,6 +4,55 @@ A running log of meaningful changes to MasterMind: Story Builder. Append-only. N
 
 ## [Unreleased]
 
+### Bottom toolbar — Chunk 1: tool system + desktop tray + spacebar rework (2026-07-10)
+
+First cut of the approved bottom toolbar (Figma 225-1970): the canvas now
+has a visible **active tool**. An invisible 288×72 hover hotspot sits
+bottom-center; at rest it shows a small 48×44 tab holding a 32px sky-blue
+chip that displays the current tool. Mousing into the hotspot grows the tab
+into the full 288×72 tray (40px buttons, 20px icons) — the chip slides into
+the active tool's slot while the other icons fill in: **Pointer · Hand · |
+· Node · Text Block · Line**. Picking a tool is an instant on/off highlight
+(the chip only animates during the open/close morph — a sliding highlight
+read as the toolbar reorganizing). The hotspot never eats clicks (hover
+detection is a document-level hit-test), so marquee/pan still start from
+that region while collapsed. Tool tooltips are custom-rendered (native
+browser tooltips triggered unreliably). **Inspector-aware centering:** with
+the Inspector docked, the toolbar slides left to center in the display area
+(between the altitude rail and the docked panel — same constants as the
+camera rule); closed or floating, it centers in the window itself. Pointer and Hand formalize existing behavior with no
+interaction change — Pointer: drag-on-empty = marquee select; Hand:
+drag = pan (canvas elements inert, same as spacebar panning before).
+
+**Spacebar is now a temporary while-held tool switch** (replaces plain
+hold-to-pan): with any tool except Hand active, holding spacebar switches
+to Hand (drag pans); with Hand active, holding spacebar switches to
+Pointer (click selects, drag marquees). Release always restores the tool
+you started with. The collapsed chip flips live while the key is held.
+Typing in a field still keeps the spacebar (no hijack), and losing window
+focus mid-hold releases the switch.
+
+**Added**
+- Active-tool store [`src/store/useToolStore.js`](./src/store/useToolStore.js)
+  (`pointer | hand | node | text | line` + the pure `effectiveTool()`
+  spacebar derivation).
+- Bottom tray [`src/components/BottomToolbar.jsx`](./src/components/BottomToolbar.jsx)
+  + tests (collapsed/hover-expand, tool switching, spacebar display,
+  touch-primary hidden).
+- Spacebar hook [`src/hooks/useSpacebarToolSwitch.js`](./src/hooks/useSpacebarToolSwitch.js).
+
+**Changed / Removed**
+- `useSpacebarPan` deleted; App derives its pan mode from the tool store.
+- **React Flow's built-in spacebar pan activation disabled**
+  (`panActivationKeyCode={null}`) — RF v11 silently defaults it to Space
+  and internally ORs it into `panOnDrag`, which fought the Hand+spacebar→
+  Pointer switch (the chip flipped but drags kept panning). The tool
+  system is now the single spacebar owner.
+
+**Not yet in this chunk** — Node / Text Block / Line buttons render but are
+inert (one-shot placement is Chunk 2); the always-expanded creation-only
+mobile variant + hiding the passive sync pill on phones is Chunk 3.
+
 ### Line tool — free-standing canvas lines (2026-07-10)
 
 A third primary canvas element joins nodes and text blocks: **lines** —

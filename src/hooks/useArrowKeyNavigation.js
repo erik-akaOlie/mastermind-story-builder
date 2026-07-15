@@ -12,8 +12,8 @@
 // contenteditables still moves the text cursor.
 //
 // Key repeats (held arrow keys) are ignored in this version. Continuous
-// hold-to-pan is deferred — first press only, matching useSpacebarPan's
-// convention.
+// hold-to-pan is deferred — first press only, matching the spacebar hook's
+// convention (useSpacebarToolSwitch).
 // ============================================================================
 
 import { useEffect, useRef } from 'react'
