@@ -239,6 +239,16 @@ src/
                                    derivation (non-Hand tools → Hand, Hand → Pointer), so key
                                    release restores the prior tool by construction. Keeps the
                                    typing exemption; clears the flag on window blur.
+    useOneShotPlacement.js         toolbar Chunk 2 (2026-07-15): one-shot placement for the Node /
+                                   Text Block tools + Esc-to-cancel for ALL creation tools. No
+                                   overlay — a document CAPTURE-phase pointerdown listener
+                                   intercepts primary clicks aimed at .react-flow__pane (nodes are
+                                   pane children, so a click over a card still places), converts to
+                                   flow coords, and calls App's creator; right-click / wheel / app
+                                   chrome are untouched while armed, so menus open normally and the
+                                   tray stays clickable. Detaches during spacebar suspension (the
+                                   click should pan). Exports suppressNextClick (shared with
+                                   LinePlacementOverlay).
     useWorkspaceData.js             load lifecycle for the active workspace (types + nodes + edges + text)
                                    AND Supabase Realtime subscriptions that mirror remote INSERT/UPDATE/DELETE
                                    into setNodes/setEdges. Calls useUndoStore.setScope() so undo rehydrates
@@ -341,11 +351,20 @@ src/
                                    Touch-primary (useTouchPrimary): tap on "Add node" expands the type list
                                    INLINE (accordion) instead — hover handlers no-op so synthetic tap-hover
                                    can't open the side panel; rows grow to 44px tap targets (MB-3)
-    LinePlacementOverlay.jsx       the "draw a line" mode: full-viewport overlay owning every pointer
-                                   event while the Line tool is armed (so it can't collide with marquee or
-                                   MB-1 touch gestures; pan/zoom paused mid-placement). One state machine
-                                   covers desktop click-move-click AND touch press-drag-lift; Esc or
-                                   right-click cancels.
+    LinePlacementOverlay.jsx       the "draw a line" mode, mounted while the Line tool is armed
+                                   (toolbar or Canvas Tool Menu — useToolStore owns arming since
+                                   toolbar Chunk 2, 2026-07-15). Reworked from a full-screen
+                                   pointer-owning surface to a pointer-events-none FLOW-SPACE preview
+                                   + document CAPTURE listeners intercepting only primary clicks
+                                   aimed at .react-flow__pane — right-click (normal menus), wheel
+                                   pan/zoom, and app chrome stay live while armed. One state machine
+                                   covers desktop click-move-click AND touch press-drag-lift. Esc is
+                                   the ONLY cancel (Erik 2026-07-15; right-click-cancel removed —
+                                   pre-anchor right-click opens menus normally, mid-gesture it's
+                                   ignored, as are chrome clicks and the spacebar: sets
+                                   placementGestureActive at anchor A). EDGE-PAN after anchor A
+                                   (cursor at the window edge pans the camera; marquee auto-pan
+                                   constants) is how an off-screen anchor B is reached.
     LineStyleToolbar.jsx           floating contextual styling for ONE selected line (AlignmentToolbar
                                    pattern: screen-layer child of <ReactFlow> + placeFloatingToolbar).
                                    Weight · dash length+gap (dashed only) as direct TYPE-IN fields
@@ -369,10 +388,15 @@ src/
                                    hit-test, so the hotspot never eats canvas clicks while collapsed;
                                    a held primary button suppresses pop-open during drags. Custom
                                    tooltips (native title was ~70% reliable). The chip shows the
-                                   EFFECTIVE tool so a held spacebar flips it live. Chunk 1: creation
-                                   tools render but are inert (placement = Chunk 2); hidden on
-                                   touch-primary (mobile variant = Chunk 3). NOT the same file as
-                                   CanvasToolbar.jsx — that's the shared shell for floating
+                                   EFFECTIVE tool so a held spacebar flips it live (except
+                                   mid-placement-gesture — placementGestureActive suppresses the
+                                   flip). Chunk 2 (2026-07-15): creation tools are live one-shots —
+                                   clicking Node/Text/Line arms the tool; placement lives in
+                                   useOneShotPlacement + LinePlacementOverlay and reverts to Pointer
+                                   after placing. No z-index games needed: placement intercepts only
+                                   pane-targeted clicks, so the tray stays clickable while armed.
+                                   Hidden on touch-primary (mobile variant = Chunk 3). NOT the same
+                                   file as CanvasToolbar.jsx — that's the shared shell for floating
                                    contextual toolbars.
     CreateTypeModal.jsx            custom card type creation (label + icon + color picker)
     Lightbox.jsx                   shared <LightboxProvider>; any consumer calls useLightbox().open(value)
@@ -406,10 +430,14 @@ src/
                                    localStorage key is actively cleaned up on store init for users who had it from
                                    the old persist-middleware build.
     useToolStore.js                Zustand store for the active canvas tool ('pointer' | 'hand' |
-                                   'node' | 'text' | 'line') + the spacebarHeld flag. Exports the pure
-                                   effectiveTool(activeTool, spacebarHeld) derivation — the while-held
-                                   spacebar switch never mutates activeTool, so release restores it by
-                                   construction. Introduced with the bottom toolbar (2026-07-10).
+                                   'node' | 'text' | 'line') + the spacebarHeld flag + (Chunk 2)
+                                   placementGestureActive — true while a placement gesture is
+                                   mid-flight (line anchor A placed, B pending); set/cleared by
+                                   LinePlacementOverlay. Exports the pure effectiveTool(activeTool,
+                                   spacebarHeld, placementGestureActive) derivation — the while-held
+                                   spacebar switch never mutates activeTool, so release restores it
+                                   by construction, and a mid-flight gesture makes the spacebar a
+                                   no-op. Introduced with the bottom toolbar (2026-07-10).
     useCanvasUiStore.js            Zustand store for transient canvas UI flags (anySelected, anyHovered,
                                    hoveredEdgeNodeIds). Cards subscribe via narrow selectors so a hover event
                                    only re-renders cards whose computed state actually changed.
@@ -615,7 +643,7 @@ const flowPos = rfInstance.project({ x: event.clientX, y: event.clientY })
 
 `App.jsx` was 700+ lines after Sprint 1; the post-Sprint-1 refactor pulled four focused hooks out of it. They were extracted so Sprint 1.5 Realtime work had clean places to land instead of more sediment in App.jsx:
 
-- `useSpacebarToolSwitch()` — keyboard listeners for the spacebar's temporary tool switch (replaced `useSpacebarPan` with the bottom toolbar, 2026-07-10); writes `spacebarHeld` into `useToolStore`. App derives `isPanning = effectiveTool(activeTool, spacebarHeld) === 'hand'`.
+- `useSpacebarToolSwitch()` — keyboard listeners for the spacebar's temporary tool switch (replaced `useSpacebarPan` with the bottom toolbar, 2026-07-10); writes `spacebarHeld` into `useToolStore`. App derives `isPanning = effectiveTool(activeTool, spacebarHeld, placementGestureActive) === 'hand'` (the third arg makes the spacebar a no-op while a line gesture is mid-flight, toolbar Chunk 2).
 - `useWorkspaceData({ workspaceId, setNodes, setEdges })` — owns the load lifecycle (types + nodes + connections + text) AND the Supabase Realtime subscriptions. Returns `{ loading, loadError }`.
 - `useEdgeGeometry({ nodes, edges, setNodes, setEdges })` — recomputes spread border points + connection-dot positions on node movement. Pure derivation; mutates state via the supplied setters.
 - `useNodeHoverSelection({ setEdges })` — returns the four ReactFlow handlers (`onSelectionChange`, `onNodeMouseEnter`, `onNodeMouseLeave`, `onEdgeMouseEnter`, `onEdgeMouseLeave`). All five mutate `useCanvasUiStore`; only `onEdgeMouseEnter`/`onEdgeMouseLeave` also touch the edges array (for stroke styling).
@@ -888,7 +916,7 @@ Custom user-created types are persisted per-user as rows in the `node_types` tab
   - **Dual-expand machinery.** The single-expanded-node model was generalized to a keyed collection: `useCanvasUiStore.expandedNodes` is now a `Map<id, record>` (each card publishes/clears its own entry, so two never contend); `CampaignNode.isExpanded` gains an edge-highlight clause; `useEdgeGeometry.formOf` looks up per-node; `App.jsx` fires the per-node line-fade morph by diffing a *set* of expanded ids; `QuickConnectLine` reads the map. The clamp/drift/counter-scale and `nodeMorphPhases` were already per-node, so they came along unchanged.
   - **Hover stabilization (`useEdgeHoverSession.js`).** Expanding tall cards re-routes the hovered line off the cursor and slides cards under it, which made naive React-Flow edge hover flicker and steal. Fix: **separate activation from persistence.** React Flow's `onEdgeMouseEnter` (after a 200ms dwell) *starts* a session via `beginEdgeSession({edgeId, sourceId, targetId, aFlow, bFlow})` — plain data, so a future custom picker can call the same seam. Once active, the **session** owns deactivation via its own screen-space hit-test against a **UNION** alive region (no contiguity assumed): the frozen original corridor + the live re-routed line (from `edgesRef`) + the band between them (two triangles over the 4 endpoints) + both card rects. It **ignores** React Flow's leave event; exits only on leaving that union for `EDGE_SESSION_EXIT_GRACE_MS` (~150ms). Session-expanded cards are `pointer-events:none` (scoped to edge-hover expansion only, gated on `isEdgeHighlighted`, so selection/node-hover expansion keep normal pointer behavior). RF `interactionWidth` widened (40, tunable) as an activation aid only. "Ignore other edges during a session" is a single localized guard — the seam where Pass 2 (nearest-edge arbitration) plugs in.
   - **Geometry fidelity.** (a) Card-view dot declustering is now **screen-constant** like bead view — `getSpreadBorderPoints` takes a `minGap`/`cornerPad` param and `useEdgeGeometry` feeds `(dot+pad)/zoom`, so aligned connection dots no longer collapse together when zoomed out. (b) **Pairwise card repulsion**: two close cards push apart on expansion (visual-only offset added to the transform + published center, never `node.position`; restored on collapse). Repulsion reads each partner's published **natural** (pre-clamp, pre-repel) center to stay loop-free, and chooses its push axis from the **beads' dominant separation axis** (`|dx|` vs `|dy|`) so side-by-side beads stay side-by-side and stacked stay stacked, with a viewport-overflow fallback that keeps the upper node's card higher. Decoupled from the viewport-clamp (purely additive). Constants (`EDGE_*`, `REPEL_PAD_FRACTION`) centralized in `altitude.js`. Deferred (future-compatible, not built): click-to-pin, Pass 2 nearest-edge arbitration / zoom-adaptive corridor.
-- [x] **Line tool — free-standing canvas annotations (ADR-0019, migration 015)** — Straight two-anchor lines for organizing the canvas visually without creating false node relationships. Own `lines` table (never references nodes); rendered as a `lineNode` RF node whose position is the padded anchor-bbox top-left (`linePositionFor`, translation-invariant so whole-node drag = anchor translation). Placement via Canvas Tool Menu → "Add line" → `LinePlacementOverlay` (desktop click-move-click, touch press-drag-lift; **Shift constrains to the 4 axes** through the fixed anchor via `snapToAxis` — drawing AND endpoint re-anchoring; Esc/right-click cancels; pan/zoom paused mid-placement). Selection shows `LineStyleToolbar` (weight default 8 + dash length/gap as direct type-in fields, solid/dashed toggle, delete) + draggable endpoint handles; right-click a line for Duplicate/Delete (same simplified menu as nodes + text blocks). Full undo family (create/move/edit/deleteLine), batch-delete + multi-duplicate membership, Realtime mirroring, activity-sort inclusion. Deliberately narrow: no curves, no polylines, no color UI (column exists, default only). React Flow attribution removed in the same pass (MIT verified; maintainer request only — revisit if we ever subscribe to RF Pro).
+- [x] **Line tool — free-standing canvas annotations (ADR-0019, migration 015)** — Straight two-anchor lines for organizing the canvas visually without creating false node relationships. Own `lines` table (never references nodes); rendered as a `lineNode` RF node whose position is the padded anchor-bbox top-left (`linePositionFor`, translation-invariant so whole-node drag = anchor translation). Placement via the bottom toolbar's Line tool OR Canvas Tool Menu → "Add line" (both arm through `useToolStore` since toolbar Chunk 2, 2026-07-15) → `LinePlacementOverlay` (desktop click-move-click, touch press-drag-lift; **Shift constrains to the 4 axes** through the fixed anchor via `snapToAxis` — drawing AND endpoint re-anchoring; **Esc is the only cancel** — right-click-cancel removed in Chunk 2: pre-anchor it opens the normal menus, mid-gesture it's ignored; **edge-pan after anchor A** replaces the old pan/zoom freeze — the preview is flow-space anchored, so wheel pan/zoom works mid-draw too). Selection shows `LineStyleToolbar` (weight default 8 + dash length/gap as direct type-in fields, solid/dashed toggle, delete) + draggable endpoint handles; right-click a line for Duplicate/Delete (same simplified menu as nodes + text blocks). Full undo family (create/move/edit/deleteLine), batch-delete + multi-duplicate membership, Realtime mirroring, activity-sort inclusion. Deliberately narrow: no curves, no polylines, no color UI (column exists, default only). React Flow attribution removed in the same pass (MIT verified; maintainer request only — revisit if we ever subscribe to RF Pro).
 
 ## What Is NOT Built (roadmap)
 

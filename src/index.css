@@ -118,6 +118,18 @@ body {
   pointer-events: none !important;
 }
 
+/* While a creation tool is armed (bottom toolbar Chunk 2), the whole canvas
+   surface shows a crosshair — pane, nodes, and edges alike, because the
+   placement click lands wherever the cursor is (a capture-phase listener
+   intercepts it before any canvas element can react). App chrome (toolbar,
+   rail, menus) sits outside .react-flow and keeps its own cursors. */
+.is-placing .react-flow__pane,
+.is-placing .react-flow__node,
+.is-placing .react-flow__node *,
+.is-placing .react-flow__edge {
+  cursor: crosshair !important;
+}
+
 /* Remove React Flow's selection/focus indicators from the node wrapper div.
    Safe to use here — these target the RF wrapper, not our content div,
    so there's no conflict with our inline box-shadow on the inner card. */

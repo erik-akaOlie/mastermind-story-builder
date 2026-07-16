@@ -413,14 +413,43 @@ and markdown export are Soon-after. **Honest sizing:** remaining Bucket-1 is
     as RF gotcha #4 in CLAUDE.md. Spacebar mid-line-draw fork RESOLVED
     per Erik: before anchor A, spacebar suspends placement and pans;
     after anchor A, spacebar is ignored until the line completes or
-    cancels. Chunk 2 (one-shot placement) and Chunk 3 (mobile variant +
-    sync-pill hide; scope = mobile PORTRAIT, detect conservatively —
-    not every touch-capable laptop) not started. QA-3 additions: tray
+    cancels. QA-3 additions: tray
     top-corner radius 12; Inspector-aware centering (docked Inspector →
     toolbar slides to the display-area center between rail band and
     Inspector band, reusing viewportFraming constants; closed/floating →
     window center) — this also resolved the earlier tray-vs-Inspector
     overlap note; the hotspot never blocks clicks.
+  - **Build status (2026-07-15, Chunk 2).** Implemented, awaiting Erik's
+    desktop QA (uncommitted). Scope corrections approved 2026-07-15
+    before build: (1) right-click while armed = NORMAL right-click
+    behavior (menus open, tool stays armed), NOT a cancel — Esc is the
+    only explicit cancel; this deliberately changes the shipped line
+    tool's right-click-cancels behavior. (2) Line edge-pan built into
+    Chunk 2: after anchor A, pushing the cursor to the window edge pans
+    the camera (marquee auto-pan constants) and stops when it comes back
+    inside — required because mid-gesture spacebar is ignored. NOTE:
+    edge-pan did NOT previously exist in line placement (the old overlay
+    deliberately froze pan/zoom); this was a new build, not preserved
+    behavior. Implementation: no full-screen blanket — a capture-phase
+    listener intercepts ONLY primary clicks aimed at .react-flow__pane,
+    so right-click / wheel pan-zoom / app chrome stay live while armed
+    and nothing can be placed behind the toolbar; the line preview is
+    flow-space anchored (re-projects per frame; wheel pan/zoom works
+    mid-draw as a natural consequence, per the approved scope guard);
+    the tool store owns line arming (Canvas Tool Menu "Add line" now
+    lights the toolbar chip); ALL create paths (toolbar + menu) revert
+    to Pointer after placing; mid-gesture conflicting inputs (spacebar,
+    right-click, chrome clicks) are ignored — a half-drawn line only
+    ends by completing or Esc. Verified: full unit suite green (3 suites
+    cover the new interaction), production build clean, browser-harness
+    pass (placement + revert, Esc, right-click pass-through, mid-gesture
+    swallow rules, spacebar suspension, flow re-projection, Shift snap).
+    NOT harness-verifiable (headless preview freezes animation frames):
+    edge-pan feel/speed — flagged for Erik's desktop QA; tuning
+    constants at the top of LinePlacementOverlay.jsx. Chunk 3 (mobile
+    variant + sync-pill hide; scope = mobile PORTRAIT, detect
+    conservatively — not every touch-capable laptop) not started, gated
+    on Chunk 2 QA.
 - **Dependencies.** None hard; touches the canvas (App.jsx) + the Inspector open
   path.
 - **Size:** M (minimal version); the center→dock spotlight choreography is a

@@ -21,10 +21,14 @@
 // FLOATING contextual toolbars (text-block formatting, multi-select align,
 // line style), which are anchored to canvas elements.
 //
-// Chunk 1 scope: Pointer/Hand functional; Node / Text Block / Line render
-// but are inert until Chunk 2 wires one-shot placement. Touch-primary
-// devices get nothing yet — the always-expanded creation-only mobile
-// variant is Chunk 3.
+// Chunk 2 (2026-07-15): creation tools are live one-shots — clicking Node /
+// Text Block / Line arms the tool (placement itself lives in
+// useOneShotPlacement + LinePlacementOverlay; both revert to Pointer after
+// placing). The toolbar needs no z-index change to stay clickable while a
+// tool is armed: placement intercepts only canvas-targeted clicks
+// (.react-flow__pane), so tray clicks always reach the tray — switching
+// tools or clicking Pointer/Hand disarms. Touch-primary devices still get
+// nothing — the always-expanded creation-only mobile variant is Chunk 3.
 //
 // Geometry (Erik, QA pass 3, 2026-07-10 — final): rest tab 48×44 holding a
 // 32×32 replica of the tool chip (8px left/right/top borders, 4px bottom).
@@ -101,8 +105,11 @@ export default function BottomToolbar({ inspectorDocked = false }) {
 
   const activeTool = useToolStore((s) => s.activeTool)
   const spacebarHeld = useToolStore((s) => s.spacebarHeld)
+  const placementGestureActive = useToolStore((s) => s.placementGestureActive)
   const setActiveTool = useToolStore((s) => s.setActiveTool)
-  const shownTool = effectiveTool(activeTool, spacebarHeld)
+  // Mid-placement-gesture the spacebar is a no-op, so the chip must not
+  // flip to Hand while a half-drawn line is on the cursor.
+  const shownTool = effectiveTool(activeTool, spacebarHeld, placementGestureActive)
 
   // Hover detection WITHOUT a click-eating overlay: hit-test the hotspot
   // rect on document mousemove. The wrapper is pointer-events-none, so while
@@ -207,15 +214,13 @@ export default function BottomToolbar({ inspectorDocked = false }) {
         >
           {TOOL_ORDER.map((tool) => {
             const active = shownTool === tool
-            const creation = tool !== 'pointer' && tool !== 'hand'
             return (
               <button
                 key={tool}
                 type="button"
                 aria-label={LABELS[tool]}
                 aria-pressed={active}
-                // Creation tools are inert in Chunk 1 — placement is Chunk 2.
-                onClick={creation ? undefined : () => setActiveTool(tool)}
+                onClick={() => setActiveTool(tool)}
                 onMouseEnter={() => showTooltipFor(tool)}
                 onMouseLeave={hideTooltip}
                 className={`absolute flex items-center justify-center rounded-lg transition-colors ${

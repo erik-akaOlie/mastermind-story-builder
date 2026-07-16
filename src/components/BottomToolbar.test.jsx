@@ -6,8 +6,11 @@
 //     pop the tray open
 //   - clicking Hand / Pointer switches the active tool in useToolStore
 //   - spacebarHeld flips the DISPLAYED tool (temporary switch) without
-//     touching activeTool, and effectiveTool() encodes the full rule
-//   - creation tools render but are inert (Chunk 2 wires placement)
+//     touching activeTool, and effectiveTool() encodes the full rule —
+//     including the Chunk 2 mid-gesture clause (placementGestureActive
+//     makes the spacebar a no-op so a half-drawn line is never disturbed)
+//   - creation tools ARM on click (Chunk 2 — placement itself lives in
+//     useOneShotPlacement / LinePlacementOverlay)
 //   - touch-primary renders nothing (mobile variant is Chunk 3)
 // ============================================================================
 
@@ -41,7 +44,7 @@ const tray = (container) => container.firstChild.querySelector('.overflow-hidden
 beforeEach(() => {
   originalMatchMedia = window.matchMedia
   setTouchPrimary(false)
-  useToolStore.setState({ activeTool: 'pointer', spacebarHeld: false })
+  useToolStore.setState({ activeTool: 'pointer', spacebarHeld: false, placementGestureActive: false })
 })
 afterEach(() => {
   cleanup()
@@ -61,6 +64,11 @@ describe('effectiveTool derivation', () => {
   })
   it('spacebar flips Hand to Pointer', () => {
     expect(effectiveTool('hand', true)).toBe('pointer')
+  })
+  it('a mid-flight placement gesture makes the spacebar a no-op', () => {
+    for (const t of ['pointer', 'hand', 'node', 'text', 'line']) {
+      expect(effectiveTool(t, true, true)).toBe(t)
+    }
   })
 })
 
@@ -117,11 +125,26 @@ describe('BottomToolbar', () => {
     expect(useToolStore.getState().activeTool).toBe('pointer')
   })
 
-  it('creation tools render but are inert in Chunk 1', () => {
+  it('clicking a creation tool arms it (Chunk 2)', () => {
     render(<BottomToolbar />)
     moveInside()
     fireEvent.click(screen.getByRole('button', { name: /add node/i }))
+    expect(useToolStore.getState().activeTool).toBe('node')
+    fireEvent.click(screen.getByRole('button', { name: /add text block/i }))
+    expect(useToolStore.getState().activeTool).toBe('text')
+    fireEvent.click(screen.getByRole('button', { name: /add line/i }))
+    expect(useToolStore.getState().activeTool).toBe('line')
+    // Clicking Pointer disarms — the tray is always clickable while armed.
+    fireEvent.click(screen.getByRole('button', { name: /pointer/i }))
     expect(useToolStore.getState().activeTool).toBe('pointer')
+  })
+
+  it('chip does NOT flip to Hand on spacebar while a gesture is mid-flight', () => {
+    render(<BottomToolbar />)
+    moveInside()
+    act(() => useToolStore.setState({ activeTool: 'line', spacebarHeld: true, placementGestureActive: true }))
+    expect(screen.getByRole('button', { name: /add line/i }).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('button', { name: /hand/i }).getAttribute('aria-pressed')).toBe('false')
   })
 
   it('recenters in the display area while the Inspector is docked', () => {

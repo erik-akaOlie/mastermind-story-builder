@@ -40,6 +40,7 @@ import {
 import { findNodeIdAtPoint, validateQuickConnectTarget, connectionExists } from './lib/quickConnect.js'
 import QuickConnectLine from './components/QuickConnectLine.jsx'
 import { useSpacebarToolSwitch } from './hooks/useSpacebarToolSwitch'
+import { useOneShotPlacement } from './hooks/useOneShotPlacement'
 import { useWorkspaceData } from './hooks/useWorkspaceData'
 import { useEdgeGeometry } from './hooks/useEdgeGeometry'
 import { useNodeHoverSelection } from './hooks/useNodeHoverSelection'
@@ -130,10 +131,18 @@ export default function App() {
   // spacebar's temporary switch. Everything downstream (panOnDrag, the
   // .is-panning CSS that makes canvas elements inert, marquee suppression)
   // keys off this one boolean, exactly as it did under useSpacebarPan.
+  // `placementGestureActive` (set by LinePlacementOverlay at anchor A) makes
+  // the spacebar a no-op while a placement gesture is mid-flight — Erik's
+  // resolved rule: a half-drawn line is never suspended or thrown away.
   useSpacebarToolSwitch()
   const activeTool = useToolStore((s) => s.activeTool)
   const spacebarHeld = useToolStore((s) => s.spacebarHeld)
-  const isPanning = effectiveTool(activeTool, spacebarHeld) === 'hand'
+  const placementGestureActive = useToolStore((s) => s.placementGestureActive)
+  const shownTool = effectiveTool(activeTool, spacebarHeld, placementGestureActive)
+  const isPanning = shownTool === 'hand'
+  // A creation tool is armed (crosshair cursor via .is-placing). While the
+  // spacebar suspends placement pre-gesture, isPanning wins the class.
+  const placementArmed = activeTool === 'node' || activeTool === 'text' || activeTool === 'line'
   const reducedMotion = useReducedMotion()
 
   // When the user enters spacebar pan mode, every element on the canvas
@@ -1005,6 +1014,9 @@ export default function App() {
 
   // ── Add card (DB-backed) ─────────────────────────────────────────────────
   const addCardNode = useCallback(async (typeKey, flowPos) => {
+    // One-shot rule (Erik, 2026-07-15): ALWAYS return to Pointer after
+    // placing a canvas element — toolbar and Canvas Tool Menu paths alike.
+    useToolStore.getState().setActiveTool('pointer')
     const typeId = useTypeStore.getState().idByKey[typeKey]
     if (!typeId) {
       console.error(`No type_id for key: ${typeKey}`)
@@ -1070,6 +1082,7 @@ export default function App() {
 
   // ── Add text (DB-backed) ─────────────────────────────────────────────────
   const addTextNode = useCallback(async (flowPos) => {
+    useToolStore.getState().setActiveTool('pointer')  // one-shot rule
     try {
       const newTextNode = await dbCreateTextNode({
         workspaceId: activeWorkspaceId,
@@ -1110,16 +1123,15 @@ export default function App() {
     }
   }, [activeWorkspaceId, setNodes])
 
-  // ── Add line (DB-backed annotation, ADR pending) ─────────────────────────
+  // ── Add line (DB-backed annotation, ADR-0019) ────────────────────────────
   // Lines are free-standing two-anchor annotations — organization, NOT
-  // relationships. The Line tool arms a full-viewport placement overlay
-  // (LinePlacementOverlay) that owns the whole gesture; on completion the
+  // relationships. Arming the Line tool (bottom toolbar OR Canvas Tool Menu —
+  // useToolStore is the single owner since Chunk 2) mounts
+  // LinePlacementOverlay, which owns the whole gesture; on completion the
   // line is created with default styling, selected, and the floating style
   // toolbar appears via the selection.
-  const [linePlacing, setLinePlacing] = useState(false)
-
   const addLineFromPlacement = useCallback(async ({ ax, ay, bx, by }) => {
-    setLinePlacing(false)
+    useToolStore.getState().setActiveTool('pointer')  // one-shot rule
     try {
       const newLine = await dbCreateLine({ workspaceId: activeWorkspaceId, ax, ay, bx, by })
       setNodes((nds) => [
@@ -1147,6 +1159,22 @@ export default function App() {
       console.error('Failed to create line:', err)
     }
   }, [activeWorkspaceId, setNodes])
+
+  // ── One-shot toolbar placement (Chunk 2) ─────────────────────────────────
+  // Node / Text Block: a single canvas click places at that spot. The Node
+  // tool quick-adds the FIRST type — the exact same default as the Canvas
+  // Tool Menu's "Add node" click (CanvasContextMenu quick-add uses
+  // Object.entries(types)[0]). Esc-to-cancel for all three creation tools
+  // also lives in this hook. Line placement itself is LinePlacementOverlay.
+  useOneShotPlacement({
+    rfInstanceRef,
+    onPlaceNode: useCallback((flowPos) => {
+      const firstTypeKey = Object.keys(useTypeStore.getState().types)[0]
+      if (!firstTypeKey) return
+      addCardNode(firstTypeKey, flowPos)
+    }, [addCardNode]),
+    onPlaceText: addTextNode,
+  })
 
   // Live endpoint re-anchor while a handle drags (LineNode via CanvasOps —
   // App's setNodes is the source of truth; see CanvasOpsContext header for
@@ -2158,7 +2186,7 @@ export default function App() {
     <LightboxProvider>
     <CanvasOpsProvider value={{ onDeleteNode, beginQuickConnect, setLineAnchors, commitLineAnchors }}>
     <div
-      className={`app-viewport ${isPanning ? 'is-panning' : ''}`}
+      className={`app-viewport ${isPanning ? 'is-panning' : placementArmed ? 'is-placing' : ''}`}
     >
       <ReactFlow
         nodes={nodes}
@@ -2228,11 +2256,14 @@ export default function App() {
         <LineStyleToolbar onRestyleLine={onRestyleLine} onDeleteNode={onDeleteNode} />
       </ReactFlow>
 
-      {linePlacing && (
+      {/* Mounted while the Line tool is EFFECTIVELY armed: unmounts during a
+          pre-anchor spacebar suspension (nothing to lose yet — the click
+          should pan), stays mounted mid-gesture (placementGestureActive makes
+          the spacebar a no-op, so shownTool stays 'line'). */}
+      {activeTool === 'line' && shownTool === 'line' && (
         <LinePlacementOverlay
           rfInstanceRef={rfInstanceRef}
           onComplete={addLineFromPlacement}
-          onCancel={() => setLinePlacing(false)}
         />
       )}
 
@@ -2273,7 +2304,7 @@ export default function App() {
           y={canvasMenu.y}
           onAddCard={(type) => addCardNode(type, canvasMenu.flowPos)}
           onAddText={() => addTextNode(canvasMenu.flowPos)}
-          onAddLine={() => setLinePlacing(true)}
+          onAddLine={() => useToolStore.getState().setActiveTool('line')}
           onClose={() => setCanvasMenu(null)}
         />
       )}

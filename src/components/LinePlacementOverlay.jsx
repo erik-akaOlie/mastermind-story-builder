@@ -1,118 +1,234 @@
 // ============================================================================
 // LinePlacementOverlay — the "draw a line" interaction mode.
 // ----------------------------------------------------------------------------
-// Mounted by App while the Line tool is active. A full-viewport overlay owns
-// every pointer event for the duration, which (a) makes anchor placement
-// unambiguous and (b) keeps the gesture from colliding with marquee-select /
-// touch pan-zoom (MB-1) — the canvas simply never sees the pointer.
+// Mounted by App while the Line tool is armed (bottom toolbar or Canvas Tool
+// Menu — the tool store is the single owner since Chunk 2). Reworked from the
+// original full-screen pointer-owning surface to the Chunk 2 interaction
+// model: the visible layer is pointer-events-none (an SVG preview only);
+// document-level CAPTURE listeners intercept primary-button events targeted
+// at the canvas (.react-flow__pane — nodes/edges are its DOM children).
+// Consequences, all per Erik's approved corrections (2026-07-15):
+//   - right-click BEFORE anchor A passes through untouched → normal canvas /
+//     node context menus; the tool stays armed underneath
+//   - right-click AFTER anchor A is swallowed (mid-gesture conflicting
+//     inputs are ignored; Esc is the only cancel — handled by
+//     useOneShotPlacement's shared Esc listener)
+//   - app chrome (toolbar, rail, menus) stays clickable pre-anchor; once a
+//     gesture is in flight, primary clicks on chrome are swallowed too — a
+//     line can neither complete on top of the toolbar nor be thrown away by
+//     a mid-gesture tool switch
+//   - scroll-wheel pan/zoom flows through naturally (the flow-space preview
+//     below keeps the half-line correct under any camera motion)
 //
-// One state machine serves both input worlds (per Erik's spec, 2026-07-10):
+// One state machine serves both input worlds (unchanged from v1):
 //   - Desktop click-move-click: click anchors A, moving previews the line,
 //     a second click anchors B.
 //   - Touch (and mouse) drag-draw: press anchors A, dragging previews,
 //     lifting anchors B. A stationary tap (< DRAG_MIN px) falls through to
 //     the click-move-click path instead of creating a zero-length line.
-//   - Shift constrains the line to the four axes through A (horizontal,
-//     vertical, both 45° diagonals) — preview and commit alike. Snapping
-//     happens in screen space (equivalent to flow space under uniform zoom)
-//     so the preview shows exactly what will be committed.
-//   - Esc or right-click cancels.
+//   - Shift constrains the line to the four axes through A — snapped in
+//     screen space against A's LIVE screen position (equivalent to flow
+//     space under uniform zoom), so the preview shows exactly the commit.
 //
-// Pan/zoom is intentionally unavailable while the tool is active (first cut);
-// screen coords therefore stay valid for the whole gesture and the preview
-// can live in plain screen space.
+// EDGE-PAN (new, Chunk 2): after anchor A, pushing the cursor to the window
+// edge pans the camera in that direction and stops when the cursor comes
+// back inside — this is the mid-gesture navigation story, since the
+// spacebar is deliberately ignored once a gesture is in flight (Erik's
+// resolved rule). Anchor A is stored in FLOW coords and re-projected every
+// frame, so the preview stays pinned to the canvas while the camera moves.
+// Same threshold/speed constants as useCustomMarquee's auto-pan for a
+// consistent feel.
+//
+// Gesture-in-flight signal: `placementGestureActive` in useToolStore is set
+// when A lands and cleared on complete/cancel/unmount. It's what makes the
+// spacebar (and App's suspension logic) ignore mid-gesture input.
 // ============================================================================
 
 import { useEffect, useRef, useState } from 'react'
 import { LINE_DEFAULTS, snapToAxis } from '../lib/lines.js'
+import { useToolStore } from '../store/useToolStore'
+import { suppressNextClick } from '../hooks/useOneShotPlacement'
 
 const DRAG_MIN = 8   // screen px separating a tap/click from a drag-draw
 
-export default function LinePlacementOverlay({ rfInstanceRef, onComplete, onCancel }) {
-  const [a, setA] = useState(null)          // { screen: {x,y}, flow: {x,y} }
-  const [cursor, setCursor] = useState(null) // screen {x,y}
-  const pressRef = useRef(null)             // down point while deciding tap vs drag
-  const zoomRef = useRef(1)
+// Edge-pan tuning — identical to useCustomMarquee so the two auto-pans feel
+// like one mechanism.
+const EDGE_THRESHOLD_PX      = 60
+const MAX_SPEED_PX_PER_FRAME = 15
 
+function clamp(v, lo, hi) {
+  return Math.max(lo, Math.min(hi, v))
+}
+
+// Note: there is no onCancel prop anymore — Esc (the only cancel) is owned by
+// useOneShotPlacement's shared listener, which reverts the active tool to
+// Pointer; App unmounts this overlay in response.
+export default function LinePlacementOverlay({ rfInstanceRef, onComplete }) {
+  const [aFlow, setAFlow] = useState(null)   // anchor A in FLOW coords
+  const [cursor, setCursor] = useState(null) // latest pointer in screen coords
+  // Bumped by the edge-pan RAF whenever the camera moves so the preview
+  // re-projects aFlow → screen (the cursor itself may be stationary).
+  const [, setPanTick] = useState(0)
+
+  const pressRef = useRef(null)              // down point while deciding tap vs drag
+  const stateRef = useRef({ aFlow, cursor })
+  stateRef.current = { aFlow, cursor }
+  const onCompleteRef = useRef(onComplete)
+  useEffect(() => { onCompleteRef.current = onComplete }, [onComplete])
+
+  // ── Gesture-in-flight flag (spacebar/right-click ignore rule) ───────────
   useEffect(() => {
-    zoomRef.current = rfInstanceRef.current?.getViewport()?.zoom ?? 1
-  }, [rfInstanceRef])
+    useToolStore.getState().setPlacementGestureActive(aFlow !== null)
+    return () => useToolStore.getState().setPlacementGestureActive(false)
+  }, [aFlow])
 
-  useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape') onCancel() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onCancel])
+  // A's live screen position — recomputed every render, so edge-pan (which
+  // re-renders via panTick) and wheel pan/zoom (which re-render via
+  // pointermove) keep the preview pinned to the canvas.
+  const rf = rfInstanceRef.current
+  const aScreen = aFlow && rf ? rf.flowToScreenPosition(aFlow) : null
 
-  const toFlow = (x, y) => rfInstanceRef.current.screenToFlowPosition({ x, y })
-
-  // Screen point for B, honoring Shift's axis constraint relative to A.
+  // Screen point for B, honoring Shift's axis constraint relative to A's
+  // CURRENT screen position.
   const bScreenFor = (e) => {
+    const { aFlow: a } = stateRef.current
     const raw = { x: e.clientX, y: e.clientY }
-    return e.shiftKey ? snapToAxis(a.screen, raw) : raw
+    if (!e.shiftKey || !a) return raw
+    const rfNow = rfInstanceRef.current
+    return rfNow ? snapToAxis(rfNow.flowToScreenPosition(a), raw) : raw
   }
 
-  const complete = (e) => {
-    const b = bScreenFor(e)
-    const bFlow = toFlow(b.x, b.y)
-    onComplete({ ax: a.flow.x, ay: a.flow.y, bx: bFlow.x, by: bFlow.y })
-  }
+  // ── Document capture listeners — the gesture state machine ──────────────
+  useEffect(() => {
+    const toFlow = (x, y) => rfInstanceRef.current.screenToFlowPosition({ x, y })
+    const onPane = (target) => target instanceof Element && target.closest('.react-flow__pane')
 
-  const onPointerDown = (e) => {
-    if (e.button !== undefined && e.button !== 0) return  // secondary → contextmenu path
-    e.preventDefault()
-    if (!a) {
-      const screen = { x: e.clientX, y: e.clientY }
-      setA({ screen, flow: toFlow(screen.x, screen.y) })
-      setCursor(screen)
-      pressRef.current = screen
-      e.currentTarget.setPointerCapture?.(e.pointerId)
-      return
+    const complete = (e) => {
+      const { aFlow: a } = stateRef.current
+      const b = bScreenFor(e)
+      const bFlow = toFlow(b.x, b.y)
+      onCompleteRef.current({ ax: a.x, ay: a.y, bx: bFlow.x, by: bFlow.y })
     }
-    // Click-move-click mode: the second press anchors B.
-    complete(e)
-  }
 
-  const onPointerMove = (e) => {
-    if (a) setCursor(bScreenFor(e))
-  }
-
-  const onPointerUp = (e) => {
-    const press = pressRef.current
-    pressRef.current = null
-    if (!a || !press) return
-    // Drag-draw: a real drag between press and lift anchors B at the lift.
-    if (Math.hypot(e.clientX - press.x, e.clientY - press.y) >= DRAG_MIN) {
+    const onPointerDown = (e) => {
+      if (e.button !== 0) return  // secondary buttons → contextmenu handling below
+      const { aFlow: a } = stateRef.current
+      if (!a) {
+        // Pre-anchor: only canvas-targeted presses start the gesture; chrome
+        // (toolbar, menus, rail) keeps working normally.
+        if (!onPane(e.target)) return
+        if (!rfInstanceRef.current) return
+        e.preventDefault()
+        e.stopPropagation()
+        suppressNextClick()
+        const screen = { x: e.clientX, y: e.clientY }
+        setAFlow(toFlow(screen.x, screen.y))
+        setCursor(screen)
+        pressRef.current = screen
+        return
+      }
+      // Mid-gesture: every primary press is ours. On the canvas it anchors B
+      // (click-move-click mode); on chrome it's a conflicting input → ignored
+      // (swallowed), so the half-drawn line survives.
+      e.preventDefault()
+      e.stopPropagation()
+      if (!onPane(e.target)) return
+      suppressNextClick()
       complete(e)
     }
-    // Otherwise: stationary tap/click — stay armed, await the second press.
-  }
 
-  const zoom = zoomRef.current
+    const onPointerMove = (e) => {
+      if (stateRef.current.aFlow) setCursor(bScreenFor(e))
+    }
+
+    const onPointerUp = (e) => {
+      const press = pressRef.current
+      pressRef.current = null
+      const { aFlow: a } = stateRef.current
+      if (!a || !press) return
+      // Drag-draw: a real drag between press and lift anchors B at the lift —
+      // but only over the canvas, never on top of chrome.
+      if (Math.hypot(e.clientX - press.x, e.clientY - press.y) >= DRAG_MIN) {
+        if (!onPane(e.target)) return
+        e.stopPropagation()
+        suppressNextClick()
+        complete(e)
+      }
+      // Otherwise: stationary tap/click — stay armed, await the second press.
+    }
+
+    // Right-click mid-gesture is a conflicting input → ignored entirely (no
+    // menu, no cancel). Pre-anchor it never reaches this branch and the
+    // normal contextmenu path (canvas/node menus) runs untouched.
+    const onContextMenu = (e) => {
+      if (!stateRef.current.aFlow) return
+      e.preventDefault()
+      e.stopPropagation()
+    }
+
+    document.addEventListener('pointerdown', onPointerDown, true)
+    document.addEventListener('pointermove', onPointerMove, true)
+    document.addEventListener('pointerup', onPointerUp, true)
+    document.addEventListener('contextmenu', onContextMenu, true)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown, true)
+      document.removeEventListener('pointermove', onPointerMove, true)
+      document.removeEventListener('pointerup', onPointerUp, true)
+      document.removeEventListener('contextmenu', onContextMenu, true)
+    }
+  }, [rfInstanceRef])
+
+  // ── Edge-pan after anchor A (RAF, marquee-matched feel) ─────────────────
+  const gestureActive = aFlow !== null
+  useEffect(() => {
+    if (!gestureActive) return
+    let rafId = null
+    const tick = () => {
+      const { cursor: cur } = stateRef.current
+      const rfNow = rfInstanceRef.current
+      if (cur && rfNow) {
+        const w = window.innerWidth
+        const h = window.innerHeight
+        const left   = clamp(EDGE_THRESHOLD_PX - cur.x,       0, EDGE_THRESHOLD_PX)
+        const right  = clamp(EDGE_THRESHOLD_PX - (w - cur.x), 0, EDGE_THRESHOLD_PX)
+        const top    = clamp(EDGE_THRESHOLD_PX - cur.y,       0, EDGE_THRESHOLD_PX)
+        const bottom = clamp(EDGE_THRESHOLD_PX - (h - cur.y), 0, EDGE_THRESHOLD_PX)
+        const dx = (right  - left) / EDGE_THRESHOLD_PX * MAX_SPEED_PX_PER_FRAME
+        const dy = (bottom - top)  / EDGE_THRESHOLD_PX * MAX_SPEED_PX_PER_FRAME
+        if (dx !== 0 || dy !== 0) {
+          const vp = rfNow.getViewport()
+          rfNow.setViewport({ x: vp.x - dx, y: vp.y - dy, zoom: vp.zoom })
+          // Re-render so the preview re-projects anchor A's flow coords.
+          setPanTick((t) => t + 1)
+        }
+      }
+      rafId = requestAnimationFrame(tick)
+    }
+    rafId = requestAnimationFrame(tick)
+    return () => { if (rafId !== null) cancelAnimationFrame(rafId) }
+  }, [gestureActive, rfInstanceRef])
+
+  const zoom = rf?.getViewport()?.zoom ?? 1
   const previewWidth = Math.max(LINE_DEFAULTS.weight * zoom, 1.5)
 
+  // Pure preview layer — pointer-events-none (the capture listeners above own
+  // the interaction), below app chrome (toolbar z-40, menus 9998+) so nothing
+  // is ever visually or interactively hidden behind the placement mode.
   return (
-    <div
-      className="fixed inset-0 z-[9000]"
-      style={{ cursor: 'crosshair', touchAction: 'none' }}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onContextMenu={(e) => { e.preventDefault(); onCancel() }}
-    >
+    <div className="pointer-events-none fixed inset-0 z-30">
       <svg className="w-full h-full" style={{ display: 'block' }}>
-        {a && cursor && (
+        {aScreen && cursor && (
           <line
-            x1={a.screen.x} y1={a.screen.y}
-            x2={cursor.x}   y2={cursor.y}
+            x1={aScreen.x} y1={aScreen.y}
+            x2={cursor.x}  y2={cursor.y}
             stroke={LINE_DEFAULTS.color}
             strokeWidth={previewWidth}
             strokeLinecap="round"
             opacity={0.9}
           />
         )}
-        {a && (
-          <circle cx={a.screen.x} cy={a.screen.y} r={4} fill={LINE_DEFAULTS.color} />
+        {aScreen && (
+          <circle cx={aScreen.x} cy={aScreen.y} r={4} fill={LINE_DEFAULTS.color} />
         )}
       </svg>
     </div>

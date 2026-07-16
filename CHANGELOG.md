@@ -4,6 +4,74 @@ A running log of meaningful changes to MasterMind: Story Builder. Append-only. N
 
 ## [Unreleased]
 
+### Bottom toolbar — Chunk 2: one-shot creation tools + line edge-pan (2026-07-15)
+
+The toolbar's three creation tools are now live **one-shots**: click
+**Node**, **Text Block**, or **Line** to arm the tool (sky chip moves,
+cursor becomes a crosshair), place once on the canvas, and the toolbar
+returns to **Pointer** — always, even from Hand, and on the Canvas Tool
+Menu's create actions too. **Esc is the only explicit cancel.** Right-click
+while armed behaves exactly as it does in Pointer/Hand mode (canvas menu on
+empty space, node menu on a card) and does NOT disarm the tool — a
+deliberate change from the line tool's original right-click-cancels
+behavior, per Erik's corrected spec (2026-07-15).
+
+- **Node** places via the same quick-add as the Canvas Tool Menu (first
+  type, same undo entry) and opens the Inspector immediately for naming —
+  the FTUE path.
+- **Text Block** places a text block that drops straight into typing.
+- **Line** arms the same drawing mode as the Canvas Tool Menu's "Add line"
+  — which now also lights up the toolbar's Line chip, since the tool store
+  became the single owner of line arming.
+
+**Interaction model — "placement only captures the left click."** There is
+no full-screen blanket anymore (the line overlay's old surface owned every
+event): a capture-phase listener intercepts only primary clicks aimed at
+the canvas. Everything else stays live while armed — right-click menus,
+scroll-wheel pan/zoom, and all app chrome (toolbar, altitude rail), so
+clicking another tool switches, clicking Pointer/Hand disarms, and nothing
+can ever be placed "behind" the toolbar.
+
+**Spacebar during placement (Erik's resolved rule).** Before the first
+click/anchor, holding spacebar suspends placement and pans; release
+re-arms. Once a line's anchor A is placed, the spacebar (and right-click,
+and chrome clicks) are **ignored** until the line completes or Esc cancels
+— a half-drawn line is never thrown away. The chip doesn't flip to Hand
+mid-gesture either.
+
+**Line edge-pan (new).** After anchor A, pushing the cursor to the window
+edge pans the camera in that direction and stops when the cursor comes back
+inside — the way to reach an off-screen anchor B now that mid-gesture
+spacebar is ignored. Same speed/threshold as the marquee's auto-pan. The
+line preview is now anchored in canvas space (it re-projects every frame),
+so the half-line stays pinned to the canvas through any camera motion —
+which also means wheel pan/zoom keeps working while drawing.
+
+**Added**
+- One-shot placement hook [`src/hooks/useOneShotPlacement.js`](./src/hooks/useOneShotPlacement.js)
+  (Node/Text single-click placement + Esc-cancel for all creation tools) + tests.
+- `placementGestureActive` flag in `useToolStore` (the "gesture in flight"
+  signal that makes the spacebar a no-op mid-line); `effectiveTool()` gained
+  the matching third parameter.
+- [`LinePlacementOverlay`](./src/components/LinePlacementOverlay.jsx) tests
+  (flow-coord commit, gesture flag, right-click pass-through/swallow rules,
+  chrome-click protection, camera re-projection).
+
+**Changed / Removed**
+- `LinePlacementOverlay` reworked from a full-screen pointer-owning surface
+  to a pointer-events-none preview + capture-phase listeners (see model
+  above); its z-index dropped from above-everything to below app chrome.
+  Right-click no longer cancels line drawing. Its `onCancel` prop is gone
+  (Esc lives in the shared hook).
+- Canvas Tool Menu "Add line" arms the Line tool through the tool store
+  (was a private App.jsx boolean).
+- All three create paths (`addCardNode` / `addTextNode` /
+  `addLineFromPlacement`) revert the active tool to Pointer.
+
+**Not yet in this chunk** — the always-expanded creation-only mobile
+variant + hiding the passive sync pill on phones is Chunk 3 (starts only
+after Erik's desktop QA of Chunk 2).
+
 ### Bottom toolbar — Chunk 1: tool system + desktop tray + spacebar rework (2026-07-10)
 
 First cut of the approved bottom toolbar (Figma 225-1970): the canvas now
