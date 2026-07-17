@@ -25,6 +25,14 @@
 // detaches entirely, so the click that pans can never also place. Esc stays
 // live through suspension so the tool can always be cancelled.
 //
+// TOUCH (Chunk 3, approved 2026-07-16): a finger places on LIFT, not press.
+// A two-finger pan/zoom starts with one finger landing first — placing on
+// press would drop an accidental node before the second finger arrives. So
+// a touch press is NOT swallowed (React Flow's own touch gestures stay
+// live while armed); the placement commits on pointerup only if the finger
+// stayed a tap — abandoned if it moves past the slop or a second pointer
+// joins, with the tool staying armed for the next tap.
+//
 // One-shot: after a successful placement the creators themselves revert the
 // active tool to Pointer (Erik: ALWAYS return to Pointer after placing). The
 // `placedRef` latch guards the render gap between the revert and this
@@ -35,6 +43,7 @@ import { useEffect, useRef } from 'react'
 import { useToolStore, effectiveTool } from '../store/useToolStore'
 
 const CREATION_TOOLS = ['node', 'text', 'line']
+const TOUCH_SLOP_PX = 10  // tap-vs-drag boundary, matches useLongPressContextMenu
 
 // Swallow the click the browser synthesizes right after our intercepted
 // pointerdown, so React Flow's pane onClick (which clears selection) never
@@ -86,26 +95,76 @@ export function useOneShotPlacement({ rfInstanceRef, onPlaceNode, onPlaceText })
   useEffect(() => {
     if (!placementTool) return
     const placedRef = { current: false }
+    // Pending touch tap: { id, x, y, abandoned } while one finger is down.
+    const touchRef = { current: null }
+
+    const place = (x, y) => {
+      const rf = rfInstanceRef.current
+      if (!rf) return
+      placedRef.current = true
+      suppressNextClick()
+      const flowPos = rf.screenToFlowPosition({ x, y })
+      const placeFn = placementTool === 'node' ? onPlaceNodeRef.current : onPlaceTextRef.current
+      placeFn(flowPos)
+    }
 
     const onPointerDown = (e) => {
+      // A second touch while a tap is pending = pan/zoom intent → abandon
+      // the placement (tool stays armed). Checked before the pane filter:
+      // the second finger can land anywhere.
+      if (e.pointerType === 'touch' && touchRef.current && e.pointerId !== touchRef.current.id) {
+        touchRef.current.abandoned = true
+        return
+      }
       if (e.button !== 0) return                            // primary only
       if (!(e.target instanceof Element)) return
       if (!e.target.closest('.react-flow__pane')) return    // chrome stays live
       if (placedRef.current) return                         // one-shot latch
-      const rf = rfInstanceRef.current
-      if (!rf) return
-      placedRef.current = true
+      if (!rfInstanceRef.current) return
+      if (e.pointerType === 'touch') {
+        // Touch: defer to the lift. Deliberately NOT swallowed — RF's touch
+        // gestures (marquee, two-finger pan/zoom) keep working while armed.
+        touchRef.current = { id: e.pointerId, x: e.clientX, y: e.clientY, abandoned: false }
+        return
+      }
+      // Mouse/pen: place on press, exactly as shipped in Chunk 2.
       // Stop the event in the capture phase: React Flow (drag/select) and
       // useCustomMarquee (document bubble) never see this pointerdown.
       e.preventDefault()
       e.stopPropagation()
-      suppressNextClick()
-      const flowPos = rf.screenToFlowPosition({ x: e.clientX, y: e.clientY })
-      const place = placementTool === 'node' ? onPlaceNodeRef.current : onPlaceTextRef.current
-      place(flowPos)
+      place(e.clientX, e.clientY)
+    }
+
+    const onPointerMove = (e) => {
+      const t = touchRef.current
+      if (!t || e.pointerId !== t.id || t.abandoned) return
+      if (Math.hypot(e.clientX - t.x, e.clientY - t.y) > TOUCH_SLOP_PX) t.abandoned = true
+    }
+
+    const onPointerUp = (e) => {
+      const t = touchRef.current
+      if (!t || e.pointerId !== t.id) return
+      touchRef.current = null
+      if (t.abandoned || placedRef.current) return
+      // Implicit touch capture makes e.target the original press target,
+      // which the pane filter already vetted at pointerdown.
+      place(e.clientX, e.clientY)
+    }
+
+    const onPointerCancel = (e) => {
+      const t = touchRef.current
+      if (t && e.pointerId === t.id) touchRef.current = null
     }
 
     document.addEventListener('pointerdown', onPointerDown, true)
-    return () => document.removeEventListener('pointerdown', onPointerDown, true)
+    document.addEventListener('pointermove', onPointerMove, true)
+    document.addEventListener('pointerup', onPointerUp, true)
+    document.addEventListener('pointercancel', onPointerCancel, true)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown, true)
+      document.removeEventListener('pointermove', onPointerMove, true)
+      document.removeEventListener('pointerup', onPointerUp, true)
+      document.removeEventListener('pointercancel', onPointerCancel, true)
+    }
   }, [placementTool, rfInstanceRef])
 }

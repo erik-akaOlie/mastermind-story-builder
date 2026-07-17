@@ -32,6 +32,30 @@ export function placeFloatingToolbar(anchorRect, size, {
   return { left, top }
 }
 
+// Shared edge-aware placement for DROPDOWN MENUS hanging off a floating-
+// toolbar control (first consumer: the text block's font-size presets —
+// Erik's phone QA 2026-07-16 found it opening behind the bottom toolbar and
+// running off-screen). Prefers below the anchor control, flips ABOVE when
+// the bottom would clip, clamps into the window. Callers render the menu in
+// a document.body portal at fixed/z-[9999] (the context-menu tier) so it
+// sits above ALL chrome, including the bottom toolbar — an in-canvas z-index
+// can never beat fixed chrome across stacking contexts.
+//   anchorRect: { left, top, bottom } in screen px (a DOMRect works)
+//   size:       { w, h } menu size in screen px
+export function placeDropdown(anchorRect, size, {
+  gap = 4,
+  margin = TOOLBAR_MARGIN_PX,
+} = {}) {
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+  let left = anchorRect.left
+  let top = anchorRect.bottom + gap
+  if (top + size.h > vh - margin) top = anchorRect.top - gap - size.h  // flip above
+  left = Math.min(Math.max(left, margin), vw - size.w - margin)
+  top = Math.min(Math.max(top, margin), vh - size.h - margin)
+  return { left, top }
+}
+
 // Shared visual shell for floating canvas toolbars — the text-block formatting
 // toolbar and the multi-select alignment toolbar both render their controls
 // inside one of these, so they're visually identical and future canvas

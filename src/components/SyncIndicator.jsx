@@ -21,10 +21,17 @@
 //   Saved       — "Edited just now" / "Edited 1m ago" / …
 //   Initial     — (renders nothing only for a brand-new workspace with no
 //                  rows yet, since lastSavedAt would still be null)
+//
+// Phone portrait (toolbar Chunk 3, 2026-07-16): the PASSIVE "Edited Nm ago"
+// state is hidden to de-crowd the bottom edge next to the always-present
+// mobile tray — visibility-off/deferred, NOT a permanent product decision.
+// "Offline" and "Can't save" are trust-related warnings and stay visible on
+// every device.
 // ============================================================================
 
 import { useEffect, useState } from 'react'
 import { useSyncStore, selectLocked } from '../store/useSyncStore.js'
+import { useMobilePortrait } from '../hooks/useMobilePortrait.js'
 
 const TICK_INTERVAL_MS = 60_000
 
@@ -32,6 +39,7 @@ export default function SyncIndicator() {
   const isOffline = useSyncStore((s) => s.isOffline)
   const locked = useSyncStore(selectLocked)
   const lastSavedAt = useSyncStore((s) => s.lastSavedAt)
+  const mobilePortrait = useMobilePortrait()
 
   // Force re-render every minute so the relative time stays current.
   const [, setTick] = useState(0)
@@ -40,7 +48,7 @@ export default function SyncIndicator() {
     return () => clearInterval(id)
   }, [])
 
-  const display = getDisplay({ isOffline, locked, lastSavedAt })
+  const display = getDisplay({ isOffline, locked, lastSavedAt, hidePassive: mobilePortrait })
   if (!display) return null
 
   return (
@@ -53,7 +61,7 @@ export default function SyncIndicator() {
   )
 }
 
-function getDisplay({ isOffline, locked, lastSavedAt }) {
+function getDisplay({ isOffline, locked, lastSavedAt, hidePassive = false }) {
   if (isOffline) {
     return {
       text: 'Offline',
@@ -66,7 +74,7 @@ function getDisplay({ isOffline, locked, lastSavedAt }) {
       tooltip: "Recent changes may not be saved. We're retrying in the background.",
     }
   }
-  if (lastSavedAt) {
+  if (lastSavedAt && !hidePassive) {
     return {
       text: `Edited ${formatRelative(lastSavedAt)}`,
       tooltip: lastSavedAt.toLocaleString(),

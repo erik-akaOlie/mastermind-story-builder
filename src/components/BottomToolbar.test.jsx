@@ -11,24 +11,40 @@
 //     makes the spacebar a no-op so a half-drawn line is never disturbed)
 //   - creation tools ARM on click (Chunk 2 — placement itself lives in
 //     useOneShotPlacement / LinePlacementOverlay)
-//   - touch-primary renders nothing (mobile variant is Chunk 3)
+//   - touch-primary WITHOUT phone-portrait renders nothing (tablets /
+//     landscape — out of scope for the Chunk 3 first cut)
+//   - phone portrait (Chunk 3): always-expanded creation-only tray (Node ·
+//     Text Block · Line), tap arms / tap-again disarms, armed Line button
+//     carries data-placement-cancel (the mobile Esc stand-in)
 // ============================================================================
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, act } from '@testing-library/react'
 import BottomToolbar from './BottomToolbar'
 import { useToolStore, effectiveTool } from '../store/useToolStore'
+import { useUndoStore } from '../store/useUndoStore'
 
-// useTouchPrimary asks matchMedia('(hover: none) and (pointer: coarse)').
-// Same per-suite override pattern as CanvasContextMenu.test.jsx.
+// useTouchPrimary asks matchMedia('(hover: none) and (pointer: coarse)');
+// useMobilePortrait asks the combined phone-portrait query. Same per-suite
+// override pattern as CanvasContextMenu.test.jsx.
+const TOUCH_QUERY = '(hover: none) and (pointer: coarse)'
+const MOBILE_QUERY =
+  '(hover: none) and (pointer: coarse) and (orientation: portrait) and (max-width: 640px)'
+
 let originalMatchMedia
-function setTouchPrimary(matches) {
+function setMedia({ touch = false, mobilePortrait = false }) {
   window.matchMedia = (query) => ({
-    matches: query === '(hover: none) and (pointer: coarse)' ? matches : false,
+    matches:
+      query === MOBILE_QUERY ? mobilePortrait :
+      query === TOUCH_QUERY ? touch :
+      false,
     media: query,
     addEventListener: () => {},
     removeEventListener: () => {},
   })
+}
+function setTouchPrimary(matches) {
+  setMedia({ touch: matches })
 }
 
 // jsdom reports a zero rect for every element, so the hotspot rect is the
@@ -157,9 +173,92 @@ describe('BottomToolbar', () => {
     expect(container.firstChild.style.left).toBe('50%')
   })
 
-  it('renders nothing on touch-primary devices (mobile variant is Chunk 3)', () => {
+  it('renders nothing on touch-primary devices that are NOT phone portrait (tablets / landscape)', () => {
     setTouchPrimary(true)
     const { container } = render(<BottomToolbar />)
     expect(container.firstChild).toBeNull()
+  })
+})
+
+describe('BottomToolbar — phone portrait (Chunk 3)', () => {
+  beforeEach(() => {
+    setMedia({ touch: true, mobilePortrait: true })
+    useUndoStore.setState({ past: [], future: [] })
+  })
+
+  it('renders the always-expanded tray: Node · Text Block · Line · divider · Undo · Redo', () => {
+    const { container } = render(<BottomToolbar />)
+    const buttons = screen.getAllByRole('button')
+    expect(buttons).toHaveLength(5)
+    expect(screen.getByRole('button', { name: /add node/i })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /add text block/i })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /add line/i })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /^undo$/i })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /^redo$/i })).toBeTruthy()
+    // No Pointer / Hand on phones (MB-1 touch model needs no visible mode)
+    expect(screen.queryByRole('button', { name: /pointer/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /hand/i })).toBeNull()
+    // Always visible — no hover needed, tray box present at its full width
+    // (QA-2 FINAL geometry, Erik on-device: 40px buttons FLUSH, gaps only
+    // around the divider, 8px pad → 233 total; fits a 320px SE)
+    expect(container.firstChild.style.width).toBe('233px')
+  })
+
+  it('Undo/Redo are disabled on a fresh workspace (nothing to undo or redo)', () => {
+    render(<BottomToolbar />)
+    expect(screen.getByRole('button', { name: /^undo$/i }).disabled).toBe(true)
+    expect(screen.getByRole('button', { name: /^redo$/i }).disabled).toBe(true)
+  })
+
+  it('an edit enables Undo; an undo enables Redo (store-driven, no separate history)', () => {
+    const onUndo = () => {}
+    const onRedo = () => {}
+    render(<BottomToolbar onUndo={onUndo} onRedo={onRedo} />)
+    act(() => useUndoStore.setState({ past: [{ type: 'moveCard' }], future: [] }))
+    expect(screen.getByRole('button', { name: /^undo$/i }).disabled).toBe(false)
+    expect(screen.getByRole('button', { name: /^redo$/i }).disabled).toBe(true)
+    act(() => useUndoStore.setState({ past: [], future: [{ type: 'moveCard' }] }))
+    expect(screen.getByRole('button', { name: /^undo$/i }).disabled).toBe(true)
+    expect(screen.getByRole('button', { name: /^redo$/i }).disabled).toBe(false)
+  })
+
+  it('tapping enabled Undo/Redo fires the App-supplied callbacks', () => {
+    let undos = 0, redos = 0
+    render(<BottomToolbar onUndo={() => { undos += 1 }} onRedo={() => { redos += 1 }} />)
+    act(() => useUndoStore.setState({ past: [{ type: 'moveCard' }], future: [{ type: 'moveCard' }] }))
+    fireEvent.click(screen.getByRole('button', { name: /^undo$/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^redo$/i }))
+    expect(undos).toBe(1)
+    expect(redos).toBe(1)
+  })
+
+  it('tap arms a tool; tapping the armed tool again disarms (mobile Esc stand-in)', () => {
+    render(<BottomToolbar />)
+    const nodeBtn = screen.getByRole('button', { name: /add node/i })
+    fireEvent.click(nodeBtn)
+    expect(useToolStore.getState().activeTool).toBe('node')
+    expect(nodeBtn.getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(nodeBtn)
+    expect(useToolStore.getState().activeTool).toBe('pointer')
+    expect(nodeBtn.getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('switching directly between creation tools works without disarming first', () => {
+    render(<BottomToolbar />)
+    fireEvent.click(screen.getByRole('button', { name: /add node/i }))
+    fireEvent.click(screen.getByRole('button', { name: /add line/i }))
+    expect(useToolStore.getState().activeTool).toBe('line')
+  })
+
+  it('ONLY the armed Line button carries data-placement-cancel', () => {
+    render(<BottomToolbar />)
+    const lineBtn = screen.getByRole('button', { name: /add line/i })
+    const nodeBtn = screen.getByRole('button', { name: /add node/i })
+    expect(lineBtn.hasAttribute('data-placement-cancel')).toBe(false)
+    fireEvent.click(lineBtn)
+    expect(lineBtn.hasAttribute('data-placement-cancel')).toBe(true)
+    expect(nodeBtn.hasAttribute('data-placement-cancel')).toBe(false)
+    fireEvent.click(lineBtn)  // disarm
+    expect(lineBtn.hasAttribute('data-placement-cancel')).toBe(false)
   })
 })

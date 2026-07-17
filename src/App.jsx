@@ -19,6 +19,7 @@ import {
   updateNode as dbUpdateNode,
   deleteNode as dbDeleteNode,
   buildDeleteCardSnapshot,
+  dbNodeToReactFlow,
 } from './lib/nodes.js'
 import {
   createConnection as dbCreateConnection,
@@ -28,6 +29,7 @@ import {
   createTextNode as dbCreateTextNode,
   updateTextNode as dbUpdateTextNode,
   deleteTextNode as dbDeleteTextNode,
+  dbTextNodeToReactFlow,
 } from './lib/textNodes.js'
 import { buildBatchDeleteSnapshot, deleteBatch } from './lib/batchDelete.js'
 import {
@@ -1022,8 +1024,39 @@ export default function App() {
       console.error(`No type_id for key: ${typeKey}`)
       return
     }
+    // OPTIMISTIC (QA-1 fix, 2026-07-16): the card is on the canvas the moment
+    // the tap lands. Awaiting the insert first meant seconds of NOTHING on a
+    // slow network — long enough to read as "the tap didn't work." The id is
+    // generated client-side so the Realtime echo dedups (INSERT handler
+    // checks ids) and the insert row matches the optimistic node exactly.
+    const cardId = safeRandomUUID()
+    const optimisticNode = dbNodeToReactFlow(
+      {
+        id: cardId,
+        type_id: typeId,
+        label: '',
+        summary: '',
+        avatar_url: null,
+        position_x: flowPos.x,
+        position_y: flowPos.y,
+      },
+      {},
+      { [typeId]: { key: typeKey } },
+    )
+    setNodes((nds) => [...nds, optimisticNode])
+
+    // Analytics: card creation, plus a window for card_repositioned_quickly.
+    // The Map entry self-cleans after RECENT_CREATE_WINDOW_MS so a card
+    // repositioned later isn't counted as "quickly." Per ADR-0009.
+    track('card_created', { typeKey })
+    recentlyCreatedRef.current.set(cardId, Date.now())
+    setTimeout(() => {
+      recentlyCreatedRef.current.delete(cardId)
+    }, RECENT_CREATE_WINDOW_MS)
+
     try {
       const newNode = await dbCreateNode({
+        id: cardId,
         workspaceId: activeWorkspaceId,
         typeId,
         typeKey,
@@ -1032,16 +1065,6 @@ export default function App() {
         positionX: flowPos.x,
         positionY: flowPos.y,
       })
-      setNodes((nds) => [...nds, newNode])
-
-      // Analytics: card creation, plus a window for card_repositioned_quickly.
-      // The Map entry self-cleans after RECENT_CREATE_WINDOW_MS so a card
-      // repositioned later isn't counted as "quickly." Per ADR-0009.
-      track('card_created', { typeKey })
-      recentlyCreatedRef.current.set(newNode.id, Date.now())
-      setTimeout(() => {
-        recentlyCreatedRef.current.delete(newNode.id)
-      }, RECENT_CREATE_WINDOW_MS)
 
       // Record the create AFTER the persist succeeds, so canApplyInverse's
       // existence check can rely on the card being in DB. dbRow captures
@@ -1051,7 +1074,7 @@ export default function App() {
         workspaceId: activeWorkspaceId,
         label: 'Add node',
         timestamp: new Date().toISOString(),
-        cardId: newNode.id,
+        cardId,
         dbRow: {
           typeId,
           typeKey,
@@ -1063,6 +1086,10 @@ export default function App() {
         },
       })
 
+      // The Inspector still waits for the persist: its auto-save UPDATEs the
+      // row, and an update racing a not-yet-landed insert is a silent no-op
+      // (lost write). The instantly-visible card is the "it worked" signal;
+      // the Inspector following is "it's opening."
       // Connections only apply to cards (campaignNode); filter out text nodes
       // so they don't surface as "Untitled" entries in the connections picker.
       setInspectorNode({
@@ -1070,32 +1097,53 @@ export default function App() {
         connectedNodes: [],
         allOtherNodes: nodes.filter((n) => n.type === 'campaignNode'),
         originRect: null,
-        topicNodeId: newNode.id,
+        topicNodeId: cardId,
         position: { x: 0, y: 0 },
         mode: readInspectorMode(),
         isRepoint: false,
       })
     } catch (err) {
+      // Roll the optimistic card back — persistWrite already surfaced the
+      // failure to the user (toast/lock flow).
       console.error('Failed to create card:', err)
+      setNodes((nds) => nds.filter((n) => n.id !== cardId))
     }
   }, [activeWorkspaceId, nodes, setNodes])
 
   // ── Add text (DB-backed) ─────────────────────────────────────────────────
   const addTextNode = useCallback(async (flowPos) => {
     useToolStore.getState().setActiveTool('pointer')  // one-shot rule
+    // OPTIMISTIC (QA-1 fix, 2026-07-16, same rationale as addCardNode): the
+    // block appears — already in edit mode — the moment the tap lands.
+    // Client-generated id so the Realtime echo dedups. The dbRow mirrors
+    // createTextNode's defaults; save-on-blur happens far after the insert.
+    const textNodeId = safeRandomUUID()
+    const dbRow = {
+      id:           textNodeId,
+      workspace_id: activeWorkspaceId,
+      content_html: '',
+      position_x:   flowPos.x,
+      position_y:   flowPos.y,
+      width:        256,
+      height:       null,
+      font_size:    48,
+      align:        'left',
+    }
+    const optimisticText = dbTextNodeToReactFlow(dbRow)
+    optimisticText.dragHandle = '.text-node-drag-handle'
+    optimisticText.data = { ...optimisticText.data, editing: true }
+    setNodes((nds) => [...nds, optimisticText])
+
+    track('text_node_created')
+
     try {
-      const newTextNode = await dbCreateTextNode({
+      await dbCreateTextNode({
+        id: textNodeId,
         workspaceId: activeWorkspaceId,
         contentHtml: '',
         positionX: flowPos.x,
         positionY: flowPos.y,
       })
-      // Drop straight into edit mode on creation
-      newTextNode.dragHandle = '.text-node-drag-handle'
-      newTextNode.data = { ...newTextNode.data, editing: true }
-      setNodes((nds) => [...nds, newTextNode])
-
-      track('text_node_created')
 
       // Record AFTER the persist succeeds so canApplyInverse's existence
       // check can rely on the row being in DB. dbRow captures the fields
@@ -1105,21 +1153,14 @@ export default function App() {
         workspaceId: activeWorkspaceId,
         label: 'Add text',
         timestamp: new Date().toISOString(),
-        textNodeId: newTextNode.id,
-        dbRow: {
-          id:           newTextNode.id,
-          workspace_id:  activeWorkspaceId,
-          content_html: '',
-          position_x:   flowPos.x,
-          position_y:   flowPos.y,
-          width:        newTextNode.data.width,
-          height:       newTextNode.data.height,
-          font_size:    newTextNode.data.fontSize,
-          align:        newTextNode.data.align,
-        },
+        textNodeId,
+        dbRow,
       })
     } catch (err) {
+      // Roll the optimistic block back — persistWrite already surfaced the
+      // failure to the user (toast/lock flow).
       console.error('Failed to create text node:', err)
+      setNodes((nds) => nds.filter((n) => n.id !== textNodeId))
     }
   }, [activeWorkspaceId, setNodes])
 
@@ -1175,6 +1216,29 @@ export default function App() {
     }, [addCardNode]),
     onPlaceText: addTextNode,
   })
+
+  // ── Mobile toolbar Undo/Redo (Chunk 3 QA-1 scope amendment) ──────────────
+  // Same store + dispatcher the Ctrl+Z path uses (useUndoShortcuts) — the
+  // buttons are just a second trigger, never a second history. Refs keep the
+  // callbacks stable while always reading fresh canvas state.
+  const onToolbarUndo = useCallback(() => {
+    track('undo_invoked')
+    useUndoStore.getState().undo({
+      nodes: nodesRef.current,
+      edges: edgesRef.current,
+      setNodes,
+      setEdges,
+    })
+  }, [setNodes, setEdges])
+  const onToolbarRedo = useCallback(() => {
+    track('redo_invoked')
+    useUndoStore.getState().redo({
+      nodes: nodesRef.current,
+      edges: edgesRef.current,
+      setNodes,
+      setEdges,
+    })
+  }, [setNodes, setEdges])
 
   // Live endpoint re-anchor while a handle drags (LineNode via CanvasOps —
   // App's setNodes is the source of truth; see CanvasOpsContext header for
@@ -2270,7 +2334,11 @@ export default function App() {
       <MarqueeRect marquee={marqueeOverlay} rfInstanceRef={rfInstanceRef} />
       <QuickConnectLine quickConnect={quickConnect} rfInstanceRef={rfInstanceRef} />
       <AltitudeRail onZoomTo={onZoomToFromRail} />
-      <BottomToolbar inspectorDocked={inspectorNode?.mode === 'docked'} />
+      <BottomToolbar
+        inspectorDocked={inspectorNode?.mode === 'docked'}
+        onUndo={onToolbarUndo}
+        onRedo={onToolbarRedo}
+      />
 
       {contextMenu && (() => {
         const node = nodes.find((n) => n.id === contextMenu.nodeId)

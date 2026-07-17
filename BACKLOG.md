@@ -446,10 +446,85 @@ and markdown export are Soon-after. **Honest sizing:** remaining Bucket-1 is
     swallow rules, spacebar suspension, flow re-projection, Shift snap).
     NOT harness-verifiable (headless preview freezes animation frames):
     edge-pan feel/speed — flagged for Erik's desktop QA; tuning
-    constants at the top of LinePlacementOverlay.jsx. Chunk 3 (mobile
-    variant + sync-pill hide; scope = mobile PORTRAIT, detect
-    conservatively — not every touch-capable laptop) not started, gated
-    on Chunk 2 QA.
+    constants at the top of LinePlacementOverlay.jsx. Chunks 1+2 passed
+    Erik's desktop QA and the production smoke gate (2026-07-16).
+  - **Build status (2026-07-16, Chunk 3).** Implemented, awaiting Erik's
+    hands-on PHONE QA (uncommitted). Scope per Erik + the ChatGPT-review
+    sizing adjustment: mobile PORTRAIT only (new useMobilePortrait hook —
+    touch-primary AND portrait AND ≤640px, all three at once; tablets/
+    landscape unchanged, still no toolbar); tray always visible + fully
+    expanded, creation tools ONLY (Node · Text Block · Line), 56px tap
+    targets (Material-FAB comfort reference, not the 48px bare minimum) /
+    28px icons / 216×88 tray on the 8→4→2 grid — tuning constants at the
+    top of BottomToolbar.jsx, expected to move after phone QA. Approved
+    touch adaptations: (1) touch places on finger-LIFT, not press — drag
+    past 10px or a second finger abandons placement with the tool staying
+    armed, so pan/zoom while armed can't drop an accidental node (touch
+    presses are NOT swallowed; RF gestures stay live while armed);
+    (2) tap-the-armed-tool-again disarms (the mobile Esc stand-in) — the
+    armed Line button carries data-placement-cancel, the ONE chrome press
+    LinePlacementOverlay lets through mid-gesture so a half-drawn line is
+    cancellable on phones; (3) a second finger mid-line-drag discards the
+    gesture (tool stays armed) instead of finger 2 "completing" a line —
+    KNOWN first-cut limitation: the pan attempt itself is lost, so
+    navigating while Line is armed means disarming first (flagged for
+    phone QA). Sync pill: ONLY the passive "Edited Nm ago" state hidden
+    on phone portrait (visibility-off/deferred per the approved cut);
+    "Offline" / "Can't save" / all toasts stay on every device, and the
+    whole FeedbackChipBar rises above the tray (raised bottom-LEFT per
+    the review outcome — bottom-center would rework the toast mask
+    machinery; revisit post-QA if wanted). Verified: full unit suite
+    green (572 tests, 46 files — new useMobilePortrait +
+    SyncIndicator suites, extended BottomToolbar / useOneShotPlacement /
+    LinePlacementOverlay suites), production build clean, browser-harness
+    pass at 375×812 with forced-touch media (tray geometry/centering,
+    arm→tap-place→revert for all three tools incl. line press-drag-lift,
+    drag/two-finger abandon, tap-again disarm, mid-line Line-button
+    cancel, second-finger line discard, pill hidden while toasts render
+    above the tray, armed = sky-600 fill + white icon). NOT
+    harness-verifiable: real-device feel (tap target comfort, safe-area
+    inset, real pinch/pan interplay) — that's the phone QA.
+  - **Build status (2026-07-16, Chunk 3 rev 2 — after Erik's phone QA
+    round 1).** Five revisions, implemented + verified, awaiting phone QA
+    round 2 (uncommitted): (1) tray resized per QA — 56px buttons read too
+    large in hand; iterated live on-device with Erik to the FINAL geometry:
+    40px buttons (8px around the 24px icon), buttons FLUSH (no gap between
+    buttons; 8px each side of the divider only), 8px outer padding → 233×56
+    tray. 40px is a DELIBERATE product call below the 44px touch-target
+    guideline — Erik's on-device verdict (53, poor vision, product's actual
+    design target): "feels perfect"; the flush layout means a grazed tap
+    lands on a neighbor, not dead space. Don't revert to 44/48 without a
+    new on-device pass. (2) SCOPE AMENDMENT (Erik): mobile Undo/Redo —
+    desktop-style divider right of the creation tools, then Undo · Redo,
+    disabled until usable (fresh load: both; edit enables Undo; undo
+    enables Redo), wired to the SAME useUndoStore + dispatcher as Ctrl+Z
+    (App passes onUndo/onRedo; buttons subscribe to past/future lengths).
+    (3) LINE-DRAG REGRESSION fixed: RF's drag plumbing is d3-based and
+    listens to TOUCHSTART, which the pointer-event swallow didn't cover —
+    drawing over an existing line grabbed and dragged it. LinePlacement-
+    Overlay now mirrors its ownership rules on capture-phase touchstart
+    (stopPropagation only; cancel-button tap still passes). Regression-
+    tested. (4) FLOATING-DROPDOWN fix: the text block's font-size menu
+    opened downward behind the bottom toolbar and off-viewport — an
+    in-canvas z-index can never beat fixed chrome across stacking
+    contexts. The menu now renders in a document.body portal at the
+    context-menu tier (fixed z-[9999]) placed by a NEW shared helper
+    placeDropdown (CanvasToolbar.jsx, beside placeFloatingToolbar:
+    below-anchor → flip above → clamp in-window; unit-tested). (5) NODE-
+    PLACEMENT DELAY root-caused: addCardNode/addTextNode AWAITED the
+    Supabase insert before ANY state change — seconds of nothing on a slow
+    network. Both are now optimistic (client uuid via safeRandomUUID;
+    Realtime echo dedups by id; rollback on insert failure): the card/text
+    block appears the instant the tap lands. The Inspector still opens
+    after the persist — its auto-save UPDATEs the row, and an update racing
+    a not-yet-landed insert is a silent lost write; the instantly-visible
+    card is the confirmation. Verified: 581 tests green (47 files; new
+    CanvasToolbar/placeDropdown suite, extended BottomToolbar +
+    LinePlacementOverlay), build clean, browser harness re-pass (297×64
+    geometry, undo/redo enable/fire, line-over-line draw with grabbed=0).
+    Phone QA round 2 should re-check: sizing feel, undo/redo, drawing a
+    line starting on an existing line, the font-size dropdown near the
+    bottom, and placement immediacy.
 - **Dependencies.** None hard; touches the canvas (App.jsx) + the Inspector open
   path.
 - **Size:** M (minimal version); the center→dock spotlight choreography is a
@@ -585,6 +660,33 @@ and markdown export are Soon-after. **Honest sizing:** remaining Bucket-1 is
 ---
 
 ## Mox free-beta — Soon after beta opens
+
+### Vision/documentation alignment pass + upkeep habit (Erik, 2026-07-15)
+- **Problem.** The vision docs have fallen behind the actual product
+  direction: `docs/product/vision.md` still frames the long-term arc as a
+  "Game Master Operating System," but Erik's position (stated 2026-07-15)
+  is that the **vision has TIGHTENED and moved closer to its real shape**
+  — GMs as the first evidenced discovery use case inside a broader problem
+  around invented worlds, complex story systems, and visual knowledge
+  graphs — and the docs simply haven't been kept current. This is a
+  **documentation-upkeep failure, not vision drift.** Until fixed, AI
+  sessions (Claude Code and the ChatGPT advisory thread) risk
+  pressure-testing decisions against stale positioning; both have been
+  instructed to treat the docs as evidence, recognize they may be stale
+  here, and ask rather than overcorrect — but that instruction lives in
+  session prompts, which is exactly the fragility this item removes.
+- **Success.** (a) `vision.md` / `roadmap.md` / ADR-0013 updated to state
+  the current, tightened vision accurately (with an ADR if the change is
+  substantive); (b) a session-end upkeep habit that keeps strategic
+  direction changes from living only in chat threads — extend the
+  existing docs definition-of-done (which covers CHANGELOG/BACKLOG/QA) to
+  explicitly include product-direction docs when direction is discussed.
+- **Decision (2026-07-15).** Post-beta-launch, deliberately NOT before:
+  no vision-doc rewrites before beta. Resolve QUICKLY once the launch
+  ships.
+- **Dependencies.** Erik articulates the tightened vision (he holds it;
+  the docs don't).
+- **Size:** S–M (writing, not code).
 
 ### Custom destructive confirmation for workspace delete
 - **Problem.** Whole-workspace delete is functional and reasonably protected

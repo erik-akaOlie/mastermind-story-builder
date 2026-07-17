@@ -129,3 +129,102 @@ describe('LinePlacementOverlay', () => {
     expect(gestureActive()).toBe(false)
   })
 })
+
+// Chunk 3 touch additions: second-finger cancel while drag-drawing, the
+// mobile Line-button cancel pass-through, and pointercancel fallback.
+describe('LinePlacementOverlay — touch (Chunk 3)', () => {
+  const touch = (extra) => ({ button: 0, pointerType: 'touch', pointerId: 1, ...extra })
+
+  it('a second finger while drag-drawing discards the gesture (pan intent, tool stays armed)', () => {
+    renderOverlay()
+    fireEvent.pointerDown(pane, touch({ clientX: 10, clientY: 20 }))
+    expect(gestureActive()).toBe(true)
+    const notCancelled = fireEvent.pointerDown(pane, touch({ pointerId: 2, clientX: 60, clientY: 80 }))
+    expect(notCancelled).toBe(false)  // swallowed — finger 2 never anchors B
+    expect(gestureActive()).toBe(false)
+    expect(onComplete).not.toHaveBeenCalled()
+    // Lifting the fingers afterwards neither places nor crashes
+    fireEvent.pointerUp(pane, touch({ clientX: 10, clientY: 20 }))
+    fireEvent.pointerUp(pane, touch({ pointerId: 2, clientX: 60, clientY: 80 }))
+    expect(onComplete).not.toHaveBeenCalled()
+  })
+
+  it('sequential taps (tap A, lift, tap B — different pointerIds) complete normally', () => {
+    renderOverlay()
+    fireEvent.pointerDown(pane, touch({ clientX: 10, clientY: 20 }))
+    fireEvent.pointerUp(pane, touch({ clientX: 11, clientY: 20 }))  // stationary → stay armed
+    expect(gestureActive()).toBe(true)
+    fireEvent.pointerDown(pane, touch({ pointerId: 2, clientX: 50, clientY: 60 }))
+    expect(onComplete).toHaveBeenCalledWith({ ax: 20, ay: 40, bx: 100, by: 120 })
+  })
+
+  it('mid-gesture, a press on the armed Line button (data-placement-cancel) passes through', () => {
+    const cancelBtn = document.createElement('button')
+    cancelBtn.setAttribute('data-placement-cancel', '')
+    document.body.appendChild(cancelBtn)
+    renderOverlay()
+    fireEvent.pointerDown(pane, touch({ clientX: 10, clientY: 20 }))
+    fireEvent.pointerUp(pane, touch({ clientX: 10, clientY: 20 }))  // stationary tap → armed
+    const notCancelled = fireEvent.pointerDown(cancelBtn, touch({ pointerId: 2, clientX: 5, clientY: 5 }))
+    expect(notCancelled).toBe(true)   // NOT swallowed → its click can disarm the tool
+    expect(onComplete).not.toHaveBeenCalled()
+    cancelBtn.remove()
+  })
+
+  it('pointercancel of the drawing finger falls back to click-move-click (no stuck gesture)', () => {
+    renderOverlay()
+    fireEvent.pointerDown(pane, touch({ clientX: 10, clientY: 20 }))
+    fireEvent.pointerCancel(pane, touch({ clientX: 10, clientY: 20 }))
+    expect(gestureActive()).toBe(true)  // anchor A survives
+    // A later tap completes at that tap, exactly like click-move-click
+    fireEvent.pointerDown(pane, touch({ pointerId: 2, clientX: 50, clientY: 60 }))
+    expect(onComplete).toHaveBeenCalledWith({ ax: 20, ay: 40, bx: 100, by: 120 })
+  })
+
+  // QA-1 regression (2026-07-16): RF's drag plumbing is d3-based and listens
+  // to TOUCHSTART — swallowing only pointer events let a touch-draw whose
+  // anchor A landed on an existing line GRAB that line and drag it along.
+  it('REGRESSION: canvas-targeted touchstart never reaches element drag handlers while armed', () => {
+    renderOverlay()
+    // A stand-in for an existing line's hit-stroke: a pane child with a
+    // touchstart listener, exactly where RF's node-drag would listen.
+    const lineHit = document.createElement('div')
+    pane.appendChild(lineHit)
+    let dragStarted = 0
+    lineHit.addEventListener('touchstart', () => { dragStarted += 1 })
+
+    // Pre-anchor press over the existing line (touch fires BOTH events)
+    fireEvent.pointerDown(lineHit, touch({ clientX: 10, clientY: 20 }))
+    fireEvent.touchStart(lineHit)
+    expect(dragStarted).toBe(0)      // swallowed — the line is never grabbed
+    expect(gestureActive()).toBe(true)
+
+    // Mid-gesture touches over canvas elements are equally owned
+    fireEvent.touchStart(lineHit)
+    expect(dragStarted).toBe(0)
+    lineHit.remove()
+  })
+
+  it('touchstart on chrome passes through pre-anchor; the cancel button passes mid-gesture', () => {
+    const cancelBtn = document.createElement('button')
+    cancelBtn.setAttribute('data-placement-cancel', '')
+    document.body.appendChild(cancelBtn)
+    renderOverlay()
+    let chromeTouches = 0
+    chrome.addEventListener('touchstart', () => { chromeTouches += 1 })
+    let cancelTouches = 0
+    cancelBtn.addEventListener('touchstart', () => { cancelTouches += 1 })
+
+    // Pre-anchor: chrome touches are untouched (toolbar stays live)
+    fireEvent.touchStart(chrome)
+    expect(chromeTouches).toBe(1)
+
+    // Mid-gesture: chrome is owned by the gesture, EXCEPT the cancel button
+    fireEvent.pointerDown(pane, touch({ clientX: 10, clientY: 20 }))
+    fireEvent.touchStart(chrome)
+    expect(chromeTouches).toBe(1)    // swallowed
+    fireEvent.touchStart(cancelBtn)
+    expect(cancelTouches).toBe(1)    // passes — its tap must be able to cancel
+    cancelBtn.remove()
+  })
+})

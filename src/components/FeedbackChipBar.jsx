@@ -37,14 +37,29 @@
 import SyncIndicator from './SyncIndicator.jsx'
 import ChipToast from './ChipToast.jsx'
 import { useFeedbackToastStore } from '../store/useFeedbackToastStore.js'
+import { useMobilePortrait } from '../hooks/useMobilePortrait.js'
+import { MOBILE_TRAY_CLEARANCE_PX } from './BottomToolbar.jsx'
 
 export default function FeedbackChipBar() {
   const toasts = useFeedbackToastStore((s) => s.toasts)
+  // Phone portrait (toolbar Chunk 3): the always-present creation tray owns
+  // the bottom edge, so the whole strip rises above it — toasts and save
+  // warnings must never be covered. Raised bottom-LEFT (not bottom-center)
+  // for the first cut: the toast mask/slide machinery is anchored to the
+  // strip's left edge, and platform guidance only requires "above bottom
+  // bars". Desktop keeps the usual bottom-4.
+  const mobilePortrait = useMobilePortrait()
 
   return (
     <div
-      className="fixed bottom-4 left-4 z-30 pointer-events-none overflow-hidden"
-      style={{ width: '640px', height: '30px' }}
+      className="fixed left-4 z-30 pointer-events-none overflow-hidden"
+      style={{
+        width: '640px',
+        height: '30px',
+        bottom: mobilePortrait
+          ? `calc(${MOBILE_TRAY_CLEARANCE_PX}px + env(safe-area-inset-bottom, 0px))`
+          : '16px',
+      }}
     >
       <div className="flex items-end gap-2 h-full">
         {/*

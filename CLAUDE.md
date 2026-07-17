@@ -248,7 +248,17 @@ src/
                                    chrome are untouched while armed, so menus open normally and the
                                    tray stays clickable. Detaches during spacebar suspension (the
                                    click should pan). Exports suppressNextClick (shared with
-                                   LinePlacementOverlay).
+                                   LinePlacementOverlay). TOUCH (Chunk 3, 2026-07-16): a finger
+                                   places on LIFT, not press — the press is NOT swallowed (RF touch
+                                   gestures stay live while armed); moving past 10px or a second
+                                   finger abandons the placement with the tool staying armed, so
+                                   two-finger pan/zoom never drops an accidental node.
+    useMobilePortrait.js           conservative phone detection (toolbar Chunk 3): true ONLY when
+                                   touch-primary AND portrait AND ≤640px all hold at once — a
+                                   touchscreen laptop, a narrow desktop window, a tablet, and a
+                                   phone held sideways all stay false. Consumers: BottomToolbar
+                                   (mobile tray), SyncIndicator (hide passive state), FeedbackChipBar
+                                   (raise above the tray).
     useWorkspaceData.js             load lifecycle for the active workspace (types + nodes + edges + text)
                                    AND Supabase Realtime subscriptions that mirror remote INSERT/UPDATE/DELETE
                                    into setNodes/setEdges. Calls useUndoStore.setScope() so undo rehydrates
@@ -275,7 +285,12 @@ src/
   nodes/
     CampaignNode.jsx               renders a node as a colored card; subscribes to useCanvasUiStore; adds .is-lifted
                                    class so :has() in index.css promotes the wrapper z-index
-    TextNode.jsx                   freestanding text annotation blocks (persists directly via lib/textNodes)
+    TextNode.jsx                   freestanding text annotation blocks (persists directly via lib/textNodes).
+                                   The font-size preset menu renders in a document.body portal at
+                                   the context-menu tier (fixed z-[9999]), placed by placeDropdown
+                                   (CanvasToolbar.jsx) — flip-above + in-window clamp — because an
+                                   in-canvas z-index can never beat fixed chrome (QA-1 fix,
+                                   2026-07-16)
     LineNode.jsx                   free-standing line annotation (ADR-0019). Position = padded bbox top-left
                                    (lib/lines.js linePositionFor); anchors are absolute canvas coords in
                                    data. Only the widened invisible hit-stroke + endpoint handles take
@@ -364,7 +379,19 @@ src/
                                    ignored, as are chrome clicks and the spacebar: sets
                                    placementGestureActive at anchor A). EDGE-PAN after anchor A
                                    (cursor at the window edge pans the camera; marquee auto-pan
-                                   constants) is how an off-screen anchor B is reached.
+                                   constants) is how an off-screen anchor B is reached. TOUCH
+                                   (Chunk 3): a second finger mid-drag DISCARDS the gesture (pan
+                                   intent — tool stays armed; the pan attempt itself is lost, a
+                                   known first-cut limitation); a press on [data-placement-cancel]
+                                   (the armed mobile Line button) passes through mid-gesture so its
+                                   tap can cancel the half-drawn line (the phone Esc stand-in);
+                                   pointercancel falls back to click-move-click. CRITICAL: the
+                                   ownership rules are mirrored on capture-phase TOUCHSTART too —
+                                   RF's drag/zoom is d3-based and listens to touch events, so
+                                   swallowing only pointerdown let a touch-draw over an existing
+                                   line GRAB and drag it (QA-1 regression, fixed + regression-
+                                   tested 2026-07-16). Never remove the touchstart listener while
+                                   the pointer listeners exist.
     LineStyleToolbar.jsx           floating contextual styling for ONE selected line (AlignmentToolbar
                                    pattern: screen-layer child of <ReactFlow> + placeFloatingToolbar).
                                    Weight · dash length+gap (dashed only) as direct TYPE-IN fields
@@ -395,9 +422,21 @@ src/
                                    useOneShotPlacement + LinePlacementOverlay and reverts to Pointer
                                    after placing. No z-index games needed: placement intercepts only
                                    pane-targeted clicks, so the tray stays clickable while armed.
-                                   Hidden on touch-primary (mobile variant = Chunk 3). NOT the same
-                                   file as CanvasToolbar.jsx — that's the shared shell for floating
-                                   contextual toolbars.
+                                   Chunk 3 (2026-07-16, rev 2 after phone-QA round 1): phone-
+                                   PORTRAIT variant (useMobilePortrait) — always visible, fully
+                                   expanded: Node · Text Block · Line · divider · Undo · Redo
+                                   (40px buttons FLUSH — gaps only around the divider — 24px
+                                   icons, 8px pad → 233×56; constants at top of file; 40px is
+                                   FINAL per Erik's on-device QA, deliberately below the 44px
+                                   guideline — see the constant's comment). Undo/Redo (QA-1 scope amendment) disable on empty
+                                   stacks — same useUndoStore as Ctrl+Z, App passes onUndo/onRedo.
+                                   Tap the armed tool again to disarm (mobile Esc stand-in); the
+                                   armed Line button carries data-placement-cancel so its tap can
+                                   end a half-drawn line. Touch-primary WITHOUT phone-portrait
+                                   (tablets, landscape) still renders nothing. Exports
+                                   MOBILE_TRAY_CLEARANCE_PX for FeedbackChipBar's raised position.
+                                   NOT the same file as CanvasToolbar.jsx — that's the shared shell
+                                   for floating contextual toolbars.
     CreateTypeModal.jsx            custom card type creation (label + icon + color picker)
     Lightbox.jsx                   shared <LightboxProvider>; any consumer calls useLightbox().open(value)
     MigrateImages.jsx              one-shot tool at #migrate to backfill base64 → Storage; safe to delete
@@ -413,9 +452,14 @@ src/
                                    profile.is_test_user; on change, calls initAnalytics(profile) (which
                                    itself bails for non-testers). Renders nothing.
     LockOverlay.jsx                modal that freezes edits on prolonged save failure
-    SyncIndicator.jsx              ambient "Edited just now" / "Can't save" chip; positioned by FeedbackChipBar
+    SyncIndicator.jsx              ambient "Edited just now" / "Can't save" chip; positioned by FeedbackChipBar.
+                                   Phone portrait hides ONLY the passive "Edited Nm ago" state (Chunk 3,
+                                   deferred not permanent); "Offline" / "Can't save" are trust-related and
+                                   render on every device
     FeedbackChipBar.jsx            bottom-left feedback strip composing SyncIndicator + chip-toast slot;
-                                   overflow:hidden mask makes the slot the slide-in surface
+                                   overflow:hidden mask makes the slot the slide-in surface. Phone portrait
+                                   raises the whole strip above the always-present mobile tray
+                                   (MOBILE_TRAY_CLEARANCE_PX from BottomToolbar) so feedback is never covered
     FeedbackChip.jsx               pill-shaped toast body (dark gray-900 + white text + optional Phosphor icon)
     ChipToast.jsx                  single chip-toast w/ CSS @keyframes slide-in, opacity fadeout, hover-pause
     Inspector.test.jsx             tests pinning down Inspector behavior (open/populate, debounced
@@ -567,6 +611,8 @@ All data-mutating handlers follow the **optimistic UI + fire-and-forget** patter
 3. On error: `.catch(console.error)`. Toast-based error surfacing is a later sprint.
 
 Position changes persist only on `onNodeDragStop` (not on every pixel of drag). Text-node resize persists only on mouseup, not on every mousemove.
+
+Node/text-block CREATION is optimistic too (QA-1 fix, 2026-07-16 — awaiting the insert first meant seconds of nothing on slow networks): the id is generated client-side (`safeRandomUUID`), the element is added to state immediately, and the insert runs behind it with a rollback (state filter) on failure. The Realtime INSERT echo dedups by id. Two invariants preserved deliberately: the undo entry is recorded only AFTER the insert lands (the dispatcher's existence checks rely on the row being in DB), and the Inspector opens only after the persist (its auto-save UPDATEs the row; an update racing a not-yet-landed insert is a silent lost write).
 
 ---
 

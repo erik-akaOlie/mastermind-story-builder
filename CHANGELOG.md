@@ -4,6 +4,64 @@ A running log of meaningful changes to MasterMind: Story Builder. Append-only. N
 
 ## [Unreleased]
 
+### Bottom toolbar — Chunk 3: mobile portrait toolbar + touch fixes (2026-07-16)
+
+Phones (held upright) now get their own bottom toolbar — the primary
+creation surface on mobile, where right-click doesn't exist. Passed Erik's
+two-round on-device QA.
+
+**The mobile tray.** Always visible, always expanded, bottom-center:
+**Node · Text Block · Line · divider · Undo · Redo**. Detection is
+deliberately conservative (touch-primary AND portrait AND ≤640px wide, all
+at once — new `useMobilePortrait` hook): touchscreen laptops, tablets,
+narrow desktop windows, and phones held sideways all keep their current
+behavior (landscape stays out of scope for this cut). Final geometry from
+live on-device tuning with Erik: 40px buttons sitting flush (8px around
+each 24px icon; gaps only beside the divider; 8px tray padding → 233×56).
+40px is a deliberate product call below the 44px touch guideline — it felt
+right in hand, and flush buttons mean a grazed tap lands on a neighbor,
+not dead space.
+
+**Creation on touch = Chunk 2's one-shots, adapted to fingers.**
+- A tap **places on finger-lift, not press** — sliding past 10px or a
+  second finger joining abandons the placement (tool stays armed), so
+  two-finger pan/zoom while armed can never drop an accidental node.
+- **Tap the armed tool again to switch it off** — the phone stand-in for
+  Esc. Mid-line-draw, tapping the armed Line button throws the half-line
+  away (the one chrome press allowed through mid-gesture).
+- A second finger mid-line-drag discards the gesture safely (pan intent);
+  known first-cut limitation: that pan attempt itself is lost.
+
+**Undo / Redo on mobile (scope amendment, Erik).** Phones have no Ctrl+Z,
+and undo is trust-related. The two buttons ride the SAME per-workspace undo
+history as the keyboard shortcuts — one history, two triggers — and are
+disabled until usable (fresh load: both off; an edit enables Undo; an undo
+enables Redo).
+
+**Feedback strip on phones.** Only the passive "Edited Nm ago" pill is
+hidden (bottom-edge de-crowding, deferred not permanent); **"Offline",
+"Can't save", and all toasts stay** on every device, and the whole strip
+rises above the tray so feedback is never covered.
+
+**Fixed (found in phone QA round 1)**
+- **Drawing a line could grab and drag an existing line.** React Flow's
+  drag machinery listens to raw touch events — a separate stream from the
+  pointer events the line tool intercepted. The overlay now claims both
+  streams while armed; regression-tested with a draw starting on top of
+  another element.
+- **Text block font-size menu opened behind the bottom toolbar and ran
+  off-screen.** Nothing inside the canvas can layer above fixed chrome, so
+  the menu now renders at the same top layer as right-click menus, flips
+  upward near the window bottom, and clamps in-viewport — via a new shared
+  `placeDropdown` helper (CanvasToolbar.jsx) ready for future dropdowns.
+- **Placing a node/text block showed NOTHING until the database round-trip
+  finished** — seconds of doubt on a slow connection. Creation is now
+  optimistic: the element appears the instant the tap lands (client-side
+  id; Realtime echo dedups; rolled back with the standard save-failure
+  surfacing if the insert fails). The Inspector still opens after the save
+  confirms — deliberately, so its auto-save can't race a not-yet-landed
+  insert and silently lose the first keystrokes.
+
 ### Bottom toolbar — Chunk 2: one-shot creation tools + line edge-pan (2026-07-15)
 
 The toolbar's three creation tools are now live **one-shots**: click

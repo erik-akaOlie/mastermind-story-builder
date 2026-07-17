@@ -27,8 +27,18 @@
 // placing). The toolbar needs no z-index change to stay clickable while a
 // tool is armed: placement intercepts only canvas-targeted clicks
 // (.react-flow__pane), so tray clicks always reach the tray — switching
-// tools or clicking Pointer/Hand disarms. Touch-primary devices still get
-// nothing — the always-expanded creation-only mobile variant is Chunk 3.
+// tools or clicking Pointer/Hand disarms.
+//
+// Chunk 3 (2026-07-16): mobile PORTRAIT variant (useMobilePortrait — touch-
+// primary AND portrait AND ≤640px; conservative by Erik's rule). Always
+// visible, always expanded, creation tools ONLY (Node · Text Block · Line —
+// Pointer/Hand excluded; the MB-1 touch model needs no visible mode). No
+// hover machinery, no tooltips. Tapping the armed tool again disarms it —
+// the mobile stand-in for Esc; the armed Line button carries
+// data-placement-cancel so LinePlacementOverlay lets that tap through
+// mid-gesture (the ONLY chrome press that can end a half-drawn line on
+// touch). Touch-primary but NOT phone-portrait (tablets, landscape) still
+// renders nothing — landscape is out of scope for the first cut.
 //
 // Geometry (Erik, QA pass 3, 2026-07-10 — final): rest tab 48×44 holding a
 // 32×32 replica of the tool chip (8px left/right/top borders, 4px bottom).
@@ -45,10 +55,12 @@
 // ============================================================================
 
 import { useEffect, useRef, useState } from 'react'
-import { Cursor, Hand, Article, TextT } from '@phosphor-icons/react'
+import { Cursor, Hand, Article, TextT, ArrowUUpLeft, ArrowUUpRight } from '@phosphor-icons/react'
 import { useToolStore, effectiveTool } from '../store/useToolStore'
+import { useUndoStore } from '../store/useUndoStore'
 import { LineToolIcon } from './CanvasContextMenu'
 import { useTouchPrimary } from '../hooks/useTouchPrimary'
+import { useMobilePortrait } from '../hooks/useMobilePortrait'
 import {
   RESERVED_INSPECTOR_BAND_PX,
   RESERVED_RAIL_BAND_PX,
@@ -72,16 +84,49 @@ const SLOT_X = { pointer: 16, hand: 64, node: 136, text: 184, line: 232 }
 const BTN_Y = 16        // buttons' top inside the expanded tray
 const TOOLTIP_DELAY_MS = 300
 
+// Mobile-portrait tray (Chunk 3) — tuning constants, revised after Erik's
+// phone QA round 1 (2026-07-16): 56px buttons read TOO LARGE in hand →
+// 48px tap targets (the platform minimum, which QA showed is right for
+// this tray) with 24px icons (desktop's 50% icon-to-button ratio), and
+// padding tightened 16→8 so the tray is sleeker and gives height back to
+// the graph. QA round 1 also added Undo/Redo (approved scope amendment):
+// desktop-style divider right of the creation tools, then Undo · Redo,
+// disabled until usable. All values 8-grid.
+const M_BTN = 40  // FINAL per Erik's on-device QA-2 (2026-07-16): 8px around
+                  // the 24px icon. Deliberately below the 44px guideline —
+                  // felt perfect in hand (tested by the product's actual
+                  // design target), and the flush layout means a grazed tap
+                  // lands on a neighbor, not dead space. Don't "fix" this
+                  // back to 44/48 without a new on-device pass.
+const M_ICON = 24
+const M_DIVIDER_GAP = 8   // breathing room each side of the divider ONLY —
+                          // buttons themselves sit flush (Erik, QA-2 tuning:
+                          // the 24px icons centered in 48px targets already
+                          // give 24px of visual icon-to-icon space)
+const M_PAD = 8
+const M_CREATE_TOOLS = ['node', 'text', 'line']
+// pad + creation group (flush) + (gap · divider · gap) + undo/redo group + pad
+const M_TRAY_W =
+  M_PAD * 2 +
+  M_BTN * 3 +
+  (M_DIVIDER_GAP + 1 + M_DIVIDER_GAP) +
+  M_BTN * 2                                              // 273 (fits a 320px SE)
+const M_TRAY_H = M_BTN + M_PAD * 2                       // 64
+// FeedbackChipBar raises the feedback strip this far off the bottom on
+// phones so toasts / save warnings are never covered by the always-present
+// tray (tray height + the strip's usual 16px margin).
+export const MOBILE_TRAY_CLEARANCE_PX = M_TRAY_H + 16    // 80
+
 const INACTIVE_ICON = '#9ca3af'  // gray-400 on the dark tray
 
-function iconFor(tool, active) {
+function iconFor(tool, active, size = 20) {
   const color = active ? '#ffffff' : INACTIVE_ICON
   switch (tool) {
-    case 'pointer': return <Cursor size={20} weight="fill" color={color} />
-    case 'hand':    return <Hand size={20} weight="fill" color={color} />
-    case 'node':    return <Article size={20} weight="fill" color={color} />
-    case 'text':    return <TextT size={20} weight="bold" color={color} />
-    case 'line':    return <LineToolIcon size={20} color={color} />
+    case 'pointer': return <Cursor size={size} weight="fill" color={color} />
+    case 'hand':    return <Hand size={size} weight="fill" color={color} />
+    case 'node':    return <Article size={size} weight="fill" color={color} />
+    case 'text':    return <TextT size={size} weight="bold" color={color} />
+    case 'line':    return <LineToolIcon size={size} color={color} />
     default:        return null
   }
 }
@@ -96,8 +141,81 @@ const LABELS = {
 
 const TOOL_ORDER = ['pointer', 'hand', 'node', 'text', 'line']
 
-export default function BottomToolbar({ inspectorDocked = false }) {
+// The phone-portrait tray: always visible, always expanded — creation tools
+// (Node · Text Block · Line), a desktop-style divider, then Undo · Redo
+// (QA round 1 scope amendment: phones have no Ctrl+Z, and undo is
+// trust-related). Selection state is a plain filled/unfilled swap (sky-600
+// chip on the armed tool, nothing highlighted at rest — internally the tool
+// is Pointer). Tapping the armed tool again disarms it (the mobile Esc).
+// The armed Line button is marked data-placement-cancel so a tap on it can
+// end a half-drawn line (LinePlacementOverlay lets exactly that press
+// through mid-gesture). Undo/Redo enablement reads the SAME undo store the
+// keyboard path uses — no separate mobile history; disabled = dimmed icon +
+// disabled attr (initial load: both off; first edit enables Undo; an undo
+// enables Redo). safe-area padding keeps the tray clear of the iOS
+// home-indicator band.
+function MobileCreationTray({ activeTool, setActiveTool, onUndo, onRedo }) {
+  const canUndo = useUndoStore((s) => s.past.length > 0)
+  const canRedo = useUndoStore((s) => s.future.length > 0)
+
+  const historyButton = (label, Icon, enabled, onAction) => (
+    <button
+      type="button"
+      aria-label={label}
+      disabled={!enabled}
+      onClick={onAction}
+      className="flex items-center justify-center rounded-lg disabled:opacity-40"
+      style={{ width: M_BTN, height: M_BTN }}
+    >
+      <Icon size={M_ICON} weight="bold" color={INACTIVE_ICON} />
+    </button>
+  )
+
+  return (
+    <div
+      className="fixed bottom-0 left-1/2 z-40 -translate-x-1/2 select-none bg-white/10 backdrop-blur-sm"
+      style={{
+        width: M_TRAY_W,
+        borderRadius: '12px 12px 0 0',
+        paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+      }}
+    >
+      <div className="flex items-center" style={{ padding: M_PAD }}>
+        {M_CREATE_TOOLS.map((tool) => {
+          const active = activeTool === tool
+          return (
+            <button
+              key={tool}
+              type="button"
+              aria-label={LABELS[tool]}
+              aria-pressed={active}
+              data-placement-cancel={active && tool === 'line' ? '' : undefined}
+              onClick={() => setActiveTool(active ? 'pointer' : tool)}
+              className={`flex items-center justify-center rounded-lg ${
+                active ? 'bg-sky-600' : ''
+              }`}
+              style={{ width: M_BTN, height: M_BTN }}
+            >
+              {iconFor(tool, active, M_ICON)}
+            </button>
+          )
+        })}
+        {/* Divider — same 1×32 white/20 rule as the desktop tray; it alone
+            keeps breathing room (buttons sit flush) */}
+        <div
+          className="bg-white/20"
+          style={{ width: 1, height: 32, margin: `0 ${M_DIVIDER_GAP}px` }}
+        />
+        {historyButton('Undo', ArrowUUpLeft, canUndo, onUndo)}
+        {historyButton('Redo', ArrowUUpRight, canRedo, onRedo)}
+      </div>
+    </div>
+  )
+}
+
+export default function BottomToolbar({ inspectorDocked = false, onUndo, onRedo }) {
   const touchPrimary = useTouchPrimary()
+  const mobilePortrait = useMobilePortrait()
   const [expanded, setExpanded] = useState(false)
   const [tooltip, setTooltip] = useState(null)  // { label, centerX } | null
   const hotspotRef = useRef(null)
@@ -153,7 +271,19 @@ export default function BottomToolbar({ inspectorDocked = false }) {
   const morphing = prevExpandedRef.current !== expanded
   useEffect(() => { prevExpandedRef.current = expanded }, [expanded])
 
-  // Mobile variant (always expanded, creation tools only) lands in Chunk 3.
+  // Phone portrait → the always-expanded creation tray (Chunk 3). Other
+  // touch-primary contexts (tablets, phone landscape) still get nothing —
+  // landscape is out of scope for the first cut.
+  if (mobilePortrait) {
+    return (
+      <MobileCreationTray
+        activeTool={activeTool}
+        setActiveTool={setActiveTool}
+        onUndo={onUndo}
+        onRedo={onRedo}
+      />
+    )
+  }
   if (touchPrimary) return null
 
   const showTooltipFor = (tool) => {

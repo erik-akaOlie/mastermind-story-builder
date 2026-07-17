@@ -129,3 +129,69 @@ describe('useOneShotPlacement', () => {
     expect(useToolStore.getState().activeTool).toBe('pointer')
   })
 })
+
+// Chunk 3 touch adaptation: a finger places on LIFT, not press — moving past
+// the slop or a second finger joining abandons the placement (tool stays
+// armed) so pan/zoom while armed never drops an accidental node.
+describe('useOneShotPlacement — touch (place on lift)', () => {
+  const touch = (extra) => ({ button: 0, pointerType: 'touch', pointerId: 1, ...extra })
+
+  it('a touch press alone does not place and is NOT swallowed (RF gestures stay live)', () => {
+    useToolStore.setState({ activeTool: 'node' })
+    renderHook()
+    const notCancelled = fireEvent.pointerDown(pane, touch({ clientX: 10, clientY: 20 }))
+    expect(notCancelled).toBe(true)   // no preventDefault
+    expect(onPlaceNode).not.toHaveBeenCalled()
+  })
+
+  it('a stationary tap places at the lift point', () => {
+    useToolStore.setState({ activeTool: 'node' })
+    renderHook()
+    fireEvent.pointerDown(pane, touch({ clientX: 10, clientY: 20 }))
+    fireEvent.pointerUp(pane, touch({ clientX: 12, clientY: 21 }))  // < slop
+    expect(onPlaceNode).toHaveBeenCalledWith({ x: 1012, y: 2021 })
+  })
+
+  it('a drag past the slop abandons the placement; the tool stays armed', () => {
+    useToolStore.setState({ activeTool: 'node' })
+    renderHook()
+    fireEvent.pointerDown(pane, touch({ clientX: 10, clientY: 20 }))
+    fireEvent.pointerMove(document, touch({ clientX: 40, clientY: 20 }))  // > 10px
+    fireEvent.pointerUp(pane, touch({ clientX: 40, clientY: 20 }))
+    expect(onPlaceNode).not.toHaveBeenCalled()
+    expect(useToolStore.getState().activeTool).toBe('node')
+  })
+
+  it('a second finger abandons the placement (pan/zoom intent); the tool stays armed', () => {
+    useToolStore.setState({ activeTool: 'node' })
+    renderHook()
+    fireEvent.pointerDown(pane, touch({ clientX: 10, clientY: 20 }))
+    fireEvent.pointerDown(pane, touch({ pointerId: 2, clientX: 60, clientY: 80 }))
+    fireEvent.pointerUp(pane, touch({ clientX: 10, clientY: 20 }))
+    fireEvent.pointerUp(pane, touch({ pointerId: 2, clientX: 60, clientY: 80 }))
+    expect(onPlaceNode).not.toHaveBeenCalled()
+    expect(useToolStore.getState().activeTool).toBe('node')
+  })
+
+  it('pointercancel clears the pending tap without placing', () => {
+    useToolStore.setState({ activeTool: 'text' })
+    renderHook()
+    fireEvent.pointerDown(pane, touch({ clientX: 10, clientY: 20 }))
+    fireEvent.pointerCancel(pane, touch({ clientX: 10, clientY: 20 }))
+    fireEvent.pointerUp(pane, touch({ clientX: 10, clientY: 20 }))
+    expect(onPlaceText).not.toHaveBeenCalled()
+    expect(useToolStore.getState().activeTool).toBe('text')
+  })
+
+  it('after an abandoned tap, the next clean tap still places (one-shot not burned)', () => {
+    useToolStore.setState({ activeTool: 'node' })
+    renderHook()
+    fireEvent.pointerDown(pane, touch({ clientX: 10, clientY: 20 }))
+    fireEvent.pointerMove(document, touch({ clientX: 40, clientY: 20 }))
+    fireEvent.pointerUp(pane, touch({ clientX: 40, clientY: 20 }))
+    fireEvent.pointerDown(pane, touch({ clientX: 30, clientY: 30 }))
+    fireEvent.pointerUp(pane, touch({ clientX: 30, clientY: 30 }))
+    expect(onPlaceNode).toHaveBeenCalledTimes(1)
+    expect(onPlaceNode).toHaveBeenCalledWith({ x: 1030, y: 2030 })
+  })
+})

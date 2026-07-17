@@ -42,6 +42,21 @@
 // Gesture-in-flight signal: `placementGestureActive` in useToolStore is set
 // when A lands and cleared on complete/cancel/unmount. It's what makes the
 // spacebar (and App's suspension logic) ignore mid-gesture input.
+//
+// TOUCH additions (Chunk 3, approved 2026-07-16):
+//   - a SECOND finger while the first is still drag-drawing = pan/zoom
+//     intent → the in-flight gesture is discarded (anchor A thrown away,
+//     tool stays armed) instead of finger 2 "completing" a line it never
+//     meant to draw. Known first-cut limitation: the pan attempt itself is
+//     lost (finger 1's press was already swallowed), so navigating while
+//     the Line tool is armed means disarming first — flagged for phone QA.
+//   - mid-gesture, a press on the armed Line toolbar button (marked
+//     data-placement-cancel — mobile tray only) passes through instead of
+//     being swallowed: its tap disarms the tool, App unmounts this overlay,
+//     and the half-drawn line is discarded. This is the phone stand-in for
+//     Esc, which has no key on touch.
+//   - pointercancel of the drawing finger (OS steals the touch) falls back
+//     to click-move-click mode rather than leaving a stuck preview.
 // ============================================================================
 
 import { useEffect, useRef, useState } from 'react'
@@ -110,6 +125,12 @@ export default function LinePlacementOverlay({ rfInstanceRef, onComplete }) {
       onCompleteRef.current({ ax: a.x, ay: a.y, bx: bFlow.x, by: bFlow.y })
     }
 
+    const cancelGesture = () => {
+      setAFlow(null)
+      setCursor(null)
+      pressRef.current = null
+    }
+
     const onPointerDown = (e) => {
       if (e.button !== 0) return  // secondary buttons → contextmenu handling below
       const { aFlow: a } = stateRef.current
@@ -124,12 +145,31 @@ export default function LinePlacementOverlay({ rfInstanceRef, onComplete }) {
         const screen = { x: e.clientX, y: e.clientY }
         setAFlow(toFlow(screen.x, screen.y))
         setCursor(screen)
-        pressRef.current = screen
+        pressRef.current = { ...screen, pointerId: e.pointerId }
         return
       }
-      // Mid-gesture: every primary press is ours. On the canvas it anchors B
-      // (click-move-click mode); on chrome it's a conflicting input → ignored
-      // (swallowed), so the half-drawn line survives.
+      // Touch: a second finger while the first is still drag-drawing is a
+      // pan/zoom intent, never "anchor B over there" — discard the gesture
+      // (anchor A thrown away, tool stays armed). Sequential taps
+      // (click-move-click on touch) have pressRef === null and fall through
+      // to complete normally.
+      if (
+        e.pointerType === 'touch' &&
+        pressRef.current &&
+        e.pointerId !== pressRef.current.pointerId
+      ) {
+        e.preventDefault()
+        e.stopPropagation()
+        cancelGesture()
+        return
+      }
+      // Mid-gesture, the armed Line button (mobile tray, data-placement-cancel)
+      // is the one chrome press allowed through: its tap disarms the tool and
+      // App unmounts this overlay — the phone stand-in for Esc.
+      if (e.target instanceof Element && e.target.closest('[data-placement-cancel]')) return
+      // Mid-gesture: every other primary press is ours. On the canvas it
+      // anchors B (click-move-click mode); on chrome it's a conflicting
+      // input → ignored (swallowed), so the half-drawn line survives.
       e.preventDefault()
       e.stopPropagation()
       if (!onPane(e.target)) return
@@ -166,14 +206,45 @@ export default function LinePlacementOverlay({ rfInstanceRef, onComplete }) {
       e.stopPropagation()
     }
 
+    // OS stole the drawing finger (rare with touch-action:none, but possible):
+    // fall back to click-move-click mode — anchor A survives, the press is
+    // forgotten, and the preview keeps tracking instead of freezing.
+    const onPointerCancel = (e) => {
+      if (pressRef.current && e.pointerId === pressRef.current.pointerId) {
+        pressRef.current = null
+      }
+    }
+
+    // TOUCH-DRAG REGRESSION FIX (Erik's phone QA, 2026-07-16): React Flow's
+    // drag/zoom plumbing is d3-based and listens to TOUCHSTART, not pointer
+    // events. Swallowing the pointerdown (above) suppresses the derived
+    // MOUSE events, but a touch also fires its own touchstart — which was
+    // reaching RF's node-drag handler, so drawing a line with anchor A on or
+    // near an existing line GRABBED that line and dragged it with the
+    // gesture. Mirror the pointerdown ownership rules for touchstart:
+    // pre-anchor, canvas-targeted touches are ours (chrome stays live);
+    // mid-gesture everything is ours except the armed Line button's cancel
+    // tap. stopPropagation only — no preventDefault, so the browser's
+    // pointer/click synthesis (which the state machine runs on) is intact.
+    const onTouchStart = (e) => {
+      const mine = stateRef.current.aFlow
+        ? !(e.target instanceof Element && e.target.closest('[data-placement-cancel]'))
+        : onPane(e.target)
+      if (mine) e.stopPropagation()
+    }
+
     document.addEventListener('pointerdown', onPointerDown, true)
     document.addEventListener('pointermove', onPointerMove, true)
     document.addEventListener('pointerup', onPointerUp, true)
+    document.addEventListener('pointercancel', onPointerCancel, true)
+    document.addEventListener('touchstart', onTouchStart, true)
     document.addEventListener('contextmenu', onContextMenu, true)
     return () => {
       document.removeEventListener('pointerdown', onPointerDown, true)
       document.removeEventListener('pointermove', onPointerMove, true)
       document.removeEventListener('pointerup', onPointerUp, true)
+      document.removeEventListener('pointercancel', onPointerCancel, true)
+      document.removeEventListener('touchstart', onTouchStart, true)
       document.removeEventListener('contextmenu', onContextMenu, true)
     }
   }, [rfInstanceRef])

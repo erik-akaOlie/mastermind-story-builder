@@ -1,4 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { useReactFlow } from 'reactflow'
 import {
   TextAlignLeft, TextAlignCenter, TextAlignRight,
@@ -12,7 +13,7 @@ import { ACTION_TYPES } from '../lib/undo/index.js'
 import { useZoomInvariantScale } from '../hooks/useZoomInvariantScale.js'
 import { useTouchPrimary } from '../hooks/useTouchPrimary.js'
 import { lockTextBlockGeometry, unlockTextBlockGeometry } from '../lib/interactionLocks.js'
-import { CanvasToolbar, ToolbarDivider, placeFloatingToolbar } from '../components/CanvasToolbar.jsx'
+import { CanvasToolbar, ToolbarDivider, placeFloatingToolbar, placeDropdown } from '../components/CanvasToolbar.jsx'
 
 const DEFAULT_WIDTH = 240
 const MIN_WIDTH     = 80
@@ -110,6 +111,11 @@ export default function TextNode({ id, data, xPos, yPos }) {
   const [isBold,    setIsBold]    = useState(false)
   const [isItalic,  setIsItalic]  = useState(false)
   const [sizeMenuOpen, setSizeMenuOpen] = useState(false)
+  // Screen-space placement for the PORTALED font-size menu ({ left, top },
+  // null until first measured). See the placement effect below.
+  const [sizeMenuPlace, setSizeMenuPlace] = useState(null)
+  const sizeAnchorRef = useRef(null)  // the font-size input+caret group
+  const sizeMenuRef   = useRef(null)  // the portaled menu, for measuring
 
   const editorRef   = useRef(null)
   const pendingCaretPointRef = useRef(null)  // screen point of the enter-edit tap (touch caret placement)
@@ -564,6 +570,30 @@ export default function TextNode({ id, data, xPos, yPos }) {
     )
   })
 
+  // Font-size menu placement (Erik's phone QA, 2026-07-16: the in-toolbar
+  // dropdown opened DOWNWARD behind the bottom toolbar and off-viewport).
+  // The menu now renders in a document.body portal at the context-menu tier
+  // (fixed, z-[9999]) so it sits above ALL chrome — an in-canvas z-index can
+  // never beat fixed chrome across stacking contexts — and placeDropdown
+  // (shared helper next to placeFloatingToolbar) flips it above the anchor
+  // when the bottom would clip and clamps it in-window. Runs after every
+  // render like the toolbar placement above, so it tracks pan/zoom while
+  // open; the setState guard keeps it from looping.
+  useLayoutEffect(() => {
+    if (!sizeMenuOpen) { if (sizeMenuPlace) setSizeMenuPlace(null); return }
+    const anchor = sizeAnchorRef.current, menu = sizeMenuRef.current
+    if (!anchor || !menu) return
+    const target = placeDropdown(anchor.getBoundingClientRect(), {
+      w: menu.offsetWidth,
+      h: menu.offsetHeight,
+    })
+    setSizeMenuPlace((prev) =>
+      prev && Math.abs(prev.left - target.left) < 0.5 && Math.abs(prev.top - target.top) < 0.5
+        ? prev
+        : target,
+    )
+  })
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div style={{ position: 'relative', width }}>
@@ -604,7 +634,7 @@ export default function TextNode({ id, data, xPos, yPos }) {
               one focusable control in the toolbar; its blur logic and the
               editor's relatedTarget guard keep the edit session alive while the
               user interacts with it (see onEditorBlur + the input listeners). */}
-          <div className="relative flex items-center">
+          <div ref={sizeAnchorRef} className="relative flex items-center">
             <input
               ref={fontInputRef}
               type="text"
@@ -619,10 +649,25 @@ export default function TextNode({ id, data, xPos, yPos }) {
               onAction={() => setSizeMenuOpen((o) => !o)}
             ><CaretDown size={12} weight="bold" /></NativeButton>
 
-            {sizeMenuOpen && (
+            {/* Portaled to body (fixed, context-menu z tier) so it renders
+                above ALL chrome incl. the bottom toolbar, flipped/clamped
+                in-viewport by the placement effect. Hidden until measured.
+                The pointer/mouse-down guards mirror the toolbar wrapper's:
+                keep the editor focused so the edit session survives the
+                click (NativeButton's own preventDefault covers the buttons;
+                this covers the menu's padding/scrollbar). */}
+            {sizeMenuOpen && createPortal(
               <div
-                className="absolute top-full left-0 mt-1 z-30 bg-white border border-gray-200 rounded-lg shadow-lg py-1 max-h-48 overflow-y-auto"
-                style={{ minWidth: '3rem' }}
+                ref={sizeMenuRef}
+                className="fixed z-[9999] bg-white border border-gray-200 rounded-lg shadow-lg py-1 max-h-48 overflow-y-auto"
+                style={{
+                  minWidth: '3rem',
+                  left: sizeMenuPlace?.left ?? 0,
+                  top: sizeMenuPlace?.top ?? 0,
+                  visibility: sizeMenuPlace ? 'visible' : 'hidden',
+                }}
+                onPointerDown={(e) => e.preventDefault()}
+                onMouseDown={(e) => { e.stopPropagation(); e.preventDefault() }}
               >
                 {FONT_SIZE_PRESETS.map((px) => (
                   <NativeButton
@@ -631,7 +676,8 @@ export default function TextNode({ id, data, xPos, yPos }) {
                     onAction={() => pickFontSize(px)}
                   >{px}</NativeButton>
                 ))}
-              </div>
+              </div>,
+              document.body,
             )}
           </div>
 
