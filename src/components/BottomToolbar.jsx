@@ -189,6 +189,7 @@ function MobileCreationTray({ activeTool, setActiveTool, onUndo, onRedo }) {
               type="button"
               aria-label={LABELS[tool]}
               aria-pressed={active}
+              data-ftue-target={tool}
               data-placement-cancel={active && tool === 'line' ? '' : undefined}
               onClick={() => setActiveTool(active ? 'pointer' : tool)}
               className={`flex items-center justify-center rounded-lg ${
@@ -213,7 +214,13 @@ function MobileCreationTray({ activeTool, setActiveTool, onUndo, onRedo }) {
   )
 }
 
-export default function BottomToolbar({ inspectorDocked = false, onUndo, onRedo }) {
+// `forceExpanded` (FTUE, 2026-07-16): while the handwritten introduction is
+// visible, App holds the desktop tray open — the intro's arrows point at the
+// tool buttons, so the tray must be showing them (Figma 225-1971 starts with
+// the toolbar open). Hover state still tracks underneath; when the force
+// releases (first item created), the tray collapses via the normal morph
+// unless the mouse is over the hotspot.
+export default function BottomToolbar({ inspectorDocked = false, forceExpanded = false, onUndo, onRedo }) {
   const touchPrimary = useTouchPrimary()
   const mobilePortrait = useMobilePortrait()
   const [expanded, setExpanded] = useState(false)
@@ -258,18 +265,21 @@ export default function BottomToolbar({ inspectorDocked = false, onUndo, onRedo 
     }
   }, [touchPrimary])
 
+  // What the user SEES open: hover-expanded OR held open by the FTUE intro.
+  const shown = expanded || forceExpanded
+
   useEffect(() => {
-    if (!expanded) setTooltip(null)
-  }, [expanded])
+    if (!shown) setTooltip(null)
+  }, [shown])
   useEffect(() => () => clearTimeout(tooltipTimerRef.current), [])
 
   // The chip animates ONLY while the tab⇄tray morph is in flight — i.e. on
-  // the render where `expanded` flipped. A tool switch while expanded moves
+  // the render where `shown` flipped. A tool switch while expanded moves
   // it instantly (Erik, QA pass 3: a sliding highlight reads as the toolbar
   // reorganizing rather than a selection change).
-  const prevExpandedRef = useRef(expanded)
-  const morphing = prevExpandedRef.current !== expanded
-  useEffect(() => { prevExpandedRef.current = expanded }, [expanded])
+  const prevShownRef = useRef(shown)
+  const morphing = prevShownRef.current !== shown
+  useEffect(() => { prevShownRef.current = shown }, [shown])
 
   // Phone portrait → the always-expanded creation tray (Chunk 3). Other
   // touch-primary contexts (tablets, phone landscape) still get nothing —
@@ -301,7 +311,7 @@ export default function BottomToolbar({ inspectorDocked = false, onUndo, onRedo 
   // bottom border), the active tool's slot when expanded. During the morph
   // the tray box and the chip transition together, so the chip reads as
   // sliding into its slot.
-  const chip = expanded
+  const chip = shown
     ? { left: SLOT_X[shownTool], top: BTN_Y, size: BTN }
     : { left: (TAB_W - CHIP) / 2, top: 8, size: CHIP }
 
@@ -328,18 +338,18 @@ export default function BottomToolbar({ inspectorDocked = false, onUndo, onRedo 
       {/* Tab ⇄ tray (the only visible surface; interactive only when expanded) */}
       <div
         className={`absolute bottom-0 left-1/2 -translate-x-1/2 overflow-hidden bg-white/10 backdrop-blur-sm transition-all duration-200 ease-out ${
-          expanded ? 'pointer-events-auto' : ''
+          shown ? 'pointer-events-auto' : ''
         }`}
         style={{
-          width: expanded ? HOTSPOT_W : TAB_W,
-          height: expanded ? HOTSPOT_H : TAB_H,
+          width: shown ? HOTSPOT_W : TAB_W,
+          height: shown ? HOTSPOT_H : TAB_H,
           borderRadius: '12px 12px 0 0',
         }}
       >
         {/* Tool buttons + divider — fade in as the tray grows */}
         <div
           className={`absolute inset-0 transition-opacity duration-150 ${
-            expanded ? 'opacity-100' : 'pointer-events-none opacity-0'
+            shown ? 'opacity-100' : 'pointer-events-none opacity-0'
           }`}
         >
           {TOOL_ORDER.map((tool) => {
@@ -350,6 +360,7 @@ export default function BottomToolbar({ inspectorDocked = false, onUndo, onRedo 
                 type="button"
                 aria-label={LABELS[tool]}
                 aria-pressed={active}
+                data-ftue-target={M_CREATE_TOOLS.includes(tool) ? tool : undefined}
                 onClick={() => setActiveTool(tool)}
                 onMouseEnter={() => showTooltipFor(tool)}
                 onMouseLeave={hideTooltip}
@@ -388,7 +399,7 @@ export default function BottomToolbar({ inspectorDocked = false, onUndo, onRedo 
             className={`flex items-center justify-center ${
               morphing ? 'transition-transform duration-200 ease-out' : ''
             }`}
-            style={{ transform: expanded ? 'scale(1)' : 'scale(0.8)' }}
+            style={{ transform: shown ? 'scale(1)' : 'scale(0.8)' }}
           >
             {iconFor(shownTool, true)}
           </span>

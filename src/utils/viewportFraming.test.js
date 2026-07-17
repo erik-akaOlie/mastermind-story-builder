@@ -9,6 +9,7 @@ import {
   computeEntryViewport,
   computeEnvelopeFitZoom,
   computeFocusViewport,
+  emptyWorkspaceEntryZoomFloor,
   nodeCenter,
   FOCUS_ZOOM,
   STARTER_ROOM_WIDTH,
@@ -213,5 +214,60 @@ describe('computeFocusViewport', () => {
   it('returns a safe identity viewport for degenerate input', () => {
     expect(computeFocusViewport({ center: null, viewportWidth: 800, viewportHeight: 600 }))
       .toEqual({ x: 0, y: 0, zoom: FOCUS_ZOOM })
+  })
+})
+
+describe('empty-workspace entry zoom floor (MB-8 completion, FTUE chunk 1)', () => {
+  it('floors the entry zoom on small windows so the first node is a card', () => {
+    // A 1366×768 laptop: pure envelope-fit lands ~0.32 — deep in Bead View.
+    const floor = emptyWorkspaceEntryZoomFloor(2.65)
+    const vp = computeEntryViewport({
+      envelope: computeEnvelope([]),
+      viewportWidth: 1366, viewportHeight: 768,
+      reservedLeftPx: 64, reservedRightPx: 496,
+      minZoom: floor,
+    })
+    expect(vp.zoom).toBeCloseTo(floor)
+    // Comfortably above the up-trigger (threshold × hysteresis ≈ 0.576).
+    expect(vp.zoom).toBeGreaterThan(0.576)
+  })
+
+  it('keeps the starter room centered under the floored zoom', () => {
+    const floor = emptyWorkspaceEntryZoomFloor(2.65)
+    const vp = computeEntryViewport({
+      envelope: computeEnvelope([]),
+      viewportWidth: 1366, viewportHeight: 768,
+      reservedLeftPx: 64, reservedRightPx: 496,
+      minZoom: floor,
+    })
+    // Envelope center (0,0) must land at the work-area center:
+    // x = 64 + (1366 − 560) / 2 = 467; y = 768 / 2 = 384.
+    expect(vp.x + 0 * vp.zoom).toBeCloseTo(64 + (1366 - 560) / 2)
+    expect(vp.y + 0 * vp.zoom).toBeCloseTo(384)
+  })
+
+  it('does not raise the zoom when the fit is already above the floor', () => {
+    // A very large window fits the starter room above the floor already.
+    const floor = emptyWorkspaceEntryZoomFloor(2.65)
+    const vp = computeEntryViewport({
+      envelope: computeEnvelope([]),
+      viewportWidth: 3840, viewportHeight: 2160,
+      reservedLeftPx: 64, reservedRightPx: 496,
+      minZoom: floor,
+    })
+    expect(vp.zoom).toBe(1) // capped at maxZoom, floor irrelevant
+  })
+
+  it('defaults to no floor (occupied-workspace path is unchanged)', () => {
+    const vp = computeEntryViewport({
+      envelope: computeEnvelope([]),
+      viewportWidth: 1366, viewportHeight: 768,
+      reservedLeftPx: 64, reservedRightPx: 496,
+    })
+    expect(vp.zoom).toBeLessThan(0.5)
+  })
+
+  it('scales the floor with a user-tuned threshold', () => {
+    expect(emptyWorkspaceEntryZoomFloor(5.3)).toBeCloseTo(emptyWorkspaceEntryZoomFloor(2.65) * 2)
   })
 })

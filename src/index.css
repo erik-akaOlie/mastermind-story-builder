@@ -1,4 +1,8 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
+/* Inter = interface copy. Caveat = the BRAND "direct-to-user" voice font
+   (font-hand in tailwind.config.js): handwritten, warm, personal-note
+   register — first used by the FTUE introduction; reuse it whenever the
+   experience speaks to the user as a person, never for regular UI chrome. */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Caveat:wght@400;600&display=swap');
 
 @tailwind base;
 @tailwind components;

@@ -18,6 +18,7 @@
 
 import { useEffect, useRef } from 'react'
 import { useUndoStore } from '../store/useUndoStore.js'
+import { noteUndoResult, noteRedoResult } from '../store/useFtueStore.js'
 import { track } from '../lib/analytics.js'
 
 export function useUndoShortcuts({ nodes, edges, setNodes, setEdges }) {
@@ -41,11 +42,16 @@ export function useUndoShortcuts({ nodes, edges, setNodes, setEdges }) {
       if (key === 'z' && !e.shiftKey) {
         e.preventDefault()
         track('undo_invoked')
+        // FTUE rewind check reads the content count BEFORE the undo applies
+        // (undoing the only item's creation brings the intro back — mirrors
+        // App's onToolbarUndo; semantics live in useFtueStore).
+        const priorNodeCount = stateRef.current.nodes.length
         useUndoStore.getState().undo(stateRef.current)
+          .then((result) => noteUndoResult(result, priorNodeCount))
       } else if ((key === 'z' && e.shiftKey) || key === 'y') {
         e.preventDefault()
         track('redo_invoked')
-        useUndoStore.getState().redo(stateRef.current)
+        useUndoStore.getState().redo(stateRef.current).then(noteRedoResult)
       }
     }
 

@@ -74,11 +74,14 @@ import {
   computeEnvelope,
   computeEntryViewport,
   computeEnvelopeFitZoom,
+  emptyWorkspaceEntryZoomFloor,
   SEARCH_BEAD_ZOOM_FACTOR,
   RESERVED_INSPECTOR_BAND_PX,
   RESERVED_RAIL_BAND_PX,
   NARROW_VIEWPORT_MAX_PX,
 } from './utils/viewportFraming.js'
+import FtueIntro from './components/FtueIntro'
+import { useFtueStore, noteLocalCreate, noteUndoResult, noteRedoResult } from './store/useFtueStore'
 
 // Analytics thresholds (per ADR-0009). pan_burst fires when the user
 // completes >= THRESHOLD discrete pan gestures in WINDOW_MS, then resets.
@@ -126,6 +129,18 @@ export default function App() {
     setNodes,
     setEdges,
   })
+
+  // ── FTUE introduction (Figma 225-1971, chunk 1) ──────────────────────────
+  // The handwritten first-run guidance shows while the canvas has no content
+  // AND this workspace's completed flag is unset (localStorage — see
+  // useFtueStore for the create/undo/delete semantics). Derivation, not
+  // storage: a remote insert hides it (content exists) without marking it
+  // completed, per the rule that only the USER's own creation completes it.
+  useEffect(() => {
+    useFtueStore.getState().setScope(activeWorkspaceId)
+  }, [activeWorkspaceId])
+  const ftueDone = useFtueStore((s) => s.done)
+  const ftueEligible = !loading && !ftueDone && nodes.length === 0
 
   // Active-tool system (bottom toolbar). The spacebar hook writes the
   // while-held flag into useToolStore; `isPanning` is true whenever the
@@ -406,12 +421,20 @@ export default function App() {
     const vw = window.innerWidth
     const vh = window.innerHeight
     const narrow = vw <= NARROW_VIEWPORT_MAX_PX
+    // EMPTY workspace (MB-8 completion): floor the entry zoom card-side of
+    // the live card↔bead threshold so the FIRST created node appears as a
+    // card, never a tiny bead. Occupied workspaces keep pure envelope-fit
+    // (the whole graph must always fit at entry).
+    const isEmpty = nodesRef.current.length === 0
     rf.setViewport(computeEntryViewport({
       envelope: computeEnvelope(nodesRef.current),
       viewportWidth:  vw,
       viewportHeight: vh,
       reservedLeftPx:  narrow ? 0 : RESERVED_RAIL_BAND_PX,
       reservedRightPx: narrow ? 0 : RESERVED_INSPECTOR_BAND_PX,
+      minZoom: isEmpty
+        ? emptyWorkspaceEntryZoomFloor(useCanvasUiStore.getState().thresholdGridGapMm)
+        : 0,
     }))
   }, [])
 
@@ -1029,6 +1052,9 @@ export default function App() {
     // slow network — long enough to read as "the tap didn't work." The id is
     // generated client-side so the Realtime echo dedups (INSERT handler
     // checks ids) and the insert row matches the optimistic node exactly.
+    // FTUE: whether this create is the workspace's FIRST content — captured
+    // BEFORE the optimistic add so the flag semantics see the prior state.
+    const wasEmpty = nodesRef.current.length === 0
     const cardId = safeRandomUUID()
     const optimisticNode = dbNodeToReactFlow(
       {
@@ -1086,6 +1112,10 @@ export default function App() {
         },
       })
 
+      // A successful LOCAL create completes the FTUE intro for this
+      // workspace (idempotent; remote inserts never reach this path).
+      noteLocalCreate({ workspaceId: activeWorkspaceId, kind: 'node', wasEmpty })
+
       // The Inspector still waits for the persist: its auto-save UPDATEs the
       // row, and an update racing a not-yet-landed insert is a silent no-op
       // (lost write). The instantly-visible card is the "it worked" signal;
@@ -1117,6 +1147,7 @@ export default function App() {
     // block appears — already in edit mode — the moment the tap lands.
     // Client-generated id so the Realtime echo dedups. The dbRow mirrors
     // createTextNode's defaults; save-on-blur happens far after the insert.
+    const wasEmpty = nodesRef.current.length === 0  // FTUE: pre-create state
     const textNodeId = safeRandomUUID()
     const dbRow = {
       id:           textNodeId,
@@ -1156,6 +1187,8 @@ export default function App() {
         textNodeId,
         dbRow,
       })
+
+      noteLocalCreate({ workspaceId: activeWorkspaceId, kind: 'text', wasEmpty })
     } catch (err) {
       // Roll the optimistic block back — persistWrite already surfaced the
       // failure to the user (toast/lock flow).
@@ -1173,6 +1206,7 @@ export default function App() {
   // toolbar appears via the selection.
   const addLineFromPlacement = useCallback(async ({ ax, ay, bx, by }) => {
     useToolStore.getState().setActiveTool('pointer')  // one-shot rule
+    const wasEmpty = nodesRef.current.length === 0  // FTUE: pre-create state
     try {
       const newLine = await dbCreateLine({ workspaceId: activeWorkspaceId, ax, ay, bx, by })
       setNodes((nds) => [
@@ -1196,6 +1230,8 @@ export default function App() {
         lineId: newLine.id,
         dbRow: buildLineDbRow(newLine, activeWorkspaceId),
       })
+
+      noteLocalCreate({ workspaceId: activeWorkspaceId, kind: 'line', wasEmpty })
     } catch (err) {
       console.error('Failed to create line:', err)
     }
@@ -1223,12 +1259,16 @@ export default function App() {
   // callbacks stable while always reading fresh canvas state.
   const onToolbarUndo = useCallback(() => {
     track('undo_invoked')
+    // FTUE rewind check needs the content count BEFORE the undo applies —
+    // undoing the only item's creation brings the intro back (see
+    // useFtueStore; the Ctrl+Z path in useUndoShortcuts mirrors this).
+    const priorNodeCount = nodesRef.current.length
     useUndoStore.getState().undo({
       nodes: nodesRef.current,
       edges: edgesRef.current,
       setNodes,
       setEdges,
-    })
+    }).then((result) => noteUndoResult(result, priorNodeCount))
   }, [setNodes, setEdges])
   const onToolbarRedo = useCallback(() => {
     track('redo_invoked')
@@ -1237,7 +1277,7 @@ export default function App() {
       edges: edgesRef.current,
       setNodes,
       setEdges,
-    })
+    }).then(noteRedoResult)
   }, [setNodes, setEdges])
 
   // Live endpoint re-anchor while a handle drags (LineNode via CanvasOps —
@@ -2334,8 +2374,12 @@ export default function App() {
       <MarqueeRect marquee={marqueeOverlay} rfInstanceRef={rfInstanceRef} />
       <QuickConnectLine quickConnect={quickConnect} rfInstanceRef={rfInstanceRef} />
       <AltitudeRail onZoomTo={onZoomToFromRail} />
+      {/* Handwritten first-run introduction — pointer-events-none overlay;
+          also holds the tray open below so its arrows have real targets. */}
+      <FtueIntro visible={ftueEligible} />
       <BottomToolbar
         inspectorDocked={inspectorNode?.mode === 'docked'}
+        forceExpanded={ftueEligible}
         onUndo={onToolbarUndo}
         onRedo={onToolbarRedo}
       />

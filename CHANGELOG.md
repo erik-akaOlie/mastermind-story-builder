@@ -4,6 +4,66 @@ A running log of meaningful changes to MasterMind: Story Builder. Append-only. N
 
 ## [Unreleased]
 
+### FTUE introduction — Chunk 1: desktop handwritten guidance (2026-07-16)
+
+A brand-new (or still-empty) workspace now teaches itself. Per Erik's
+storyboard (Figma 225-1971), an empty canvas shows handwritten guidance in
+**Caveat** — established here as the reusable brand "direct-to-user" voice
+font (`font-hand`): *"Welcome to your new workspace — get started by adding
+your first node"*, with hand-drawn-styled SVG arrows pointing at the real
+toolbar buttons (measured live via `data-ftue-target` tags — never
+hardcoded coordinates), plus a quieter "You can also…" aside for text
+blocks and lines. The toolbar tray is held open while the intro is showing.
+Arming a creation tool swaps the copy to *"Now place the node wherever you
+like on the canvas"* (per-tool variants); the first successful creation
+fades everything out — and the existing creation flow already opens the
+Inspector with the title focused, so naming is the obvious next step.
+
+**Completion semantics (Erik's timeline model).** The intro is completed by
+*the user's own first creation* (per-workspace localStorage flag — UX
+state, deliberately not a DB column). **Undoing** that creation back to an
+empty canvas rewinds time and brings the intro back; **deleting** content
+back to empty is forward motion and does not — a deliberately blank canvas
+is honored. Remote (Realtime) inserts hide the overlay while the content
+exists but never mark the intro completed. Redoing a creation completes it
+again. New analytics events: `ftue_shown`, `ftue_completed`,
+`ftue_rewound`.
+
+**MB-8 completed: first node is always a card.** Empty-workspace entry
+framing now floors the zoom comfortably card-side of the live card↔bead
+threshold (small windows used to open an empty workspace deep in Bead
+View, so the first-created node appeared as a tiny bead). Occupied
+workspaces keep pure envelope-fit framing, unchanged.
+
+**Mobile portrait included** (iterated across Erik's on-device Android QA
+to a revised mockup, 2026-07-17): phones teach **content vs. structure**
+instead of mirroring the desktop copy — a large "Welcome," the mission
+line "Use these tools to build your workspace," then a small two-column
+tool legend directly above the always-visible tray, its rows aligned like
+a table: *add content with **Nodes*** and *structure and organize with
+**Labels & Lines***, with three short hand-drawn arrows — one under each
+tool name (Nodes, Labels, Lines) — bridging the legend down to its tool. The legend introduces **"Labels"** as
+the user-facing name for text blocks — reframing them as an organizing
+tool rather than a place for story content (product-wide rename of the
+remaining "text block" strings is a pending decision). Everything is
+bottom-anchored and safe-area aware, so the rhythm is identical across
+phones and surplus height becomes headroom above the welcome. Tablets and
+phone landscape render no intro (they have no toolbar to point at). Erik's
+design-QA passes on desktop are folded in: a three-tier visual hierarchy
+(96px centered title / 48px instruction near the tray / tertiary aside
+pushed right with a laptop-safe clamp), lighter shortened arrows whose
+arrival tangents aim at the icon centers with breathing room above the
+buttons, the placement message one tray-height above the tray, and the
+`leading-hand` token (tightened line spacing for wrapped Caveat — now a
+standing design-system rule). **Responsive desktop rules** (from Erik's
+narrow-window QA): the title and instruction scale together through one
+band locked at a 2:1 ratio, so narrowing a window can never make the
+instruction outweigh the welcome; and the tertiary "You can also…" block
+(with its arrows) drops out entirely — via a measured minimum-gap rule,
+not a breakpoint — before it could ever slide over the instruction. Unit
+tests cover the flag semantics, both layout variants' state derivation,
+the collision rule, the path helpers, and the entry-zoom floor.
+
 ### Mobile zoom tool: deterministic tap-to-open + dead-column fix (2026-07-16)
 
 The left-edge zoom tool (altitude rail) now has a real touch model on

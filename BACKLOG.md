@@ -525,6 +525,240 @@ and markdown export are Soon-after. **Honest sizing:** remaining Bucket-1 is
     Phone QA round 2 should re-check: sizing feel, undo/redo, drawing a
     line starting on an existing line, the font-size dropdown near the
     bottom, and placement immediacy.
+  - **Build status (2026-07-16, FTUE introduction Chunk 1 — desktop).**
+    Implemented, awaiting Erik's signed-in desktop QA (uncommitted).
+    Approved amendments incorporated (Erik via ChatGPT review, 2026-07-16):
+    (1) **Caveat** shipped as the reusable brand "direct-to-user" voice
+    font — `font-hand` token in tailwind.config.js, loaded alongside Inter;
+    (2) **arrows are computed SVG paths** (hand-drawn styling: bowed cubics,
+    round caps, open two-stroke heads), anchored tail-at-text /
+    tip-at-measured-button via `data-ftue-target` attributes on BOTH trays'
+    creation buttons — no raster assets, no hardcoded coordinates;
+    (3) **completed-flag = localStorage** (`mastermind:ftue-done:<wsId>`,
+    Option A per Erik — UX state, no DB migration; migrates cleanly to a
+    column if beta feedback demands cross-device); (4) **timeline
+    semantics**: only the user's own successful create completes it (remote
+    Realtime inserts hide but never complete); undo-of-create-to-empty
+    REWINDS (intro returns); delete-to-empty does NOT; redo-of-create
+    completes again. Wiring: creators (addCardNode / addTextNode /
+    addLineFromPlacement) call noteLocalCreate after the persist+recordAction
+    success moment; both undo paths (Ctrl+Z + toolbar) route results through
+    noteUndoResult/noteRedoResult (useFtueStore.js owns all semantics).
+    New FtueIntro.jsx overlay (pointer-events-none, z-30): welcome state ⇄
+    per-tool placement state (derived from activeTool so spacebar suspension
+    doesn't flicker copy), 300ms crossfades (0 under reduced-motion);
+    BottomToolbar gains forceExpanded (tray held open while intro shows).
+    MB-8 COMPLETED in the same chunk: empty-workspace entry zoom floored
+    card-side of the live threshold (emptyWorkspaceEntryZoomFloor —
+    up-trigger × 1.25; occupied workspaces untouched). Analytics:
+    ftue_shown / ftue_completed / ftue_rewound. Desktop-only: touch renders
+    nothing yet (mobile layout = next chunk; Figma frame 265:229). Verified:
+    623 tests green (50 files; new useFtueStore + FtueIntro suites, MB-8
+    floor cases in viewportFraming, BottomToolbar suite passes the
+    forceExpanded refactor), dev server loads clean, font-hand resolves to
+    a registered Caveat face. NOT harness-verifiable: the FTUE itself is
+    behind auth + the arrow AESTHETICS are a designer's call — Erik's QA
+    list (8 items, agreed 2026-07-16) covers new-workspace show, 10s
+    create+name, undo-rewind, delete-no-return, reload persistence,
+    second-workspace independence, arrow alignment across window sizes,
+    first-node-as-card.
+  - **Design QA passes 1–2 on Chunk 1 (2026-07-16, Erik).** Pass 1
+    (hierarchy): title → 96px near vertical center (vw-guarded on narrow
+    windows); "Get started…" → 48px, bottom-anchored near the tray;
+    aside → 24/28px; placement copy → 40px, bottom-anchored; arrows
+    shortened/lightened, tips backed 32px off the buttons, arrival
+    tangents AIMED at icon centers (the aim param — a curve that lands on
+    a spot but aims past it reads as pointing at the neighbor). Pass 2:
+    `leading-hand` token added to tailwind.config (1.15 at first; tuned
+    to 0.85 — 85% of font size — per Erik 2026-07-17) — the standing
+    rule that WRAPPED Caveat text uses tightened leading (see CLAUDE.md
+    brand-font convention; NOTE: tailwind.config changes need a dev-server
+    restart to take effect); aside pushed to +320px right of center +
+    down to 120px bottom-offset, with a min() clamp (accounts for the
+    48px item indent + 48px right margin) so laptops don't clip it.
+    Geometry DOM-verified at 1366×768 and 1920×1080 via an in-page
+    harness (leading 55.2/27.6px, tips 32px clear at correct x, clamp
+    engaged only at laptop width, nothing offscreen); pane screenshots
+    remain impossible headless (paint-dependent captures freeze — known
+    harness limitation), so the visual feel check is Erik's live QA.
+    Pass 3: placement message moved to ONE TRAY-HEIGHT above the tray
+    (gap = 72px desktop; encoded as a rule, not a number). Aside
+    letter-form definition at 24px ACCEPTED as-is (Erik, 2026-07-17):
+    thinning the stroke is impossible — Caveat's variable range bottoms
+    out at weight 400 — and opacity/size/second-font alternatives don't
+    address the root issue; revisit only if beta feedback flags it.
+  - **Build status (2026-07-17, FTUE Chunk 2 — mobile portrait, Figma
+    265:229).** Implemented, awaiting Erik's on-device phone QA
+    (uncommitted). Same overlay component, state machine, flag semantics,
+    and analytics; phone-portrait variant (useMobilePortrait, the mobile
+    tray's own gate): title higher (14% top, 12vw capped at 48px, the
+    Figma 3-line breaks), instruction + aside stacked above the
+    always-visible phone tray with every bottom offset adding
+    env(safe-area-inset-bottom), big arrow diving from the subtitle's
+    left to the Node button (leftmost), aside tucked 16px off the right
+    edge, tips 24px above buttons (16px clear of the 56px tray — same
+    relationship as desktop), placement message one TRAY-height (56px)
+    above the tray. Tablets/phone-landscape still render nothing (no
+    toolbar to point at). Verified: 625 tests green (mobile variant
+    cases added; the old renders-nothing-on-phone pins updated),
+    forced-touch harness probe at 375×812 (title/subtitle/aside/tips all
+    at spec, placement gap exactly 56, nothing offscreen). On-device
+    checks for Erik: welcome→placement feel, arrow shapes at real DPR,
+    safe-area clearance on the iPhone home-indicator band, and that
+    two-finger pan/zoom never flickers the copy.
+  - **Design QA pass 4 — desktop responsiveness (2026-07-17, from Erik's
+    narrow-window screenshots).** Two real bugs fixed: (1) hierarchy
+    inversion — the title scaled with the window (7vw) while tier 2 stayed
+    fixed 48px, so narrowing made "Get started…" the dominant text. Now a
+    COORDINATED type scale: title clamp(56, 7vw, 96) and subtitle
+    clamp(28, 3.5vw, 48) move through the same vw band locked 2:1 — the
+    welcome is the primary hit at every desktop width; never scale one
+    tier without the other. (2) collision — the aside's laptop clamp slid
+    it left into/behind tier 2, arrows crossing text. Now
+    hide-before-collision: MEASURED rule (shouldShowAside — the CSS min()
+    mirrored in JS vs the subtitle's live right edge + 48px minimum gap),
+    not a breakpoint, since tier 2's width varies with the type scale;
+    below the threshold (~1250px at current copy) the tertiary block AND
+    its two arrows drop out entirely (optional support, per Erik's call),
+    leaving title + instruction + the one main arrow. Runs in the layout
+    effect so a colliding aside never paints. Fixed in passing: removing
+    the title's nowrap exposed abs-position shrink-to-fit at left:50%
+    (element gets only the window's right half → premature wrap);
+    width:max-content added to every translate-centered text block.
+    Verified: 629 tests green (collision-rule unit cases incl. exact
+    threshold; mobile pins untouched); harness sweep 1920 / 1366 (3 tiers,
+    ratio 2.0, gaps 144/91, 3 arrows) / 1000 / 800 (aside+side-arrows
+    gone, 1 arrow, floors 56/28 reached, title one line, nothing
+    offscreen); mobile probe at 375×812 identical to the chunk-2 numbers
+    (aside exempt — the stacked layout can't collide). Erik re-check:
+    live window-squeeze feel on desktop, incl. the width where the aside
+    disappears.
+  - **Design QA pass 5 — mobile composition (2026-07-17, from Erik's
+    Android screenshot; desktop declared buttoned-up).** Root cause of
+    the "sloppy/cramped" read: SPLIT ANCHORING — title hung from the
+    screen top while guidance hung from the bottom, so every device's
+    height variance landed in the middle gap and the rhythm was
+    different (and unintentional) per phone. Replaced with ONE
+    bottom-anchored flex stack: two EQUAL 88px gaps
+    (title→instruction→aside), stack bottom 96px above the window edge
+    (+ safe-area), and ALL surplus height becomes headroom above the
+    welcome — solving Erik's headroom + rhythm asks with one mechanism
+    that is identical on every device. Arrow craft: new
+    handArrowPathWavy (two chained curve segments bowing to opposite
+    sides — a real hand-drawn S) used by all three MOBILE welcome
+    arrows (desktop keeps its approved single-bow paths); every wavy
+    path ends in a 20px DEAD-STRAIGHT run along the aim direction, so
+    arrowhead barbs sit symmetrically around the final stroke and can
+    never cross their own incoming line (the self-collision Erik's
+    screenshot caught). The smallest arrow's tail moved from beside the
+    wrapped text's middle to BELOW the block's left corner (was
+    disconnected + crowding the "y" descender). Tertiary font size NOT
+    reduced (Erik's conditional 2px shrink declined: rhythm fix removed
+    the cramping; 20px is the accepted legibility floor). Verified: 630
+    tests green (wavy-path geometry incl. the straight arrival); probes
+    at 375×812 / 412×740 / 375×667 all show exactly 88/88 gaps, 16px
+    aside margin, straight arrivals, line-arrow tail below its text,
+    nothing offscreen; headroom scales 243/177/98px. Erik re-check on
+    Android: overall composition feel + arrow character at real DPR.
+  - **Design QA pass 6 — mobile composition CORRECTION (2026-07-17,
+    Erik's second Android screenshot; pass 5 REJECTED).** Pass 5's
+    equal-gap stack failed on-device: real usable viewports (browser
+    chrome) are shorter than the harness heights, the stack overflowed
+    its surplus, and the title crowded the top chrome; the equal gaps
+    also flattened the mockup's designed rhythm, the chained-S arrows
+    read overdrawn, and the below-the-block line-arrow tail collided
+    with descenders. Standing lesson: EQUAL-GAP DISTRIBUTION IS NOT THE
+    MOCKUP — Figma 265:229's rhythm is proportional headroom (title top
+    18%), a LARGE breathing middle gap (which absorbs device height and
+    hosts the main arrow), and the instruction+aside CLUSTERED low near
+    the tray (subtitle bottom 248 / aside bottom 80 + safe-area, aside
+    max-w 64vw so its wrap count — and the cluster height — stays stable
+    across phone widths). All three tiers KEPT on mobile (Erik: never
+    solve mobile by hiding the tertiary content — that rule is desktop-
+    only, where it exists for collision, not space). Arrows: mobile path
+    rebuilt as ONE cubic — two broad motions (departure + aimed sweep),
+    not a chained S — still ending in the 20px straight run (self-
+    collision guarantee); main arrow bow 40 (expressive, single sweep);
+    aside arrows' tails ATTACH 12px off their text line's left edge
+    (line arrow → the FIRST line of "or draw lines…") and depart via
+    startDir (strong bend away from the text, then the sweep to the
+    toolbar). Verified: 631 tests green (single-cubic + straight-arrival
+    + startDir-departure geometry pinned); probes at 412×600 (Erik-like
+    usable height: headroom 108, middle gap 67, cluster gap 54) and
+    375×812 (headroom 146, middle gap 252, cluster gap 54) — cluster
+    stable, middle gap absorbing height as designed, tails attached,
+    nothing offscreen. Erik re-check on Android: composition vs mockup +
+    arrow character.
+  - **Design QA pass 7 — mobile REDESIGN to Erik's revised mockup
+    (2026-07-17; pass 6 rejected on-device — line arrow collided with
+    the aside text, composition still read cramped).** Erik's new mockup
+    replaces the mobile copy structure with a CONTENT-vs-STRUCTURE
+    teach: "Welcome" hero (min(4.5rem,17vw)) → mission line "Use these
+    tools to map your work" → a two-column tool legend above the tray:
+    "add content with / Nodes" (column centered over the Node button —
+    center derived from the tray's REAL 233px width; keep in sync with
+    BottomToolbar M_TRAY_W) and "structure and organize with / Labels &
+    Lines" (center-right at 64%, NO arrows). ONE quiet arrow: from
+    below the "Nodes" name to the Node button (short, gentle bow,
+    straight arrival). All blocks bottom-anchored (+ safe-area); name
+    rows stay aligned across descriptor wraps; total content is short
+    enough that squat viewports keep real headroom (147px at 375×667,
+    211px at 412×740; gaps ~58/58). Old "Get started…"/"You can also…"
+    mobile copy retired; desktop copy untouched. **TERMINOLOGY
+    (PENDING SCOPE DECISION):** the mockup introduces "Labels" as the
+    user-facing name re-identifying text blocks as an ORGANIZING tool
+    (rationale: "text block" invited narrative content; labels = canvas
+    organization). Currently live ONLY in the mobile FTUE legend per
+    the mockup. NOT yet renamed: desktop FTUE aside ("add text
+    blocks"), toolbar tooltip ("Add text block"), Canvas Tool Menu
+    ("Add text"), placement copy ("Now place the text block…" — which
+    mobile users DO see when arming the T tool), aria-labels, glossary/
+    terminology docs. Erik to call full-rename vs revert; do not spread
+    the term without that call. Verified: 631 tests green (new legend
+    copy pinned; Nodes-column/button alignment probed exact at 412w).
+  - **Design QA pass 8 — annotated-mockup corrections (2026-07-17;
+    pass 7 was too loose an interpretation, and Erik's first mockup had
+    been missing 2 arrows).** Fixes per the annotations: (1) mission
+    copy is "Use these tools to BUILD YOUR WORKSPACE" (not "map your
+    work"), 28px; (2) the legend is SMALL and quiet — 16px descriptors /
+    24px names (the mockup's weight hierarchy; pass 7's 20/24px let
+    "Labels & / Lines" wrap huge and steal weight from the hero);
+    (3) "uniformly aligned horizontally" — hard <br/> breaks make both
+    descriptors exactly two lines and names never wrap, so descriptor
+    rows and name rows sit on the same horizontal lines (probed aligned
+    to the pixel); (4) THREE arrows, not one — short subtle bridges
+    from under each tool WORD (Nodes / Labels / Lines — word positions
+    as fractions of the measured name rect) to its button, tails 8px
+    under the aligned name row, standard tip clearance, straight
+    arrivals; (5) cluster slightly lower (hero bottom-anchored 408 →
+    lands at exactly 45% of a 740px viewport, matching the mockup's
+    proportions; mission 304 / legend 176). Columns at the mockup's 24%
+    / 62% centers — the measured-anchor arrows absorb small
+    column-vs-button drift across widths. Verified: 631 tests green;
+    412×740 probe matches every annotation (headroom 227, fonts
+    28/16/24, rows aligned, one-line names, 3 arrows tails 99/208/297 →
+    tips on node/text/line buttons, nothing offscreen). Awaiting Erik's
+    Android re-check.
+  - **Design QA pass 9 — spacing tune (2026-07-17, Erik's Android
+    re-check of pass 8).** Three literal adjustments: (1) hero centered
+    PROPORTIONALLY — vertical center pinned at 45% of the viewport on
+    every device (was bottom-anchored px, which drifted with device
+    height); (2) arrows HALVED — 96px → exactly 48px (legend names
+    bottom-offset 176→128; first attempt at 136 measured 56px because
+    the tip offset is 72 not 80 — the button sits 8px inside the 56px
+    tray; corrected + probed at exactly 48); (3) mission + legend moved
+    down (mission bottom 304→240, legend 176→128) with mockup-ratio
+    gaps (hero→mission 27px on a 667 viewport / 67 on 740 — the
+    breathing gap; mission→legend 45). Verified: 631 tests green;
+    probes at 412×667 and 412×740 — hero center 45% both, arrows 48px
+    both, rows aligned, nothing offscreen. Awaiting Erik's Android
+    re-check.
+  - **Design QA pass 10 — hero tune (2026-07-17).** "Closer to the
+    center, not centered": hero lifted 72px (center = calc(45% − 72px))
+    and font +32px (min(6.5rem, 25vw) → ~103px at 412w, cap 104). No
+    other element moved (probed: mission 240 / legend 128 unchanged;
+    hero center exact at 412×667; text fits the width). Awaiting Erik's
+    Android re-check.
 - **Dependencies.** None hard; touches the canvas (App.jsx) + the Inspector open
   path.
 - **Size:** M (minimal version); the center→dock spotlight choreography is a

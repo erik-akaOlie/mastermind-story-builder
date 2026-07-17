@@ -22,11 +22,31 @@
 // only changes when occupied space changes, which is what the eye sees).
 // ============================================================================
 
+import { currentThresholdZoom, MORPH_HYSTERESIS_RATIO } from './altitude.js'
+
 // Fixed starter room, in flow-space px. Product anchor: ~5 columns × 4 rows
 // of canonical 256×180 cards at loose constellation spacing (~2× card pitch).
 // Tunable by feel, like the altitude constants.
 export const STARTER_ROOM_WIDTH  = 2560
 export const STARTER_ROOM_HEIGHT = 1800
+
+// ----------------------------------------------------------------------------
+// Empty-workspace entry zoom floor (MB-8 completion, FTUE chunk 1).
+//
+// Envelope-fit alone can park an EMPTY workspace below the card↔bead
+// threshold on smaller windows (a 1366×768 laptop fits the starter room at
+// ~0.32 — deep in Bead View), so the user's first-created node would appear
+// as a tiny bead and undermine the "I just created something" moment. On
+// empty workspaces only, entry zoom is floored comfortably CARD-side of the
+// threshold: up-trigger zoom (threshold × hysteresis) × this margin. Reads
+// the live threshold so a user-tuned altitude rail stays honored. Occupied
+// workspaces are untouched — their fit must always show the whole graph.
+// ----------------------------------------------------------------------------
+export const EMPTY_ENTRY_CARD_MARGIN = 1.25
+
+export function emptyWorkspaceEntryZoomFloor(thresholdMm) {
+  return currentThresholdZoom(thresholdMm) * MORPH_HYSTERESIS_RATIO * EMPTY_ENTRY_CARD_MARGIN
+}
 
 // Margin added to each side of the graph bounds once the graph outgrows the
 // starter room (the "locked ratio" of the balloon model). 0.15 = 15% of the
@@ -219,14 +239,18 @@ export function computeEntryViewport({
   reservedLeftPx = 0,
   reservedRightPx = 0,
   maxZoom = 1,
+  // Lower zoom bound, applied AFTER the fit (0 = no floor). Only the
+  // empty-workspace path passes a value (emptyWorkspaceEntryZoomFloor) — a
+  // floor on an occupied workspace could crop the graph at entry.
+  minZoom = 0,
 }) {
   if (!envelope || !viewportWidth || !viewportHeight) {
     return { x: 0, y: 0, zoom: 1 }
   }
 
-  const zoom = computeEnvelopeFitZoom({
+  const zoom = Math.max(minZoom, computeEnvelopeFitZoom({
     envelope, viewportWidth, viewportHeight, reservedLeftPx, reservedRightPx, maxZoom,
-  })
+  }))
 
   const reserved = reservedLeftPx + reservedRightPx
   const degenerate = viewportWidth - reserved <= 0

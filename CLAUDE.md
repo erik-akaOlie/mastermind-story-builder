@@ -436,7 +436,38 @@ src/
                                    (tablets, landscape) still renders nothing. Exports
                                    MOBILE_TRAY_CLEARANCE_PX for FeedbackChipBar's raised position.
                                    NOT the same file as CanvasToolbar.jsx — that's the shared shell
-                                   for floating contextual toolbars.
+                                   for floating contextual toolbars. FTUE chunk 1 (2026-07-16):
+                                   `forceExpanded` prop holds the desktop tray open while the FTUE
+                                   intro shows; the creation buttons on BOTH trays carry
+                                   data-ftue-target="node|text|line" — the intro's arrows are
+                                   anchored to these measured rects, so keep the attributes when
+                                   restructuring the trays.
+    FtueIntro.jsx                  the handwritten first-run introduction (Figma 225-1971 desktop;
+                                   mobile portrait per Erik's revised pass-7 mockup 2026-07-17;
+                                   tablets/landscape render nothing — no toolbar to point at).
+                                   Screen-fixed pointer-events-none overlay in the Caveat brand font
+                                   (`font-hand` + `leading-hand` on wrapped text) with hand-drawn
+                                   SVG arrows COMPUTED from guidance-text rects to the measured
+                                   [data-ftue-target] toolbar buttons (never hardcoded coords;
+                                   remeasured on resize; arrival tangents AIMED at icon centers;
+                                   tips backed off the buttons; mobile paths end in a straight run
+                                   so heads can't cross their own stroke). DESKTOP: three-tier
+                                   hierarchy (96px title near center + coordinated 2:1 type scale;
+                                   instruction + placement copy bottom-anchored near the tray,
+                                   placement = one tray-height above it; tertiary aside clamped
+                                   on-screen, hidden-before-collision on narrow windows). MOBILE:
+                                   content-vs-structure teach — "Welcome" hero, "Use these tools to
+                                   map your work", two-column tool legend above the tray ("add
+                                   content with / Nodes" centered over the Node button — center
+                                   derived from the tray's 233px M_TRAY_W, keep in sync — + ONE
+                                   short arrow; "structure and organize with / Labels & Lines", no
+                                   arrows). "Labels" = Erik's re-identification of text blocks as
+                                   an organizing tool — LIVE ONLY in this legend; product-wide
+                                   rename is a PENDING decision (see BACKLOG), don't spread the
+                                   term. Two derived states: welcome ⇄ per-tool placement copy
+                                   (derived from activeTool, NOT effectiveTool, so spacebar
+                                   suspension doesn't flicker it). Visibility is App's derivation
+                                   (canvas empty AND flag unset); flag semantics in useFtueStore.js.
     CreateTypeModal.jsx            custom card type creation (label + icon + color picker)
     Lightbox.jsx                   shared <LightboxProvider>; any consumer calls useLightbox().open(value)
     MigrateImages.jsx              one-shot tool at #migrate to backfill base64 → Storage; safe to delete
@@ -492,10 +523,28 @@ src/
                                    the user's prefix.
     useFeedbackToastStore.js       Zustand store for the chip-toast queue: lifecycle (visible → exiting →
                                    removed), pause/resume per toast, sticky-id replace for persist-fail.
+    useFtueStore.js                Zustand store + semantics for the FTUE introduction's per-workspace
+                                   "completed" flag. localStorage (`mastermind:ftue-done:<workspaceId>`)
+                                   — deliberately UX state, NOT a DB column (Erik 2026-07-16; revisit
+                                   only if beta demands cross-device). Timeline semantics: only a LOCAL
+                                   successful create completes it (noteLocalCreate — called by App's
+                                   three creators after persist+recordAction; Realtime inserts never
+                                   complete it); undoing a create that EMPTIES the canvas rewinds
+                                   (noteUndoResult — wired at both undo call sites, Ctrl+Z + toolbar,
+                                   with the PRE-undo node count); delete-to-empty stays completed;
+                                   redo of a create completes again (noteRedoResult). Fires ftue_shown /
+                                   ftue_completed / ftue_rewound analytics.
 
   utils/
     labelUtils.js                  sortKey(), labelInitial()
     edgeRouting.js                 getNodeCenter(), getBorderIntersection(), getSpreadBorderPoints()
+    altitude.js                    zoom↔altitude math (card↔bead threshold, hysteresis, dynamic
+                                   minZoom) + Bead View visual constants
+    viewportFraming.js             virtual framing envelope + entry-viewport math (MB-8) + the
+                                   empty-workspace entry zoom floor (emptyWorkspaceEntryZoomFloor,
+                                   FTUE chunk 1: an empty workspace enters card-side of the live
+                                   threshold so the first-created node is a card, never a bead;
+                                   occupied workspaces keep pure envelope-fit)
 
 supabase/
   schema.sql                       full DB schema + RLS policies — run once in the Supabase SQL Editor
@@ -633,6 +682,10 @@ This is a hard constraint, in the same category as the chunking, browser-verific
 ### System CTA color
 
 `#0284C7` (Tailwind `sky-600`) for all card-type-agnostic action buttons (login, "Create" in CreateTypeModal, "New workspace" in CampaignPicker). **Never reuse a card-type color for system UI.**
+
+### Brand "direct-to-user" voice font — Caveat (`font-hand`)
+
+**Caveat** (Google font, loaded alongside Inter in `index.css`; Tailwind token `hand` in `tailwind.config.js`) is the brand voice for moments the experience speaks to the user as a person — warm, handwritten, personal-note energy. First surface: the FTUE introduction (`FtueIntro.jsx`). Reuse it for future guidance/personal-note surfaces; **never** for regular UI chrome, form copy, or content the user authors. **Leading rule:** any Caveat text that WRAPS uses the `leading-hand` token (0.85 — 85% of the font size; Caveat's generous built-in vertical padding makes sub-1.0 leading read as natural handwriting) so a wrapped sentence still reads as one handwritten note, not loose paragraph copy; single-line Caveat needs no leading class. Established by Erik 2026-07-16.
 
 ### Luminance-based text color
 
