@@ -4,6 +4,38 @@ A running log of meaningful changes to MasterMind: Story Builder. Append-only. N
 
 ## [Unreleased]
 
+### Mobile zoom tool: deterministic tap-to-open + dead-column fix (2026-07-16)
+
+The left-edge zoom tool (altitude rail) now has a real touch model on
+phones — and stops blocking the canvas around it.
+
+**Bug fixed: the tool "opened without the slider" at random.** The rail's
+only opening mechanism was mouse hover; on phones that meant iOS Safari's
+unreliable fake tap-hover aimed at a 4px line, so whether the tool opened
+(slider and all) was effectively a coin flip per session. On phone
+portrait the rail now ignores hover entirely: **tap the rail strip to
+open** — deterministically, every time. The opening tap never jumps zoom;
+while open, the threshold slider is visible and draggable and a tap on the
+strip jumps zoom; **tap anywhere else to close** (the outside tap still
+does its normal canvas work — nothing is swallowed).
+
+**Dead column fixed.** The invisible 64px hover column stopped
+intercepting taps on phones — only a 24px strip over the rail line is
+interactive while closed (tunable constant), so nodes/text/lines near the
+left edge are tappable again. The dark gradient narrows from 96px to 40px
+at rest, widening only as the deliberate open-state response.
+
+**Closed visuals matched to Erik's mockup (Figma 265-226).** The closed
+rail and its card-view highlight slim from 4px to hairline 2px, and the
+current-zoom marker was redrawn: an 8px notch now sits CENTERED on the
+rail (it used to trail off to the right from the rail's edge) with only
+the arrowhead breaking the symmetry, its tip 8px right of the rail
+center. The open state keeps the full desktop-active look.
+
+Desktop hover behavior is unchanged; regression tests pin the mobile
+open/close model, the no-intercept closed state, and the desktop hover
+path.
+
 ### Bottom toolbar — Chunk 3: mobile portrait toolbar + touch fixes (2026-07-16)
 
 Phones (held upright) now get their own bottom toolbar — the primary

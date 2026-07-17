@@ -55,11 +55,32 @@
 //   re-evaluates altitude on change — the canvas morphs the instant the
 //   user crosses a trigger, not on the next pan or zoom.
 //
+// ── MOBILE PORTRAIT (explicit touch model, 2026-07-16) ────────────────────
+//   Phones have no hover, and iOS Safari's synthetic tap-hover is a lottery
+//   (the codebase already refuses to trust it — see CanvasContextMenu). For
+//   weeks that made the rail's engaged state unreachable-at-random on
+//   phones ("zoom tool opens without the slider"). On mobile portrait
+//   (useMobilePortrait) the rail therefore has a DETERMINISTIC model:
+//     - mouseenter/mouseleave are no-ops (fake hover can't half-open it)
+//     - a narrow touch strip over the rail line is the ONLY tap target
+//       while closed; tapping it OPENS the tool (and does NOT jump zoom)
+//     - while open: the thumb is visible/draggable as on desktop, and a
+//       tap on the strip jumps zoom (the desktop track-click)
+//     - a tap anywhere outside the rail closes it — observed via a
+//       non-swallowing document listener, so the underlying canvas tap
+//       still behaves normally (select, place, etc.)
+//     - the 64px hover container stops intercepting entirely
+//       (pointer-events: none) — the dead column over left-side canvas
+//       content is gone; only the strip intercepts
+//     - the backdrop scrim is much narrower closed, widening on open as a
+//       deliberate response to the tap (constants below)
+//   Desktop behavior is untouched — every branch keys off the hook.
+//
 // Sizing follows the 8 px grid as the default; sub-grid values are
 // annotated inline.
 // ============================================================================
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { MagnifyingGlassMinus, MagnifyingGlassPlus } from '@phosphor-icons/react'
 import { useCanvasUiStore } from '../store/useCanvasUiStore'
 import {
@@ -69,6 +90,7 @@ import {
   gridGapMmAtZoom,
 } from '../utils/altitude'
 import { useReducedMotion } from '../hooks/useReducedMotion'
+import { useMobilePortrait } from '../hooks/useMobilePortrait'
 
 // Container.
 const CONTAINER_WIDTH_PX = 64                              // 8 × 8 (hover hit area)
@@ -135,6 +157,25 @@ const INDICATOR_GAP_PX         = 6                         // ÷ 2: empty space 
 // of an organic shadow.
 const BACKDROP_WIDTH_ACTIVE = 160                          // 8 × 20
 const BACKDROP_WIDTH_REST   = 96                           // 8 × 12
+
+// Mobile-portrait touch model (2026-07-16) — all tunable after phone QA.
+const M_TOUCH_STRIP_W_CLOSED = 24                          // 8 × 3 (Erik: bump to 32 if hard to open)
+const M_TOUCH_STRIP_W_OPEN   = 48                          // 8 × 6 (covers the active track for tap-to-jump)
+const M_BACKDROP_WIDTH_OPEN   = 96                         // 8 × 12 (phone-scaled: desktop active 160 is too wide on 375px)
+const M_BACKDROP_WIDTH_CLOSED = 40                         // 8 × 5 (the dead-column fix: was 96 at rest)
+
+// Mobile-portrait CLOSED visuals (Erik's Figma mockup, node 265-226,
+// measured 2026-07-16 and snapped to the 8→4→2 rule at 375px scale):
+// hairline rail + highlight (mockup 1.8 / 2.7 → both 2, matching how
+// desktop rest already keeps track and segment the same width), and the
+// current-zoom indicator redrawn as a short notch CENTERED on the rail
+// (mockup: 10.2px centered → 8) with only the arrowhead breaking symmetry
+// to the right (tip 7.7px from rail center → 8). Open state reuses the
+// desktop ACTIVE geometry unchanged.
+const M_TRACK_WIDTH_CLOSED   = 2                           // ÷ 2: hairline per mockup (desktop rest stays 4)
+const M_SEGMENT_WIDTH_CLOSED = 2                           // ÷ 2: matches the track, as at desktop rest
+const M_NOTCH_W_PX           = 8                           // 8 × 1: notch length, centered on the rail
+const M_CHEV_TIP_OFFSET_PX   = 8                           // 8 × 1: arrowhead tip's distance right of rail center
 const BACKDROP_MAX_ALPHA    = 0.88                         // sub-grid: tuned so the composite at the left edge reads as a clear darker shade of the canvas hue
 const BACKDROP_TINT_RGB     = '3, 9, 8'                    // ≈ canvas hue (#061210) at half luminance — darkens-in-hue when composited
 // Multi-stop gradient mimics a cubic ease-out on alpha. Two-stop linear
@@ -182,20 +223,32 @@ function denormalizeLog(t, minZoom, maxZoom) {
 // Chevron-bar-chevron SVG. Single SVG; each element gets its own
 // CSS-driven stroke-width and opacity so rest/active transitions read
 // as smooth fades rather than DOM swaps.
-function ZoomIndicatorSvg({ isInteracting, reducedMotion }) {
+//
+// mobileNotch (phone portrait, CLOSED): instead of the rest-state
+// "bar trailing right of the rail," the bar is a short notch CENTERED
+// on the rail (SVG center = rail center) and the right chevron pulls in
+// so only the arrowhead breaks the rail's symmetry — per the Figma
+// mockup (265-226). Open state renders the normal ACTIVE indicator.
+function ZoomIndicatorSvg({ isInteracting, mobileNotch, reducedMotion }) {
   const w = INDICATOR_W_PX
   const h = INDICATOR_H_PX
   const midY = h / 2
   const chevPad = 1
   const chevLeftTipX  = chevPad + INDICATOR_CHEV_ARM_PX
-  const chevRightTipX = w - chevPad - INDICATOR_CHEV_ARM_PX
+  const chevRightTipX = mobileNotch
+    ? w / 2 + M_CHEV_TIP_OFFSET_PX
+    : w - chevPad - INDICATOR_CHEV_ARM_PX
+  const chevRightBackX = mobileNotch
+    ? chevRightTipX + INDICATOR_CHEV_ARM_PX
+    : w - chevPad
   const barLeftActiveX = chevLeftTipX + INDICATOR_GAP_PX
   // At rest the left chevron is hidden, but the bar shouldn't extend out
   // into the now-empty left half — it should look like the bar only
   // trails to the right of the rail. Anchor the bar's left edge at the
-  // rail's center (= SVG center).
-  const barLeftRestX  = w / 2
-  const barRightX     = chevRightTipX - INDICATOR_GAP_PX
+  // rail's center (= SVG center). Mobile closed: the notch straddles the
+  // center instead.
+  const barLeftRestX  = mobileNotch ? w / 2 - M_NOTCH_W_PX / 2 : w / 2
+  const barRightX     = mobileNotch ? w / 2 + M_NOTCH_W_PX / 2 : chevRightTipX - INDICATOR_GAP_PX
   const chevStroke = isInteracting ? INDICATOR_CHEV_STROKE : INDICATOR_CHEV_STROKE / 2
   const barStroke  = isInteracting ? INDICATOR_BAR_STROKE  : INDICATOR_BAR_STROKE  / 2
   return (
@@ -232,7 +285,7 @@ function ZoomIndicatorSvg({ isInteracting, reducedMotion }) {
       />
       {/* Right chevron — always visible. */}
       <polyline
-        points={`${w - chevPad},${chevPad} ${chevRightTipX},${midY} ${w - chevPad},${h - chevPad}`}
+        points={`${chevRightBackX},${chevPad} ${chevRightTipX},${midY} ${chevRightBackX},${h - chevPad}`}
         style={{
           strokeWidth: chevStroke,
           transition: reducedMotion ? 'none' : T_STROKE,
@@ -265,15 +318,37 @@ export default function AltitudeRail({ onZoomTo }) {
   const upTriggerZ   = downTriggerZ * MORPH_HYSTERESIS_RATIO
 
   const trackRef = useRef(null)
+  const rootRef  = useRef(null)
   const [isDraggingThumb, setIsDraggingThumb] = useState(false)
   const [isHovered, setIsHovered] = useState(false)
-  // The component reads as ACTIVE whenever the pointer is over the rail
-  // container OR a drag is in flight (so the rail doesn't collapse out
-  // from under the user mid-drag).
-  const isInteracting = isHovered || isDraggingThumb
+  // Mobile portrait: the explicit tap-open state (see header). Hover plays
+  // no part on phones — iOS fake tap-hover is nondeterministic.
+  const mobilePortrait = useMobilePortrait()
+  const [isTouchOpen, setIsTouchOpen] = useState(false)
+  // The component reads as ACTIVE whenever (desktop) the pointer is over
+  // the rail container, (mobile) the tool was tap-opened, OR a drag is in
+  // flight (so the rail doesn't collapse out from under the user mid-drag).
+  const isInteracting = (mobilePortrait ? isTouchOpen : isHovered) || isDraggingThumb
 
-  const handleEnter = () => setIsHovered(true)
-  const handleLeave = () => setIsHovered(false)
+  // No-ops on mobile so a synthetic tap-hover can never half-open the rail
+  // (deterministic open/close belongs to the touch strip alone).
+  const handleEnter = () => { if (!mobilePortrait) setIsHovered(true) }
+  const handleLeave = () => { if (!mobilePortrait) setIsHovered(false) }
+
+  // Tap-outside closes (mobile, only while open). The listener OBSERVES —
+  // never swallows — so the underlying canvas tap still behaves normally
+  // (select / marquee / placement all proceed); the rail just closes
+  // alongside. Capture phase so a stopPropagation elsewhere can't leave
+  // the rail stuck open.
+  useEffect(() => {
+    if (!mobilePortrait || !isTouchOpen) return
+    const onDocPointerDown = (e) => {
+      if (rootRef.current && e.target instanceof Node && rootRef.current.contains(e.target)) return
+      setIsTouchOpen(false)
+    }
+    document.addEventListener('pointerdown', onDocPointerDown, true)
+    return () => document.removeEventListener('pointerdown', onDocPointerDown, true)
+  }, [mobilePortrait, isTouchOpen])
 
   const handleTrackClick = (event) => {
     if (isDraggingThumb) return
@@ -334,11 +409,17 @@ export default function AltitudeRail({ onZoomTo }) {
   const posDownTrigger = normalizeLog(downTriggerZ, minZoom, maxZoom)
   const posUpTrigger   = normalizeLog(upTriggerZ,   minZoom, maxZoom)
 
-  // Resolved geometry — branches on isInteracting.
+  // Resolved geometry — branches on isInteracting; mobile portrait's
+  // CLOSED state uses the hairline widths from the Figma mockup (open
+  // reuses the desktop ACTIVE geometry unchanged).
   const trackLeft    = isInteracting ? TRACK_LEFT_ACTIVE  : TRACK_LEFT_REST
-  const trackWidth   = isInteracting ? TRACK_WIDTH_ACTIVE : TRACK_WIDTH_REST
+  const trackWidth   = isInteracting
+    ? TRACK_WIDTH_ACTIVE
+    : (mobilePortrait ? M_TRACK_WIDTH_CLOSED : TRACK_WIDTH_REST)
   const trackCenterX = trackLeft + trackWidth / 2
-  const segmentWidth = isInteracting ? SEGMENT_WIDTH_ACTIVE : SEGMENT_WIDTH_REST
+  const segmentWidth = isInteracting
+    ? SEGMENT_WIDTH_ACTIVE
+    : (mobilePortrait ? M_SEGMENT_WIDTH_CLOSED : SEGMENT_WIDTH_REST)
 
   // The Card-View highlight's TOP edge depends on whether the user is
   // INTERACTING with the rail or not:
@@ -400,7 +481,9 @@ export default function AltitudeRail({ onZoomTo }) {
           left: 0,
           top: 0,
           bottom: 0,
-          width: isInteracting ? BACKDROP_WIDTH_ACTIVE : BACKDROP_WIDTH_REST,
+          width: mobilePortrait
+            ? (isInteracting ? M_BACKDROP_WIDTH_OPEN : M_BACKDROP_WIDTH_CLOSED)
+            : (isInteracting ? BACKDROP_WIDTH_ACTIVE : BACKDROP_WIDTH_REST),
           background: BACKDROP_GRADIENT,
           pointerEvents: 'none',
           transition: tGeometry,
@@ -409,6 +492,7 @@ export default function AltitudeRail({ onZoomTo }) {
       />
 
     <div
+      ref={rootRef}
       className="absolute"
       style={{
         left: 0,
@@ -417,11 +501,14 @@ export default function AltitudeRail({ onZoomTo }) {
         width:  CONTAINER_WIDTH_PX,
         height: RAIL_HEIGHT_CSS,
         zIndex: 5,
-        // Capture pointer events on the WHOLE container so the rail
-        // expands as soon as the user enters its area. The trade-off:
+        // DESKTOP: capture pointer events on the WHOLE container so the
+        // rail expands as soon as the mouse enters its area. Trade-off:
         // marquee-from-leftmost-pixel is blocked, but the rail becomes
         // discoverable without having to aim for a 4 px line.
-        pointerEvents: 'auto',
+        // MOBILE PORTRAIT: none — hover doesn't exist, so the 64px column
+        // bought nothing and blocked left-side canvas taps (the "dead
+        // column"). Only the touch strip (and open-state thumb) intercept.
+        pointerEvents: mobilePortrait ? 'none' : 'auto',
       }}
       onMouseEnter={handleEnter}
       onMouseLeave={handleLeave}
@@ -456,7 +543,40 @@ export default function AltitudeRail({ onZoomTo }) {
           bottom: ICON_AREA_PX,
         }}
       >
-        {/* The clickable rail line. */}
+        {/* Mobile touch strip — the ONLY closed-state tap target on phones.
+            Invisible; sits over the rail line (24px wide closed — tunable,
+            32 if QA finds it hard to hit; 48 open, covering the active
+            track). First tap OPENS the tool without jumping zoom; while
+            open, a tap is the desktop track-click (jump zoom). The thumb
+            renders later in the DOM, so it stacks above and keeps its own
+            drag. */}
+        {mobilePortrait && (
+          <div
+            role="button"
+            aria-label={isTouchOpen
+              ? 'Altitude rail — tap to jump zoom'
+              : 'Open zoom tool'}
+            style={{
+              position: 'absolute',
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: isTouchOpen ? M_TOUCH_STRIP_W_OPEN : M_TOUCH_STRIP_W_CLOSED,
+              pointerEvents: 'auto',
+              cursor: 'pointer',
+            }}
+            onClick={(e) => {
+              if (!isTouchOpen) {
+                setIsTouchOpen(true)   // opening tap opens ONLY — no zoom jump
+                return
+              }
+              handleTrackClick(e)
+            }}
+          />
+        )}
+
+        {/* The clickable rail line (desktop; on mobile the touch strip owns
+            taps so the 4px line never competes with it). */}
         <div
           ref={trackRef}
           className="absolute rounded-full bg-gray-400"
@@ -467,7 +587,7 @@ export default function AltitudeRail({ onZoomTo }) {
             height:  '100%',
             opacity: 0.45,
             cursor:  'pointer',
-            pointerEvents: 'auto',
+            pointerEvents: mobilePortrait ? 'none' : 'auto',
             transition: tGeometry,
           }}
           onClick={handleTrackClick}
@@ -574,7 +694,11 @@ export default function AltitudeRail({ onZoomTo }) {
           }}
           aria-hidden="true"
         >
-          <ZoomIndicatorSvg isInteracting={isInteracting} reducedMotion={reducedMotion} />
+          <ZoomIndicatorSvg
+            isInteracting={isInteracting}
+            mobileNotch={mobilePortrait && !isInteracting}
+            reducedMotion={reducedMotion}
+          />
         </div>
       </div>
 
