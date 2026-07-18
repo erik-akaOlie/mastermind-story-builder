@@ -461,13 +461,19 @@ src/
                                    content with / Nodes" centered over the Node button — center
                                    derived from the tray's 233px M_TRAY_W, keep in sync — + ONE
                                    short arrow; "structure and organize with / Labels & Lines", no
-                                   arrows). "Labels" = Erik's re-identification of text blocks as
-                                   an organizing tool — LIVE ONLY in this legend; product-wide
-                                   rename is a PENDING decision (see BACKLOG), don't spread the
-                                   term. Two derived states: welcome ⇄ per-tool placement copy
-                                   (derived from activeTool, NOT effectiveTool, so spacebar
-                                   suspension doesn't flicker it). Visibility is App's derivation
-                                   (canvas empty AND flag unset); flag semantics in useFtueStore.js.
+                                   arrows). "Labels" = the FTUE-ONLY introduction name for text
+                                   blocks (DECIDED, Erik 2026-07-17: a one-word frame that teaches
+                                   the tool's organizing intent; after the FTUE the object is a
+                                   TEXT BLOCK everywhere, deliberately, so the name never limits
+                                   creative use — there will be NO product-wide rename). Mobile
+                                   placement copy matches ("Now place the label…",
+                                   MOBILE_PLACEMENT_COPY); desktop FTUE keeps its current copy +
+                                   framing until the POST-BETA desktop/mobile unification (high
+                                   priority; mobile's content-vs-structure framing wins). Two
+                                   derived states: welcome ⇄ per-tool placement copy (derived from
+                                   activeTool, NOT effectiveTool, so spacebar suspension doesn't
+                                   flicker it). Visibility is App's derivation (canvas empty AND
+                                   flag unset); flag semantics in useFtueStore.js.
     CreateTypeModal.jsx            custom card type creation (label + icon + color picker)
     Lightbox.jsx                   shared <LightboxProvider>; any consumer calls useLightbox().open(value)
     MigrateImages.jsx              one-shot tool at #migrate to backfill base64 → Storage; safe to delete

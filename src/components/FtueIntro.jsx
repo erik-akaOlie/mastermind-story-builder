@@ -175,6 +175,17 @@ const PLACEMENT_COPY = {
   line: 'Now draw a line wherever you like on the canvas',
 }
 
+// Mobile override (Erik, 2026-07-17): the FTUE — and ONLY the FTUE —
+// introduces text blocks as "labels" (a one-word frame for the tool;
+// thereafter the object is a text block everywhere, so the name never
+// limits creative use). The mobile legend says "Labels & Lines", so the
+// mobile placement copy matches it. Desktop FTUE keeps its current copy
+// until the post-beta desktop/mobile unification.
+const MOBILE_PLACEMENT_COPY = {
+  ...PLACEMENT_COPY,
+  text: 'Now place the label wherever you like on the canvas',
+}
+
 // Pure helper (unit-tested): which guidance state a given active tool maps to.
 export function ftueModeFor(activeTool) {
   return CREATION_TOOLS.has(activeTool) ? 'placement' : 'welcome'
@@ -599,7 +610,7 @@ export default function FtueIntro({ visible }) {
               : { bottom: PLACEMENT_BOTTOM_PX, fontSize: '2.5rem', width: 'max-content', maxWidth: '560px' }
           }
         >
-          {PLACEMENT_COPY[activeTool] ?? PLACEMENT_COPY.node}
+          {(mobile ? MOBILE_PLACEMENT_COPY : PLACEMENT_COPY)[activeTool] ?? PLACEMENT_COPY.node}
         </div>
         <svg className="absolute inset-0 h-full w-full">{renderArrows(arrows.placement)}</svg>
       </div>

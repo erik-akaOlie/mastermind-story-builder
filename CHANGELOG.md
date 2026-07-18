@@ -44,8 +44,11 @@ a table: *add content with **Nodes*** and *structure and organize with
 **Labels & Lines***, with three short hand-drawn arrows — one under each
 tool name (Nodes, Labels, Lines) — bridging the legend down to its tool. The legend introduces **"Labels"** as
 the user-facing name for text blocks — reframing them as an organizing
-tool rather than a place for story content (product-wide rename of the
-remaining "text block" strings is a pending decision). Everything is
+tool rather than a place for story content. Decided (2026-07-17): "label"
+is the FTUE-only introduction name — the mobile placement message says
+"Now place the label…" to match — while the object remains a "text block"
+across the rest of the product, deliberately, so the name never limits
+how people use it. Everything is
 bottom-anchored and safe-area aware, so the rhythm is identical across
 phones and surplus height becomes headroom above the welcome. Tablets and
 phone landscape render no intro (they have no toolbar to point at). Erik's

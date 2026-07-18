@@ -759,6 +759,22 @@ and markdown export are Soon-after. **Honest sizing:** remaining Bucket-1 is
     other element moved (probed: mission 240 / legend 128 unchanged;
     hero center exact at 412×667; text fits the width). Awaiting Erik's
     Android re-check.
+  - **STATUS + TERMINOLOGY RESOLVED (Erik, 2026-07-17 checkpoint after
+    commit 534a48c ship).** Production smoke COMPLETE on desktop AND
+    Android (Erik's observation); iPhone QA outstanding (same day);
+    FTUE otherwise FROZEN unless iPhone reveals a blocker. Terminology
+    DECIDED — NO product-wide rename: "label" is the FTUE-ONLY
+    introduction name (one-word frame teaching the tool's organizing
+    intent); after the FTUE the object is a TEXT BLOCK everywhere,
+    deliberately, so the name never limits creative use. Mobile FTUE
+    placement copy changed to match ("Now place the label…" —
+    MOBILE_PLACEMENT_COPY override; desktop placement copy unchanged;
+    both pinned by tests; UNCOMMITTED pending Erik's commit/push
+    approval). Desktop FTUE keeps its current copy/framing through
+    beta; unifying desktop+mobile FTUE (mobile's content-vs-structure
+    framing wins) is a HIGH-PRIORITY POST-BETA item. Behavioral
+    acceptance (~10s create+name) will be measured from PostHog
+    session replays of real beta users (ftue_shown→ftue_completed).
 - **Dependencies.** None hard; touches the canvas (App.jsx) + the Inspector open
   path.
 - **Size:** M (minimal version); the center→dock spotlight choreography is a

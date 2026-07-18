@@ -246,8 +246,16 @@ describe('visibility gating', () => {
     expect(container.textContent).not.toContain('Get started')
   })
 
-  it('shows the placement copy on phone portrait when a tool is armed', () => {
+  it('mobile placement copy says LABEL for the text tool (FTUE-only term, Erik 2026-07-17)', () => {
     setMedia({ touch: true, mobilePortrait: true })
+    useToolStore.setState({ activeTool: 'text' })
+    render(<FtueIntro visible />)
+    expect(
+      screen.getByText('Now place the label wherever you like on the canvas'),
+    ).toBeTruthy()
+  })
+
+  it('desktop placement copy still says text block (no product rename)', () => {
     useToolStore.setState({ activeTool: 'text' })
     render(<FtueIntro visible />)
     expect(
