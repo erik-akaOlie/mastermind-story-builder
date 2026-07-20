@@ -1,11 +1,12 @@
 # Terms of Service
 
 **Effective Date:** 2026-05-26
-**Last Updated:** 2026-05-27
+
+**Last Updated:** 2026-07-19
 
 Welcome to MasterMind. These Terms of Service (the "**Terms**") explain the rules for using MasterMind, a beta web application for building tabletop role-playing game campaigns as a visual canvas of interconnected cards.
 
-MasterMind is operated by **Erik Olsen**, an individual residing in Washington State, United States, as a personal project (the "**Operator**", "we", "us", or "our"). "MasterMind" is a project codename and not a registered trademark or business entity. You can reach us at **contact.mastermind.lab@gmail.com**.
+MasterMind is operated by **Just Living The Dream LLC**, a Washington limited liability company (the "**Operator**", "we", "us", or "our"). You can reach us at **contact.mastermind.lab@gmail.com**.
 
 By creating an account or using MasterMind, you agree to these Terms and to our [Privacy Policy](./privacy-policy.md). **If you do not agree, do not use the service.**
 
@@ -25,7 +26,7 @@ We do not knowingly accept users under 13. If we learn that a user is under 13, 
 
 MasterMind is a visual canvas for building interconnected story worlds. Cards represent characters, locations, factions, items, and story events; connections between cards represent relationships in your world.
 
-The current release is in **beta**. Features may change, be added, or be removed without prior notice. The service may be unavailable from time to time for maintenance, technical issues, or other reasons.
+The current release is in **beta**. Features may change, be added, or be removed without prior notice. The service may be unavailable from time to time for maintenance, technical issues, or other reasons. Access to the beta may be limited to a capped number of accounts; when the cap is reached, new visitors may be offered a waitlist instead of immediate signup.
 
 ---
 
@@ -65,6 +66,7 @@ You agree **not** to use MasterMind to:
 - Upload malicious code, attempt to probe or break the service's security, or interfere with other users.
 - Use automated tools (scrapers, bots, crawlers) to access the service without our express written permission.
 - Reverse-engineer, decompile, or attempt to extract source code, except where applicable law expressly permits it.
+- Access or use the service in order to build, improve, or benchmark a product or service that competes with MasterMind, or systematically copy its features, interface, workflows, or documentation for a competing offering.
 - Misrepresent your identity, impersonate others, or create accounts on behalf of someone else without authorization.
 - Scrape, extract, or otherwise harvest content or data from the service through automated means, or use such extracted content or data to train third-party machine learning or artificial intelligence models, without our express written permission. (For clarity: this restricts third-party extraction. Our own use of data we collect through MasterMind — including possible use to train models that help us improve the product itself — is governed by our [Privacy Policy](./privacy-policy.md), not by this clause.)
 
@@ -95,11 +97,13 @@ We may terminate the accounts of repeat infringers.
 
 The MasterMind name, the application's user interface, design, code, documentation, and all related materials we create are owned by us (or our licensors) and are protected by applicable intellectual property laws. These Terms do not transfer any of our intellectual property to you beyond your right to use the service as offered.
 
+**Feedback.** We welcome ideas, suggestions, feature requests, and bug reports ("**Feedback**"). By sending us Feedback, you agree that we may use it freely — including to build, improve, and market MasterMind — without restriction, attribution, or compensation to you, and that Feedback does not create any ownership interest in the product for you. To be clear: this covers ideas *about the product*; it does not apply to the story content you create in your workspaces, which remains yours under Section 4.
+
 ---
 
 ## 8. Service Availability and Changes
 
-MasterMind is a personal project in active development. **We do not guarantee any specific level of uptime, performance, or availability.** We may modify, add, remove, or discontinue features at any time. We may stop offering the service entirely; if we do, we will give reasonable notice and a reasonable opportunity for you to export your content.
+MasterMind is a beta product in active development. **We do not guarantee any specific level of uptime, performance, or availability.** We may modify, add, remove, or discontinue features at any time. We may stop offering the service entirely; if we do, we will give reasonable notice and a reasonable opportunity for you to export your content.
 
 We will provide notice of material changes to these Terms through the email address on your account, through an in-app notice, or both. Your continued use of the service after changes take effect constitutes acceptance of the updated Terms.
 

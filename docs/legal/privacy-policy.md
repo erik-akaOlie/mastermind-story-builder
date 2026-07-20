@@ -1,11 +1,12 @@
 # Privacy Policy
 
 **Effective Date:** 2026-05-26
-**Last Updated:** 2026-05-27
+
+**Last Updated:** 2026-07-19
 
 This Privacy Policy describes what information MasterMind collects, why we collect it, who else handles it, how long we keep it, and the choices and rights you have.
 
-MasterMind is operated by **Erik Olsen**, an individual residing in Washington State, United States, as a personal project (the "**Operator**", "we", "us", or "our"). You can reach us at **contact.mastermind.lab@gmail.com**.
+MasterMind is operated by **Just Living The Dream LLC**, a Washington limited liability company (the "**Operator**", "we", "us", or "our"). You can reach us at **contact.mastermind.lab@gmail.com**.
 
 This policy applies to your use of MasterMind, a beta web application for building tabletop role-playing game campaigns. It does not apply to anything you do outside the application — we have no access to and no interest in your activity elsewhere.
 
@@ -69,9 +70,9 @@ Our analytics provider **PostHog** records your sessions inside MasterMind. This
 
 ### 2.2 How recordings are used (and how they are not used)
 
-- **Recordings are used solely for product research and improvement.** The Operator (Erik Olsen) personally reviews them to understand how MasterMind is used and what to improve.
+- **Recordings are used solely for product research and improvement** — to understand how MasterMind is used and what to improve.
 - **Recordings are never used for**: public demonstrations, marketing materials, advertising, social media posts, sales pitches to investors, training of generalized or third-party AI models, or sale to any third party.
-- **The Operator is the only person who reviews them.** Recordings are not shared with friends, colleagues, or other users.
+- **Recordings are currently reviewed only by the MasterMind product development team**, which is limited to the Operator's internal product work. They are not shared with friends, other users, or outside reviewers, except for the sub-processors listed in Section 5 who help operate the service. If review access expands to additional personnel or service providers, we will update this Policy first.
 
 ### 2.3 Retention
 
@@ -92,7 +93,7 @@ If you've already created an account and later decide you don't want to be recor
 ## 3. Why We Collect This Information
 
 - **To provide the service.** Account data, content, and canvas state are required to sign you in, save your work, and render your campaign each time you visit.
-- **To improve the product.** Aggregate usage data and session recordings help us see where the app is confusing, where people get stuck, what is working well, and what to fix next. The Operator personally reviews recordings as part of designing the next iteration of MasterMind.
+- **To improve the product.** Aggregate usage data and session recordings help us see where the app is confusing, where people get stuck, what is working well, and what to fix next. The MasterMind product development team reviews recordings as part of designing the next iteration of MasterMind.
 - **To improve MasterMind through machine learning.** Over time we may use aggregated and de-identified usage signals — which features you use, where you click, where errors occur, what kinds of campaign structures you build — to train and refine machine learning models that help us understand how MasterMind is used and recommend product improvements. These models exist only to improve MasterMind itself.
   - **We do not** train public, general-purpose, or third-party AI models on your private campaign content.
   - **We do not** currently share user data with any third-party AI vendor for training purposes.
@@ -120,7 +121,7 @@ We use the following third-party services ("sub-processors") to operate MasterMi
 | Sub-processor                                       | What it does for MasterMind                 | What data it receives                                                                                              |
 | --------------------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
 | **Supabase** ([supabase.com](https://supabase.com)) | Database, authentication, file storage      | Account credentials, all of your content, uploaded images                                                          |
-| **PostHog** ([posthog.com](https://posthog.com))    | Product analytics; session replay (free-tier users) | Anonymized usage events and (for free-tier users) session recordings including in-app activity and card content |
+| **PostHog** ([posthog.com](https://posthog.com))    | Product analytics; session replay (free-tier users) | IP address, usage events, and (for free-tier users) session recordings including in-app activity and card content |
 | **Vercel** ([vercel.com](https://vercel.com))       | Hosting the MasterMind web application      | IP address, request metadata, standard server logs                                                                 |
 
 We do **not** sell your information to anyone. We do **not** share your information with advertisers. We do **not** share with third parties beyond the sub-processors above, except:
@@ -195,7 +196,7 @@ Email **contact.mastermind.lab@gmail.com** with the request. We will respond wit
 
 ## 10. Account and Data Deletion
 
-You can delete your account at any time directly in MasterMind: go to your **Profile** page (click your avatar in the top-right of the canvas, then "View profile") and use the **"Delete account"** button in the Danger Zone section. If you can't access the in-app option for any reason, email **contact.mastermind.lab@gmail.com** and we'll handle it.
+You can delete your account at any time directly in MasterMind: go to your **Profile** page (click your avatar in the top-left of the canvas, then "View profile") and use the **"Delete account"** button in the Danger Zone section. If you can't access the in-app option for any reason, email **contact.mastermind.lab@gmail.com** and we'll handle it.
 
 When you delete your account:
 
