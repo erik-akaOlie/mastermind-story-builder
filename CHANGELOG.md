@@ -4,7 +4,57 @@ A running log of meaningful changes to MasterMind: Story Builder. Append-only. N
 
 ## [Unreleased]
 
-### Mobile: node thumbnail no longer opens the lightbox (2026-07-19)
+### Bead View: expanded cards render at a constant readable size — the zoom-threshold slider no longer controls card size (2026-07-20 — smoke-tested by Erik on desktop, Android, and iPhone same day)
+
+Hover-expanding a bead (or selecting one, or hovering a connection line /
+search result) rendered the card at "threshold size" — the size a card
+would have at the exact zoom where cards morph into beads. That was
+coherent while the threshold was a fixed constant, but the altitude rail
+made it user-draggable, silently turning a navigation control (when do
+beads happen?) into a size control: slider at the bottom produced gigantic
+peeks, slider at the top unreadably tiny ones, and the earlier "desktop
+card content is a little too small" observation was the same coupling at
+the default threshold. Now the expanded peek renders at a constant screen
+scale, decoupled from both zoom depth and slider position:
+`EXPANDED_PEEK_ZOOM` (desktop, 1.0 — the card exactly as it looks at 100%
+zoom, so Card View body text is readable), and on touch a
+**viewport-proportional** rule (same-day revision after the two-phone QA):
+the same fixed-scale card read right on Erik's Android (320-CSS-px
+display-zoomed viewport → card ≈40% of screen) but too small on the QA
+iPhone (430-px viewport → ≈30%), and the honest variable is viewport
+width, not platform — so no user-agent sniffing. The base card targets
+40% of the viewport width, rounded to the 8-grid and clamped [0.5, 1.0]:
+Erik's Android computes to exactly its approved 128px (unchanged by
+construction), the iPhone lands at 176px (~41% of screen), touch tablets
+cap at desktop size. Viewport widths were Erik-measured on both devices.
+The slider still fully controls when the card↔bead morph happens. 12
+tests (`CampaignNode.peek.test.jsx`) pin scale constancy across slider
+positions and zoom depths, the per-viewport values, the clamps, and the
+8-grid discipline (suite at 655). Applies to expanded beads only — normal
+Card View rendering at ordinary zoom is untouched.
+
+### Canvas cards: deterministic sizing — no more clipped title words or history-dependent card widths (2026-07-20 — smoke-tested by Erik on desktop, Android, and iPhone same day)
+
+The same card could render at visibly different sizes depending on
+zoom/hover/expand history, and in the bad state its longest title word
+clipped at the card edge (e.g. "Evergreen" in "1- Evergreen Candle Co.").
+Root cause: the avatar circle's width was measured from the header's own
+rendered height, closing a feedback loop (avatar width → room for the
+title → wrap line count → header height → avatar width) with two stable
+solutions; ordinary bead↔card morphs and zoom font changes could knock the
+layout into the degenerate one. Fix: the header layout math is extracted
+to a pure module (`src/nodes/cardHeaderLayout.js`) that returns the
+converged avatar size, and the rendered avatar width now uses that value —
+one deterministic layout regardless of navigation history. The avatar's
+height/radii still track the measured header (visual fit only, no feedback
+path), and the title span gains a `break-words` safety net so a word
+soft-wraps rather than clips if canvas text metrics ever drift a few px
+from the browser's. 6 new unit tests pin the no-clip and
+single-fixed-point invariants across a grid of titles and zoom font sizes
+(suite at 643). Display behavior is otherwise unchanged — no card
+redesign.
+
+### Mobile: node thumbnail no longer opens the lightbox (2026-07-19, `3e7d79e` — real-device validated on Android + iPhone in production same day)
 
 On touch-primary devices (phones/tablets), tapping a node's thumbnail no
 longer launches the image lightbox — the avatar is now inert on touch, so

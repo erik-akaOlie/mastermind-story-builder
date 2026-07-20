@@ -152,6 +152,55 @@ export function currentThresholdZoom(thresholdMm = MORPH_BELOW_GRID_GAP_MM) {
   return zoomAtGridGapMm(thresholdMm)
 }
 
+// ── Expanded-peek size (2026-07-20 fix) ───────────────────────────────────
+// The screen scale a hover/select/edge/search-EXPANDED bead renders its card
+// form at — deliberately decoupled from the card↔bead threshold.
+//
+// The peek originally rendered at "threshold size" (currentThresholdZoom),
+// which was coherent while the threshold was a fixed constant. Once the
+// altitude rail made the threshold user-draggable, that coupling silently
+// turned a NAVIGATION control (when do cards become beads?) into a SIZE
+// control: slider at the bottom → gigantic peeks, slider at the top → tiny
+// unreadable ones (Erik's 3-screenshot repro, 2026-07-20). The expanded card
+// is a READING surface, so its size is now screen-space stable — same
+// philosophy as bead borders, connection dots, and title compensation.
+//
+// DESKTOP: one constant. 1.0 = the card exactly as it renders at 100% zoom,
+// so Card-View-zone body text is at its natural readable size.
+export const EXPANDED_PEEK_ZOOM = 1.0
+
+// TOUCH: viewport-proportional, not a constant (2026-07-20, same-day rev
+// after the two-phone QA). Measured on real devices, the SAME card at a
+// fixed scale reads very differently: Erik's Android runs a 320-CSS-px
+// viewport (display-zoom), the QA iPhone a 430-CSS-px one, so a fixed
+// 128px card was 40% of one screen (right) and 30% of the other (too
+// small). The honest variable is the viewport width, NOT the platform —
+// no user-agent sniffing. The base card targets TOUCH_PEEK_VIEWPORT_FRACTION
+// of the viewport width, rounded to the 8-grid, clamped:
+//   • 320-px viewport (Erik's Android): 0.4 × 320 = 128 → 8-grid 128 →
+//     scale 0.5 — EXACTLY the size Erik approved, unchanged by construction.
+//   • 430-px viewport (QA iPhone): 0.4 × 430 = 172 → 8-grid 176 →
+//     scale 0.6875 (~41% of screen, matching the Android felt share).
+//   • Floor 0.5 = the pre-rule touch scale (also the no-viewport fallback);
+//     cap 1.0 = desktop size (touch tablets land here — a big touchscreen
+//     gets the desktop-size peek).
+// TUNING KNOB: the fraction. Keep the device numbers above honest if changed.
+export const TOUCH_PEEK_VIEWPORT_FRACTION = 0.4
+export const TOUCH_PEEK_MIN_ZOOM = 0.5
+export const TOUCH_PEEK_MAX_ZOOM = 1.0
+
+// Mirrors cardHeaderLayout.js BASE_CARD (and computeMinZoom's canonical card
+// width below) — the base card's canvas width the scale multiplies.
+const BASE_CARD_WIDTH_PX = 256
+
+export function expandedPeekZoom(touchPrimary, viewportWidth) {
+  if (!touchPrimary) return EXPANDED_PEEK_ZOOM
+  if (!(viewportWidth > 0)) return TOUCH_PEEK_MIN_ZOOM
+  const targetWidth = Math.round((TOUCH_PEEK_VIEWPORT_FRACTION * viewportWidth) / 8) * 8
+  const scale = targetWidth / BASE_CARD_WIDTH_PX
+  return Math.min(TOUCH_PEEK_MAX_ZOOM, Math.max(TOUCH_PEEK_MIN_ZOOM, scale))
+}
+
 // ── Dynamic minZoom (Chunk F, per ADR-0010 addendum) ──────────────────────
 // React Flow's static `minZoom = 0.5` is replaced by a per-campaign limit
 // that lets the user zoom out far enough that the bounding box of all

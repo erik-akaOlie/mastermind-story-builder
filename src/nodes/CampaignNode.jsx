@@ -7,9 +7,11 @@ import QuickConnectButtons from './QuickConnectButtons.jsx'
 import { useImageUrl } from '../lib/useImageUrl'
 import { useLightbox } from '../components/Lightbox'
 import { labelInitial } from '../utils/labelUtils'
-import { BEAD_DIAMETER_PX, BEAD_BORDER_SCREEN_PX, MORPH_DURATION_MS, CONNECTION_DOT_SCREEN_PX, REPEL_PAD_FRACTION, currentThresholdZoom } from '../utils/altitude'
+import { computeHeaderLayout } from './cardHeaderLayout'
+import { BEAD_DIAMETER_PX, BEAD_BORDER_SCREEN_PX, MORPH_DURATION_MS, CONNECTION_DOT_SCREEN_PX, REPEL_PAD_FRACTION, expandedPeekZoom } from '../utils/altitude'
 import { useReducedMotion } from '../hooks/useReducedMotion'
 import { useTouchPrimary } from '../hooks/useTouchPrimary'
+import { useViewportWidth } from '../hooks/useViewportWidth'
 import BlockPreview from './BlockPreview'
 
 // Shared offscreen canvas for text-width measurement. Created once, reused by
@@ -58,6 +60,10 @@ const darkenColor = (hex, amount = 0.25) => {
 export default function CampaignNode({ data, selected, xPos, yPos }) {
   const [hovered, setHovered] = useState(false)
   const { zoom, x: panX, y: panY } = useViewport()
+  // Declared early because two independent concerns read it: the expanded-peek
+  // scale below, and the avatar's lightbox behavior (see the comment at the
+  // avatar-behavior section).
+  const touchPrimary = useTouchPrimary()
   const NODE_TYPES = useNodeTypes()
   const typeConfig = NODE_TYPES[data.type] || { label: data.type, color: data.color || '#6B7280' }
 
@@ -71,16 +77,17 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
   const morphMs = reducedMotion ? 0 : MORPH_DURATION_MS
 
   // ── Bead View hover-expand (per ADR-0010 / Chunk D) ───────────────────────
-  // A bead pops back into a readable card on hover or single-select, but
-  // pinned at "threshold-size" (= the screen size cards had at the Card→
-  // Bead morph trigger). That screen size is the floor; the card never gets
-  // smaller than it, no matter how far below the threshold the user zooms.
+  // A bead pops back into a readable card on hover or single-select, pinned
+  // at a CONSTANT screen size — expandedPeekZoom (altitude.js, 2026-07-20
+  // fix). It used to pin at "threshold size" (currentThresholdZoom), which
+  // silently made the user-draggable altitude-rail slider a card-size control
+  // (slider at bottom → gigantic peeks, top → tiny). The peek is a reading
+  // surface; its size no longer depends on zoom depth OR threshold position.
   //
   // Implementation: treat the rendering math as if the canvas zoom were
-  // clamped at the threshold (`effectiveZoom`), and compose a counter-scale
-  // on the container that brings the rendered visual back up to threshold
-  // size. At canvas zoom = threshold the counter-scale is 1; below threshold
-  // it grows to (threshold / canvasZoom).
+  // pinned at the peek zoom (`effectiveZoom`), and compose a counter-scale
+  // on the container that brings the rendered visual to peek size on screen
+  // (counterScale × canvas-zoom = peekZoom, regardless of the actual zoom).
   const altitudeMode      = useCanvasUiStore((s) => s.altitude)
   const hoveredNodeId     = useCanvasUiStore((s) => s.hoveredNodeId)
   const selectedNodeIds   = useCanvasUiStore((s) => s.selectedNodeIds)
@@ -117,22 +124,22 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
   // session (useEdgeHoverSession), so selection / direct node-hover expansion
   // keep their normal, interactive pointer behavior.
   const isSessionCard     = isInBeadView && isEdgeHighlighted
-  // Read the threshold from the store so a future altitude-rail UI that
-  // mutates it propagates here without code changes. Default value (2.65)
-  // lives in the store; altitude.js exposes the legacy constant only as a
-  // fallback for callers that don't have store access.
-  const thresholdMm       = useCanvasUiStore((s) => s.thresholdGridGapMm)
-  const thresholdZoom     = currentThresholdZoom(thresholdMm)
-  const effectiveZoom     = isExpanded ? Math.max(zoom, thresholdZoom) : zoom
-  const counterScale      = isExpanded ? Math.max(1, thresholdZoom / zoom) : 1
+  // Expanded-peek scale: screen-space stable, deliberately NOT derived from
+  // the threshold — see altitude.js. Desktop: constant. Touch: proportional
+  // to the viewport width (same physical share on a display-zoomed 320-px
+  // Android and a 430-px iPhone), hence the resize-aware viewport read.
+  const viewportWidth     = useViewportWidth()
+  const peekZoom          = expandedPeekZoom(touchPrimary, viewportWidth)
+  const effectiveZoom     = isExpanded ? peekZoom : zoom
+  const counterScale      = isExpanded ? peekZoom / (zoom || 1) : 1
 
   // Scale header text up as the user zooms out so titles remain readable.
   // zoom >= 1 → use base sizes (already sharp at 100%+).
   // zoom <  1 → divide by zoom to compensate; cap at 5× so extreme zoom-out
   //             doesn't produce absurdly large CSS values.
-  // In expanded mode, `effectiveZoom` is clamped at thresholdZoom so the
-  // compensation matches what the card would look like at the threshold —
-  // composing with the counter-scale below to produce threshold-size on
+  // In expanded mode, `effectiveZoom` is pinned at peekZoom so the
+  // compensation matches what the card looks like at the peek zoom —
+  // composing with the counter-scale above to produce peek-size on
   // screen regardless of how deep the canvas is zoomed.
   const compensation = effectiveZoom < 1 ? Math.min(1 / effectiveZoom, 5) : 1
   const titleFontSize = BASE_TITLE_SIZE * compensation
@@ -188,92 +195,27 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
   //   title div inner gap     = 8   (gap-2 between title span and icon)
   //   header vertical padding = 32  (py-4)
   //   right breathing target  = 16  (1rem clear between text and card edge)
-  const { iconHidden, cardWidth } = useMemo(() => {
-    const BASE_CARD       = 256
-    const PAD_OUTER       = 8
-    const PR_2            = 8
-    const INNER_GAP       = 8
-    const PY_4            = 32
-    const RIGHT_BREATHING = 16
-
-    if (!data.label) return { iconHidden: false, cardWidth: BASE_CARD }
+  // The math lives in cardHeaderLayout.js (pure, unit-tested). `avatarBox` is
+  // the converged header height and is what the avatar's rendered WIDTH uses —
+  // NOT the ResizeObserver measurement. That's the bistability fix (2026-07-20):
+  // width-from-measurement closed a feedback loop (avatar width → title span →
+  // line count → header height → avatar width) with a second, degenerate stable
+  // state where the longest title word clipped. See cardHeaderLayout.js header.
+  const { iconHidden, cardWidth, avatarBox } = useMemo(() => {
     const ctx = getMeasureCtx()
-    if (!ctx) return { iconHidden: false, cardWidth: BASE_CARD }
     const fontPx = titleFontSize * 16
-    ctx.font = `600 ${fontPx}px Inter, system-ui, sans-serif`
-
-    const words = data.label.split(/\s+/).filter(Boolean)
-    if (words.length === 0) return { iconHidden: false, cardWidth: BASE_CARD }
-
-    // Per-word widths (computed once) drive a real greedy word-wrap below.
-    // An earlier version used `ceil(totalTextWidth / span)` which is a
-    // continuous approximation; greedy wrap can produce MORE lines than that
-    // estimate when adjacent words awkwardly overflow by a small margin
-    // (e.g., "Strahd von" at 210px just barely doesn't fit a 208px span).
-    // Underestimating lines underestimates avatar height, which shrinks the
-    // computed span, which lets the longest word still overflow. Greedy
-    // matches the browser's actual rendering decision.
-    const wordWidths = words.map((w) => ctx.measureText(w).width)
-    const spaceWidth = ctx.measureText(' ').width
-    const longestWordWidth = wordWidths.reduce((m, w) => (w > m ? w : m), 0)
-
-    function greedyLines(span) {
-      if (span <= 0) return Infinity
-      let lines = 1
-      let lineW = 0
-      for (const w of wordWidths) {
-        const next = lineW === 0 ? w : lineW + spaceWidth + w
-        if (next > span && lineW > 0) {
-          lines++
-          lineW = w
-        } else {
-          lineW = next
-        }
-      }
-      return lines
+    let measure = null
+    if (ctx) {
+      ctx.font = `600 ${fontPx}px Inter, system-ui, sans-serif`
+      measure = (text) => ctx.measureText(text).width
     }
-
-    const hasIcon = !!typeConfig.icon
-
-    // The minimum span the title needs: longest word fits with `RIGHT_BREATHING`
-    // total clear between rightmost text pixel and card's right edge. PR_2
-    // already contributes 8px, so we need (RIGHT_BREATHING - PR_2) extra inside
-    // the span.
-    const minSpan = longestWordWidth + Math.max(0, RIGHT_BREATHING - PR_2)
-
-    // Iterate: at the current cardWidth + iconHidden, compute span via the
-    // greedy line counter → avatar height → required cardWidth. Loop until
-    // stable. Converges in a handful of passes for any real title.
-    let cardWidth  = BASE_CARD
-    let iconHidden = false
-    let avatar     = PY_4 + Math.max(fontPx, hasIcon ? iconSize : fontPx)
-
-    for (let i = 0; i < 8; i++) {
-      const iconStuff = hasIcon && !iconHidden ? (INNER_GAP + iconSize) : 0
-      const fixedHorz = avatar + PAD_OUTER + iconStuff + PR_2
-      const span      = cardWidth - fixedHorz
-
-      // If a visible icon would force the longest word to overflow, hide it
-      // and re-evaluate next pass.
-      if (hasIcon && !iconHidden && span < longestWordWidth) {
-        iconHidden = true
-        continue
-      }
-
-      const lines     = greedyLines(span)
-      const newAvatar = PY_4 + Math.max(lines * fontPx, hasIcon && !iconHidden ? iconSize : fontPx)
-
-      // Required cardWidth so span ≥ minSpan with the new avatar.
-      // The (newAvatar - avatar) term re-projects fixedHorz to the new avatar,
-      // so we don't need a second pass just to apply the bump.
-      const requiredCard = Math.max(BASE_CARD, fixedHorz + minSpan + (newAvatar - avatar))
-
-      if (newAvatar === avatar && requiredCard === cardWidth) break
-      avatar    = newAvatar
-      cardWidth = requiredCard
-    }
-
-    return { iconHidden, cardWidth }
+    return computeHeaderLayout({
+      label: data.label,
+      fontPx,
+      iconSize,
+      hasIcon: !!typeConfig.icon,
+      measure,
+    })
   }, [typeConfig.icon, data.label, titleFontSize, iconSize])
 
   const anyHovered   = useCanvasUiStore((s) => s.anyHovered)
@@ -388,7 +330,8 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
   // card form the avatar is a fat-finger magnet in the header. So on touch the
   // avatar is inert: taps fall through to normal node behavior (single-tap
   // select, double-tap Inspector). Desktop keeps the lightbox affordance.
-  const touchPrimary = useTouchPrimary()
+  // (touchPrimary itself is declared at the top of the component — it also
+  // drives the expanded-peek scale.)
 
   // Bead's no-thumbnail fallback — the card title's first initial in the
   // type's contrast color. Matches the card-view avatar empty state, so a
@@ -457,11 +400,11 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
     // expanded card to be centered on (modulo the clamp).
     const beadScreenCx = (xPos + BEAD_DIAMETER_PX / 2) * zoom + panX
     const beadScreenCy = (yPos + BEAD_DIAMETER_PX / 2) * zoom + panY
-    // Expanded card's screen-space size: cardWidth × thresholdZoom.
-    // (counterScale × canvas-zoom compose to give thresholdZoom; the card's
-    // box is cardWidth wide, so visible-on-screen = cardWidth × thresholdZoom.)
-    const cardScreenW = cardWidth   * thresholdZoom
-    const cardScreenH = layoutHeight * thresholdZoom
+    // Expanded card's screen-space size: cardWidth × peekZoom.
+    // (counterScale × canvas-zoom compose to give peekZoom; the card's
+    // box is cardWidth wide, so visible-on-screen = cardWidth × peekZoom.)
+    const cardScreenW = cardWidth   * peekZoom
+    const cardScreenH = layoutHeight * peekZoom
     const left   = beadScreenCx - cardScreenW / 2
     const right  = beadScreenCx + cardScreenW / 2
     const top    = beadScreenCy - cardScreenH / 2
@@ -585,8 +528,8 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
   if (isExpanded && typeof xPos === 'number' && typeof yPos === 'number') {
     const myCx = xPos + BEAD_DIAMETER_PX / 2
     const myCy = yPos + BEAD_DIAMETER_PX / 2
-    const myW  = cardWidth   * thresholdZoom / (zoom || 1)
-    const myH  = layoutHeight * thresholdZoom / (zoom || 1)
+    const myW  = cardWidth   * peekZoom / (zoom || 1)
+    const myH  = layoutHeight * peekZoom / (zoom || 1)
     for (const [otherId, rec] of expandedNodesForRepel) {
       if (otherId === data.id || typeof rec.natCenterX !== 'number') continue
       const dx = myCx - rec.natCenterX
@@ -645,20 +588,20 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
   //
   // Canvas-unit translation:
   //   center = (true bead center) + (clampDx/zoom, clampDy/zoom)
-  //   size   = (cardWidth, contentHeight) × thresholdZoom / zoom
+  //   size   = (cardWidth, contentHeight) × peekZoom / zoom
   // The size formula matches what the expanded card occupies on the canvas
   // *visually* — its layout box is still bead-sized, but counter-scale +
-  // outer canvas zoom paint it at (cardWidth, contentHeight) × thresholdZoom
-  // on screen, which is (cardWidth × thresholdZoom / zoom, ... / zoom) in
+  // outer canvas zoom paint it at (cardWidth, contentHeight) × peekZoom
+  // on screen, which is (cardWidth × peekZoom / zoom, ... / zoom) in
   // canvas units.
   useEffect(() => {
     const store = useCanvasUiStore.getState()
-    // zoom/thresholdZoom can be transiently 0 or unhydrated for a frame
-    // (store defaults, first mobile paint, mid-gesture). The division below
-    // would mint NaN/Infinity — which the store now rejects, but don't even
-    // build the record: keep the previous good one and republish next frame
-    // when the inputs are real.
-    if (!(zoom > 0) || !Number.isFinite(thresholdZoom)) return
+    // zoom can be transiently 0 or unhydrated for a frame (store defaults,
+    // first mobile paint, mid-gesture). The division below would mint
+    // NaN/Infinity — which the store now rejects, but don't even build the
+    // record: keep the previous good one and republish next frame when the
+    // inputs are real.
+    if (!(zoom > 0) || !Number.isFinite(peekZoom)) return
     if (!isExpanded || typeof xPos !== 'number' || typeof yPos !== 'number') {
       // Clear only THIS node's entry. The keyed map makes that inherently
       // safe — deleting our own key can never disturb another expanded node's
@@ -674,19 +617,19 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
     const centerX = natCenterX + clampDxCanvas + repelXCanvas
     const centerY = natCenterY + clampDyCanvas + repelYCanvas
     // Visible card extent in canvas units = container's CSS box × counterScale.
-    // counterScale = thresholdZoom / zoom (when expanded), so:
-    //   visible = box × thresholdZoom / zoom
+    // counterScale = peekZoom / zoom (when expanded), so:
+    //   visible = box × peekZoom / zoom
     // We use layoutHeight (max of bead diameter and natural content height)
     // so the published rect matches the container's actual hit-box AND the
     // visible bg-tint extent. Edges route to the visible card border,
     // including the small footer of bg-tint that short cards display.
-    const width      = cardWidth     * thresholdZoom / zoom
-    const height     = layoutHeight  * thresholdZoom / zoom
+    const width      = cardWidth     * peekZoom / zoom
+    const height     = layoutHeight  * peekZoom / zoom
     // Box size in canvas units: just the CSS layout dimensions.
     const boxWidth   = cardWidth
     const boxHeight  = layoutHeight
     store.setExpandedNode(data.id, { centerX, centerY, natCenterX, natCenterY, width, height, boxWidth, boxHeight })
-  }, [isExpanded, xPos, yPos, clampDxCanvas, clampDyCanvas, repelXCanvas, repelYCanvas, zoom, thresholdZoom, cardWidth, layoutHeight, data.id])
+  }, [isExpanded, xPos, yPos, clampDxCanvas, clampDyCanvas, repelXCanvas, repelYCanvas, zoom, peekZoom, cardWidth, layoutHeight, data.id])
 
   // Clear our published record when this node unmounts mid-expansion.
   useEffect(() => () => {
@@ -924,7 +867,12 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
         <div
           className="flex-shrink-0 overflow-hidden flex items-center justify-center"
           style={{
-            width:  avatarSize,
+            // WIDTH from the converged layout math, NOT the measured header
+            // height — the measured value fed back into the title's available
+            // span and created a second stable layout where long words clipped
+            // (see cardHeaderLayout.js). Height/radii stay measured: they only
+            // affect the avatar's own shape, never the text column.
+            width:  avatarBox,
             height: avatarSize + 1,
             backgroundColor: avatarBg,
             borderTopLeftRadius:     8,                       // matches card's rounded-lg (0.5rem)
@@ -978,8 +926,14 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
           ref={headerRef}
           className={`flex items-start gap-2 flex-1 min-w-0 ${hideAvatar ? 'py-4 px-8' : 'py-4 pr-2'}`}
         >
+          {/* break-words is a safety net, not the fix: the layout math sizes
+              the card so the longest word fits, but if canvas text measurement
+              ever runs a few px under the browser's real metrics (e.g. font
+              not yet loaded at measure time), the word soft-wraps instead of
+              clipping invisibly at the card edge. Never triggers when the
+              math is right. */}
           <span
-            className="font-semibold leading-none flex-1 min-w-0"
+            className="font-semibold leading-none flex-1 min-w-0 break-words"
             style={{ fontSize: `${titleFontSize}rem`, color: hdrText }}
           >
             {data.label || 'Untitled'}

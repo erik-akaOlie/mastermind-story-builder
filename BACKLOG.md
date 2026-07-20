@@ -145,6 +145,52 @@ They reorder relative to each other based on what #1 + #2 reveal.
   `Login.jsx` untouched since the signup cluster)
 - Terms of Service / Privacy Policy operator-name update (see entry below)
 
+**Launch bugs — Erik-reported 2026-07-20 (production)**
+- Expanded-peek size tracked the altitude-rail slider — hover-expanding a
+  bead rendered the card at "threshold size" (`currentThresholdZoom`), so
+  the user-draggable threshold slider silently acted as a card-SIZE control:
+  slider at the bottom → gigantic peeks, at the top → unreadably tiny
+  (Erik's 3-screenshot slider experiment isolated the variable; also the
+  root of the earlier "desktop card content a little too small" note —
+  same knob). **FIXED 2026-07-20, Erik smoke-tested desktop + Android +
+  iPhone:** the peek now renders at a constant screen scale —
+  `EXPANDED_PEEK_ZOOM` 1.0 desktop (card exactly as at 100% zoom; Card
+  View body text at natural size); touch is **viewport-proportional**
+  (same-day rev after the two-phone QA): the same fixed-scale card read
+  right on Erik's Android (320-CSS-px display-zoomed viewport, card ≈40%
+  of screen) but too small on the QA iPhone (430-px viewport, ≈30%) — the
+  honest variable is viewport width, not platform, so NO user-agent
+  sniffing. Base card targets `TOUCH_PEEK_VIEWPORT_FRACTION` 0.4 of the
+  viewport width, 8-grid rounded, clamped [0.5, 1.0]: Android 0.4×320=128
+  → unchanged by construction; iPhone 0.4×430=172 → 176px (0.6875);
+  tablets cap at desktop size. Viewport numbers Erik-measured
+  (whatismyviewport.com). The slider keeps its navigation meaning (when
+  beads happen) and no longer affects peek size. 12 tests
+  (`CampaignNode.peek.test.jsx`) pin scale constancy across slider
+  positions + zoom depths, the per-viewport values, clamps, and 8-grid
+  discipline.
+- Card-size bistability / clipped title words — the canvas card's avatar
+  width was measured from the header's rendered height, closing a feedback
+  loop (avatar width → title wrap → header height → avatar width) with TWO
+  self-consistent layouts for titles like "1- Evergreen Candle Co."; zoom/
+  hover/morph history decided which one the DOM settled in, so the same card
+  rendered at visibly different sizes and could clip its longest title word.
+  **FIXED 2026-07-20, Erik smoke-tested desktop + Android + iPhone:** layout
+  math extracted to pure `src/nodes/cardHeaderLayout.js` (unit-tested, 6
+  tests — no-clip + single-fixed-point invariants across a title/zoom grid);
+  avatar's rendered WIDTH now comes from the converged `avatarBox` value
+  (height/radii stay measured — no feedback path); `break-words` safety net
+  on the title span for any residual canvas-vs-browser text-metric drift.
+- Card View preview scare — content typed into the Inspector's Card View
+  did not appear on the canvas card ("No content yet") until a page refresh.
+  Refresh proved the content WAS saved (DB write fine); the broken leg was
+  the live Realtime echo (node_sections → data.cardView) in that browser
+  session. **OPEN — watch item, root cause not found** (transient or
+  session-specific; Supabase status was clean). Not closed by the refresh:
+  a beta user who types content and sees "No content yet" is a trust
+  failure even when the data is safe. If it recurs: capture the browser
+  console (Realtime channel errors) before refreshing.
+
 **Launch bugs — Erik-reported 2026-07-09, not yet code-verified** (see the
 "Launch bugs" entry below for detail)
 - ✅ Profile image no longer displays in the user avatar — **FIXED 2026-07-18**
@@ -849,7 +895,10 @@ and markdown export are Soon-after. **Honest sizing:** remaining Bucket-1 is
    the Inspector**; canvas clicks on the thumbnail should select/open the
    node like any other click. Content-image lightbox behavior elsewhere is
    unaffected. Likely S once verified.
-   **MOBILE HALF FIXED 2026-07-19** (Erik-approved, pre-beta): on
+   **MOBILE HALF FIXED 2026-07-19 — SHIPPED (`3e7d79e`) + REAL-DEVICE
+   VALIDATED same day** (Erik, production, Android AND iPhone: bead tap
+   no longer opens the lightbox, thumbnail-area taps don't launch it in
+   either form, desktop thumbnail-click lightbox still works): on
    touch-primary devices the avatar is inert — no lightbox, no event
    swallowing; single tap selects, double tap opens the Inspector. Root
    cause on beads: selection on finger-down morphs bead→card mid-tap, and
