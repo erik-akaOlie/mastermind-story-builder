@@ -111,7 +111,10 @@ They reorder relative to each other based on what #1 + #2 reveal.
 - Signup / waitlist / attribution (how-heard) / in-flow recording notice /
   beta-promise copy on the signup screen (migration 014, 2026-06-26)
 - Custom SMTP + Site URL + confirmation round-trip — **verified end-to-end
-  once, configured for expected beta volume (not load-tested)**; see
+  (2026-06-29; re-verified 2026-07-18 from an iPhone: production signup →
+  confirmation email to inbox → link landed signed-in → workspace created →
+  FTUE ran to completion — same journey also verified repeatedly on desktop +
+  Android). Configured for expected beta volume (not load-tested)**; see
   [ADR-0018](./docs/decisions/0018-transactional-email-infrastructure.md)
 - ✅ **Simple search shipped** (2026-07-06, `2ba2eb0` — title predictions,
   results drawer, find mode)
@@ -144,7 +147,11 @@ They reorder relative to each other based on what #1 + #2 reveal.
 
 **Launch bugs — Erik-reported 2026-07-09, not yet code-verified** (see the
 "Launch bugs" entry below for detail)
-- Profile image no longer displays in the user avatar
+- ✅ Profile image no longer displays in the user avatar — **FIXED 2026-07-18**
+  (root cause: the `profiles` row for Erik's account was missing from the
+  production DB — discovered during the test-account cleanup; row re-created
+  via SQL pointing at the newest stored avatar file; Erik confirmed the photo
+  renders again)
 - Node thumbnail click opens the lightbox from the canvas (card AND bead
   form) — likely desired behavior is lightbox from the Inspector only
 - Inspector "hide thumbnail" needs close/reopen + a second try — Erik to
@@ -775,6 +782,19 @@ and markdown export are Soon-after. **Honest sizing:** remaining Bucket-1 is
     framing wins) is a HIGH-PRIORITY POST-BETA item. Behavioral
     acceptance (~10s create+name) will be measured from PostHog
     session replays of real beta users (ftue_shown→ftue_completed).
+  - **iPhone production QA PASSED (Erik, on-device, 2026-07-18) — FTUE
+    launch verification CLOSED on all three platforms.** Fresh production
+    signup from an iPhone (Safari): confirmation email arrived in inbox
+    (not spam), the link opened MasterMind in a new Safari tab fully
+    signed in, workspace creation worked, the mobile FTUE appeared with
+    a fully functional toolbar, arming a node/label/line advanced
+    welcome→placement copy, placing the element completed the FTUE, and
+    multiple undos rewound all the way back to the FTUE start as
+    designed. Safe-area band by the home indicator: clear. The "label"
+    placement copy had shipped earlier the same day (`33203aa`,
+    deployed + confirmed). FTUE remains FROZEN through beta; desktop+
+    mobile unification stays post-beta. Test account cleanup (seat
+    reclaim) tracked separately, same day.
 - **Dependencies.** None hard; touches the canvas (App.jsx) + the Inspector open
   path.
 - **Size:** M (minimal version); the center→dock spotlight choreography is a
@@ -810,12 +830,18 @@ and markdown export are Soon-after. **Honest sizing:** remaining Bucket-1 is
 > yet. First step for each is verification (reproduce + locate), then sizing.
 > Do not treat the sizes below as commitments.
 
-1. **Profile image no longer displays in the user avatar.** The top-left
-   UserAvatar chip (and possibly the Profile page) no longer shows the
-   uploaded profile photo. Regression — this worked when profile avatars
-   shipped. Verify in production first; suspect areas: signed-URL
-   resolution (`useImageUrl` with `profile-media` bucket) or the
-   ProfileContext load. Likely S once located.
+1. ✅ **Profile image no longer displays in the user avatar — FIXED
+   2026-07-18.** Root cause was neither suspect area: the `profiles` ROW for
+   Erik's account was **missing from the production DB entirely** (how it was
+   deleted is unknown — nothing in the app deletes profile rows; best guess
+   is an accidental dashboard row deletion at some point; the avatar files
+   themselves were intact in `profile-media` the whole time). Discovered
+   during the 2026-07-18 test-account cleanup when the profiles table showed
+   only 2 rows for 3 users. Fixed by re-inserting the row via SQL with
+   `avatar_path` pointed at the newest stored avatar file; `is_test_user`
+   defaulted to true (correct). Erik confirmed the photo renders again in
+   production. If a profile row ever vanishes again, investigate properly —
+   twice is a pattern.
 2. **Node thumbnail opens the lightbox from the canvas.** Clicking a node's
    thumbnail on the canvas opens the lightbox — easy to hit accidentally in
    card form, worse in bead form. **Likely desired behavior (Erik, to be
@@ -823,13 +849,35 @@ and markdown export are Soon-after. **Honest sizing:** remaining Bucket-1 is
    the Inspector**; canvas clicks on the thumbnail should select/open the
    node like any other click. Content-image lightbox behavior elsewhere is
    unaffected. Likely S once verified.
+   **MOBILE HALF FIXED 2026-07-19** (Erik-approved, pre-beta): on
+   touch-primary devices the avatar is inert — no lightbox, no event
+   swallowing; single tap selects, double tap opens the Inspector. Root
+   cause on beads: selection on finger-down morphs bead→card mid-tap, and
+   the click hit-tests at finger-lift against the now-expanded card's
+   avatar. Guarded by `useTouchPrimary`; pinned by
+   `CampaignNode.avatar.test.jsx`. **Desktop deliberately unchanged** —
+   the Inspector-only question above remains open for the card display
+   types discussion.
 3. **Inspector "hide thumbnail" needs close/reopen + a second try.**
    Reported from prior session context; **Erik to confirm it is still real
    before any work starts** — recorded here so it isn't lost, not yet
    accepted as a confirmed bug.
 
-### Terms of Service / Privacy Policy — operator-name update
-- **Problem.** The ToS and Privacy Policy don't yet name **Just Living the
+### ✅ Terms of Service / Privacy Policy — operator-name update (SHIPPED 2026-07-19, `bd6d90a`)
+- **Outcome.** Scope grew (with Erik's approval) from a name swap to a
+  focused beta-hardening pass: operator = **Just Living The Dream LLC**
+  (title-case "The" is Erik's chosen public styling) in both docs; stale
+  personal-project/trademark language removed; new Feedback clause (story-
+  content carve-out) + narrow competitive-misuse clause + seat-cap/waitlist
+  disclosure in the ToS; Privacy reviewer language de-personalized ("the
+  MasterMind product development team", no forever-promise), PostHog row
+  lists IP and drops "anonymized", avatar location corrected. PostHog
+  deletion claim verified against the delete-account Edge Function. Live-
+  verified on production. Erik notified Todd + Chris. Attorney review of
+  the aggressive bits (GDPR contract basis for recording, indemnification,
+  competitive clause) stays a pre-paid/public-launch item, per the pass's
+  three-bucket triage.
+- **Problem (original).** The ToS and Privacy Policy don't yet name **Just Living the
   Dream LLC** as the operating entity. This was blocked on the LLC's
   reinstatement status; the LLC is **confirmed reinstated via WA SoS
   statement received 2026-06-30** — this copy change is unblocked. (Exact
@@ -1046,6 +1094,14 @@ and markdown export are Soon-after. **Honest sizing:** remaining Bucket-1 is
   call sites + tests).
 
 ### Drop deprecated card-media bucket + helper function
+- **Status (2026-07-18): bucket DELETED** (emptied + dropped via the Storage
+  dashboard during the test-account cleanup — 3 folders / 210 stale files).
+  Remaining to fully close Stage 5: (a) drop the orphaned helper —
+  `drop function if exists public.user_owns_card_media_path(text);` in the
+  SQL Editor; (b) remove CLAUDE.md's deprecated-bucket callout; (c) update
+  ADR-0012's Post-rollout status. (b)+(c) queued behind the ToS/Privacy
+  operator update per Erik's 2026-07-18 priority call (public legal copy
+  before internal docs cleanup).
 - **Problem.** The 2026-05-18 campaign → workspace rename (ADR-0012)
   introduced a new Storage bucket (`workspace-media`) and a renamed RLS
   helper (`public.user_owns_workspace_media_path`). The old bucket

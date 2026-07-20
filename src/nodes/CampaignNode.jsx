@@ -9,6 +9,7 @@ import { useLightbox } from '../components/Lightbox'
 import { labelInitial } from '../utils/labelUtils'
 import { BEAD_DIAMETER_PX, BEAD_BORDER_SCREEN_PX, MORPH_DURATION_MS, CONNECTION_DOT_SCREEN_PX, REPEL_PAD_FRACTION, currentThresholdZoom } from '../utils/altitude'
 import { useReducedMotion } from '../hooks/useReducedMotion'
+import { useTouchPrimary } from '../hooks/useTouchPrimary'
 import BlockPreview from './BlockPreview'
 
 // Shared offscreen canvas for text-width measurement. Created once, reused by
@@ -380,6 +381,14 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
   const hideAvatar = !!data.hideAvatar
   const avatarUrl = useImageUrl(hideAvatar ? null : data.avatar, 'thumb')
   const lightbox = useLightbox()
+  // Touch-primary devices get NO avatar lightbox (Erik, 2026-07-19): a tap on
+  // a bead selects it, the bead morphs to a card DURING the tap, and the
+  // browser hit-tests the click at finger-lift against the now-expanded card —
+  // landing on this avatar and opening the lightbox instead of selecting. On
+  // card form the avatar is a fat-finger magnet in the header. So on touch the
+  // avatar is inert: taps fall through to normal node behavior (single-tap
+  // select, double-tap Inspector). Desktop keeps the lightbox affordance.
+  const touchPrimary = useTouchPrimary()
 
   // Bead's no-thumbnail fallback — the card title's first initial in the
   // type's contrast color. Matches the card-view avatar empty state, so a
@@ -931,16 +940,20 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
             <img
               src={avatarUrl}
               alt={data.label || ''}
-              className="w-full h-full object-cover cursor-zoom-in"
-              // pointerdown is stopped because React Flow registers node selection
-              // on its pointerdown listener (which fires BEFORE onClick / onMouseDown).
+              className={touchPrimary ? 'w-full h-full object-cover' : 'w-full h-full object-cover cursor-zoom-in'}
+              // DESKTOP ONLY (see touchPrimary comment above): pointerdown is
+              // stopped because React Flow registers node selection on its
+              // pointerdown listener (which fires BEFORE onClick / onMouseDown).
               // Without this, opening the lightbox via the avatar would silently
               // select the card, leaving it highlighted after the lightbox closes.
               // Mousedown + click are also stopped for legacy event paths and to
               // keep the avatar from triggering canvas-level pan/select.
-              onPointerDown={(e) => e.stopPropagation()}
-              onMouseDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
+              // On touch-primary all three handlers are absent so the avatar is
+              // a plain part of the card — never a lightbox trigger, never an
+              // event swallower.
+              onPointerDown={touchPrimary ? undefined : (e) => e.stopPropagation()}
+              onMouseDown={touchPrimary ? undefined : (e) => e.stopPropagation()}
+              onClick={touchPrimary ? undefined : (e) => {
                 e.stopPropagation()
                 lightbox.open(data.avatar)
               }}

@@ -4,6 +4,47 @@ A running log of meaningful changes to MasterMind: Story Builder. Append-only. N
 
 ## [Unreleased]
 
+### Mobile: node thumbnail no longer opens the lightbox (2026-07-19)
+
+On touch-primary devices (phones/tablets), tapping a node's thumbnail no
+longer launches the image lightbox — the avatar is now inert on touch, so
+a tap behaves like a tap anywhere else on the card: single tap selects,
+double tap opens the Inspector. Root cause of the maddening bead symptom:
+tapping a bead selects it on finger-down, the bead morphs to a card
+mid-tap, and the browser aims the resulting click at whatever is under
+the finger at lift — which, post-morph, is the card's avatar and its
+lightbox handler. Desktop is byte-for-byte unchanged (hover pre-expands
+beads, so clicks land where aimed; the avatar keeps its zoom-in cursor
+and lightbox). Guard = the existing `useTouchPrimary` media-query hook.
+New `CampaignNode.avatar.test.jsx` pins both sides (5 tests; suite at
+637). The separate desktop question — whether canvas thumbnails should
+open the lightbox at all vs. Inspector-only — stays with the card
+display types design discussion.
+
+### Terms of Service + Privacy Policy — operator LLC + beta hardening (2026-07-19, `bd6d90a`)
+
+Both legal documents now name **Just Living The Dream LLC** (a Washington
+limited liability company) as the operator, replacing the "Erik Olsen, an
+individual… personal project… not a registered business entity" language
+(the LLC's reinstatement was confirmed by the WA Secretary of State
+2026-06-30). Beta-hardening additions to the Terms: a **Feedback clause**
+(product suggestions are usable by us without compensation — with an
+explicit carve-out that users' story content stays theirs), a narrow
+**competitive-misuse clause** (don't use the service itself to build or
+benchmark a competitor), and a beta **seat-cap/waitlist disclosure**.
+Privacy precision pass: recordings are reviewed by "the MasterMind product
+development team… limited to the Operator's internal product work" (no
+forever-promise naming one person; sub-processor exception referenced),
+the PostHog sub-processor row now lists IP address and drops the
+inaccurate "anonymized," and the avatar location in the deletion
+instructions is corrected to top-left. Date lines fixed to render on
+separate lines; Last Updated 2026-07-19. The PostHog
+delete-recordings-on-account-deletion claim was verified against the
+`delete-account` Edge Function before being retained. Deployed +
+verified live on `#terms` / `#privacy` (a Vercel queue delay meant the
+build started ~25 minutes after push; `e6aae63` is an empty re-trigger
+commit from that window — no content of its own).
+
 ### FTUE introduction — Chunk 1: desktop handwritten guidance (2026-07-16)
 
 A brand-new (or still-empty) workspace now teaches itself. Per Erik's
