@@ -208,6 +208,14 @@ They reorder relative to each other based on what #1 + #2 reveal.
   entry below; decide after the must-fix list is done
 
 **Launch-post copy** (write at post time)
+- ✅ **BrandScript DONE 2026-07-28** — the messaging foundation for the launch
+  post lives in [docs/strategy/brandscript.md](./docs/strategy/brandscript.md)
+  (hero, villain "The Page-by-Page Trap", plan, agreement, CTAs, one-liner,
+  claim guardrails + evidence appendix). **Read its ⚠️ Flags section before
+  writing copy** — 3 known conflicts: markdown-export claim (not shipped; use
+  ToS §4 on-request framing), "5 free workspaces" (entitlement undecided — cap
+  decision below leans 3), and the missing "not a free-forever guarantee"
+  clause from ADR-0017 §6's locked promise.
 - Beta-promise + Discord redirect script + support-expectation copy
 - MB-9: email-template copy edit
 
