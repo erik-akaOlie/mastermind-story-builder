@@ -4,6 +4,23 @@ A running log of meaningful changes to MasterMind: Story Builder. Append-only. N
 
 ## [Unreleased]
 
+### Inspector: reverting an edit now saves — the A→B→A silent-loss bug (2026-07-29)
+
+Change a card's title, type, thumbnail image, or thumbnail visibility in
+the Inspector, let the auto-save land (400ms), then change it back — and
+the revert was silently never saved: the Inspector showed the reverted
+value while the canvas and database kept the intermediate one, until
+closing and reopening the Inspector made a second attempt stick. Found
+live in a tester session (2026-07-28, hide-thumbnail repro; matches the
+earlier "hide thumbnail needs close/reopen + a second try" report). Root
+cause: the auto-save's skip-on-no-change guard compared against the
+session-START snapshot, so a value equal to the session start read as
+"nothing changed" even when a different value had been saved in between.
+The guard now compares against the last-SAVED state (seeded at mount,
+advanced after every save). Four regression tests pin the A→B→A scenario
+across title, type, and hide-thumbnail (all header fields share the one
+guard) plus a no-save-loop check; full suite 659/659.
+
 ### Analytics: first-party reverse proxy — tester sessions survive ad-blockers (2026-07-28)
 
 A new tester's session (2026-07-27) produced zero PostHog data — no

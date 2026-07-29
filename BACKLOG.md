@@ -151,9 +151,31 @@ GM; one observed session, evidence-weighted accordingly)
   fingerprint = client-side blocking (ad-blocker / privacy browser).
   Erik chose **option C**: first-party reverse proxy (`/relay` via
   vercel.json + vite dev proxy) AND a disclosure sentence in the signup
-  recording notice so the clickwrap matches the behavior. Implemented
-  2026-07-28 (ADR-0009 amendment); **production verification pending**
-  first post-deploy session (the rewrite only exists on Vercel).
+  recording notice so the clickwrap matches the behavior. Implemented +
+  pushed 2026-07-28 (`612fb8d`, ADR-0009 amendment). **Production-verified
+  by Erik 2026-07-28** (incognito session: all /relay requests 200 incl.
+  the recorder script, events + replay both landed and play back in
+  PostHog; notice copy approved). **Mark's retest 2026-07-29 (his own
+  machine): person record + full event stream now captured — a material
+  observability win — but session replay still absent** (>1h after the
+  session; duration filter verified at 5s so his ~2min session qualifies;
+  Mark is unaware of any ad-blocker on his machine).
+  **RECLASSIFIED (Erik, 2026-07-29): known beta research limitation;
+  monitor during rollout — no longer launch-gating.** Unconfirmed working
+  hypothesis for events-arriving-while-replay-doesn't: the replay engine
+  is a separately lazy-loaded script whose FILENAME survives the proxy
+  (`/relay/static/posthog-recorder.js`) and the replay data endpoint
+  (`/s/`) differs from events (`/e/`) — filter-list rules matching
+  filename/path patterns would block replay while passing events.
+  DELIBERATELY NOT pursued now (Erik): no recorder bundling, no
+  replay-status instrumentation, no filter-list research. Reopen triggers:
+  multiple testers showing events-but-no-replay, or replay coverage too
+  low to support the beta's research goals — the bundling +
+  status-event proposal from the 2026-07-29 session is the on-deck fix
+  if reopened. Beta fallbacks (option D): PostHog event timelines,
+  direct tester feedback, live/observed first-use sessions where
+  practical, and a MANUAL per-tester tracking matrix (person? events?
+  replay? feedback?) so coverage becomes measured, not guessed.
 - **Inspector A→B→A save bug (S)** — CONFIRMED with root cause
   (2026-07-28): the auto-save skip-guard in `Inspector.jsx` compares
   against the session-START snapshot instead of last-SAVED state, so any
@@ -161,9 +183,14 @@ GM; one observed session, evidence-weighted accordingly)
   is silently never saved — Inspector shows A, canvas/DB keep B. Exactly
   reproduces Mark's hide-thumbnail repro (and the pre-existing "needs
   close/reopen" report below). Affects title / node type / thumbnail
-  image / hide-thumbnail. Fix: compare against last-saved (ref updated in
-  doSave) + regression tests for all four fields + no-save-loop /
-  Realtime-echo checks.
+  image / hide-thumbnail. **✅ FIXED 2026-07-29, test-first, Erik
+  QA-confirmed same day** (repeated hide/show/hide/show cycles all echo
+  to the canvas card in real time, no close/reopen): the guard now
+  compares against a `lastSavedRef` (seeded at mount, advanced after
+  every save). The 4 new regression tests were run against the UNFIXED
+  code first and failed exactly as diagnosed (revert save never fired),
+  then pass with the fix: title / type / hide-thumbnail A→B→A + a
+  no-save-loop check. Full suite 659/659.
 
 *Immediate first-use improvements (Erik-prioritized 2026-07-28)*
 - **Desktop FTUE guidance aligned with mobile** (S or M — Erik to choose
@@ -231,6 +258,30 @@ items land)*
   weeks post-observation" note is sequencing history, not a constraint.
 - Mobile login + best-on-desktop expectation (pre-existing, still open —
   `Login.jsx` copy untouched since the signup cluster)
+
+**Rollout strategy — staged beta (Erik, 2026-07-29; written in pencil)**
+The beta expands incrementally as confidence grows. Current planning
+assumptions — targets, NOT commitments; any stage may grow, shrink,
+pause, or stop on evidence (product stability, support burden, research
+quality, participant interest, learning-per-tester):
+1. **Trusted cohort (~5, personal invites)** — confidence phase: can
+   people get through onboarding, any stop-everything bugs, is the data
+   pipeline capturing what we expect, is support manageable?
+2. **Early beta (up to ~20)** — instrumentation-validation phase:
+   patterns over anecdotes. Manual per-tester matrix (person / events /
+   replay / feedback) answers how widespread the replay gap is; repeat
+   onboarding problems surface here.
+3. **Broader beta (up to ~50, the ADR-0017 "50-ish")** — expand only if
+   the earlier gates support it.
+Stage gates are evidence checklists, not dates: no launch-blocking or
+trust bugs outstanding · new users complete onboarding · support demand
+manageable · replay coverage sufficient OR events+direct feedback
+providing enough insight · testers reaching the product's aha moment ·
+learning more per tester than the time each requires. Operational note
+(fact, lever is Erik's): the existing `beta_config.seat_limit` soft-cap
+is dashboard-editable, so each stage can be enforced with the shipped
+auto-flip mechanism — set the limit to (current profiles + stage size);
+no code needed.
 
 **Launch bugs — Erik-reported 2026-07-20 (production)**
 - Expanded-peek size tracked the altitude-rail slider — hover-expanding a

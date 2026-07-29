@@ -326,3 +326,18 @@ recording notice:
 same-origin proxies (path heuristics, script-behavior detection). Beta
 observability is therefore high-coverage, not total; in-person sessions
 and direct feedback remain the fallback for invisible testers.
+
+**Follow-up — 2026-07-29: retest result + reclassification.** The tester's
+retest on his own machine confirmed the proxy restored identity + full
+event capture (previously zero data), but session replay remained absent
+(>1h post-session; the 5s duration filter does not explain it; the tester
+is unaware of any ad-blocker). Working hypothesis, UNCONFIRMED: the
+replay engine is a separately lazy-loaded script whose filename survives
+the proxy, and replay data uses a different endpoint (/s/) than events
+(/e/) — filename/path-pattern filter rules would produce exactly
+events-without-replay. Erik's call (2026-07-29): stop investigating —
+reclassified from launch-gating defect to **known beta research
+limitation; monitor during rollout** via a manual per-tester matrix
+(person / events / replay / feedback). Recorder bundling +
+replay-status instrumentation are the on-deck fixes if multiple testers
+show the same pattern. Full state in BACKLOG's launch queue.

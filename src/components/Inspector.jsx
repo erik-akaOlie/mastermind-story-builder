@@ -171,8 +171,17 @@ export default function Inspector({
   // from the same persisted-shape projection the close-time diff uses, so
   // a no-op open/close doesn't generate spurious undo entries.
   const sessionStartRef = useRef(null)
+  // Last state actually handed to onUpdate. The auto-save's skip-guard MUST
+  // compare against this, not sessionStartRef: comparing against session
+  // start silently swallowed any A→B→A edit (change a field, let the 400ms
+  // save fire, revert it — the revert matched the start snapshot, was
+  // "unchanged", and never saved; Inspector showed A while canvas/DB kept B).
+  // Found live in a tester session 2026-07-28 (hide-thumbnail repro); pinned
+  // by the A→B→A block in Inspector.test.jsx.
+  const lastSavedRef = useRef(null)
   useEffect(() => {
     sessionStartRef.current = livePersistedRef.current
+    lastSavedRef.current = livePersistedRef.current
   }, [])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Chronological action log (phase 7a) ──────────────────────────────────
@@ -260,10 +269,13 @@ export default function Inspector({
   // Skip-on-no-change (phase 7b): the auto-save fires on mount because its
   // useEffect deps go from undefined → defined. Without a guard, opening
   // any card triggers one DB write even when the user touches nothing.
-  // We compare livePersistedRef.current against sessionStartRef.current
-  // (snapshotted on mount in the same shape) and skip if they're equal AND
-  // there are no pending connection changes. The first real edit produces
-  // a diff and the save fires normally.
+  // We compare livePersistedRef.current against lastSavedRef.current — the
+  // state most recently handed to onUpdate (seeded on mount, advanced after
+  // every save) — and skip if they're equal AND there are no pending
+  // connection changes. Comparing against the SESSION-START snapshot here
+  // was the 2026-07-28 A→B→A launch bug: a field reverted to its opening
+  // value after an intermediate save read as "unchanged" and the revert
+  // never persisted.
   const flushSave = useAutoSave({
     doSave: () => {
       const currentIds = new Set(localConns.map((c) => c.id))
@@ -277,12 +289,13 @@ export default function Inspector({
         }
       }
       const hasConnectionChanges = addConnections.length > 0 || removeConnections.length > 0
+      const baseline = lastSavedRef.current ?? sessionStartRef.current
       const fieldsUnchanged =
-        sessionStartRef.current &&
-        deepEqual(sessionStartRef.current, livePersistedRef.current)
+        baseline && deepEqual(baseline, livePersistedRef.current)
       if (fieldsUnchanged && !hasConnectionChanges) return
 
       onUpdate(node.id, livePersistedRef.current, { addConnections, removeConnections })
+      lastSavedRef.current = livePersistedRef.current
       addConnections.forEach(({ id, nodeId }) => syncedConnsRef.current.set(id, nodeId))
       removeConnections.forEach(({ id }) => syncedConnsRef.current.delete(id))
     },

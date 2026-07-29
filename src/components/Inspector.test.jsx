@@ -207,6 +207,100 @@ describe('Inspector — auto-save', () => {
   })
 })
 
+// Regression: the 2026-07-28 launch bug (found live in a tester session).
+// The auto-save skip-guard compared against the SESSION-START snapshot, so a
+// field changed and then reverted to its opening value within one Inspector
+// session ("A → B → A") matched the snapshot and the revert was silently
+// never saved — the Inspector showed A while the canvas/DB kept B. The guard
+// must compare against the last-SAVED state instead. All header fields share
+// the one guard, so title / type / hide-thumbnail cover the code path; the
+// hide-thumbnail case is the tester's exact repro.
+describe('Inspector — A→B→A revert saves (2026-07-28 launch bug)', () => {
+  beforeEach(() => { vi.useFakeTimers() })
+  afterEach(() => { vi.useRealTimers() })
+
+  it('saves a title reverted to its opening value after an intermediate save', async () => {
+    const { props } = await renderModal()
+    const titleInput = screen.getByDisplayValue('Strahd von Zarovich')
+    flushSave()
+    props.onUpdate.mockClear()
+
+    fireEvent.change(titleInput, { target: { value: 'Strahd the Damned' } })
+    flushSave()
+    expect(props.onUpdate).toHaveBeenCalledTimes(1)
+
+    fireEvent.change(titleInput, { target: { value: 'Strahd von Zarovich' } })
+    flushSave()
+    expect(props.onUpdate).toHaveBeenCalledTimes(2)
+    expect(props.onUpdate).toHaveBeenLastCalledWith(
+      'node-strahd',
+      expect.objectContaining({ label: 'Strahd von Zarovich' }),
+      expect.any(Object),
+    )
+  })
+
+  it('saves the hide-thumbnail toggle turned on then back off (the tester repro)', async () => {
+    const { props } = await renderModal()
+    flushSave()
+    props.onUpdate.mockClear()
+
+    fireEvent.click(screen.getByLabelText('Hide thumbnail on the canvas'))
+    flushSave()
+    expect(props.onUpdate).toHaveBeenCalledTimes(1)
+    expect(props.onUpdate).toHaveBeenLastCalledWith(
+      'node-strahd',
+      expect.objectContaining({ hideAvatar: true }),
+      expect.any(Object),
+    )
+
+    fireEvent.click(screen.getByLabelText('Show thumbnail on the canvas'))
+    flushSave()
+    expect(props.onUpdate).toHaveBeenCalledTimes(2)
+    expect(props.onUpdate).toHaveBeenLastCalledWith(
+      'node-strahd',
+      expect.objectContaining({ hideAvatar: false }),
+      expect.any(Object),
+    )
+  })
+
+  it('saves a type change reverted to the opening type', async () => {
+    const { props } = await renderModal()
+    flushSave()
+    props.onUpdate.mockClear()
+
+    fireEvent.click(screen.getByText('Character'))
+    fireEvent.click(screen.getByText('Location'))
+    flushSave()
+    expect(props.onUpdate).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByText('Location'))
+    fireEvent.click(screen.getByText('Character'))
+    flushSave()
+    expect(props.onUpdate).toHaveBeenCalledTimes(2)
+    expect(props.onUpdate).toHaveBeenLastCalledWith(
+      'node-strahd',
+      expect.objectContaining({ type: 'character' }),
+      expect.any(Object),
+    )
+  })
+
+  it('fires no further saves after a revert lands (no save loop)', async () => {
+    const { props } = await renderModal()
+    const titleInput = screen.getByDisplayValue('Strahd von Zarovich')
+    flushSave()
+    props.onUpdate.mockClear()
+
+    fireEvent.change(titleInput, { target: { value: 'Strahd the Damned' } })
+    flushSave()
+    fireEvent.change(titleInput, { target: { value: 'Strahd von Zarovich' } })
+    flushSave()
+    props.onUpdate.mockClear()
+
+    act(() => { vi.advanceTimersByTime(2000) })
+    expect(props.onUpdate).not.toHaveBeenCalled()
+  })
+})
+
 describe('Inspector — connections', () => {
   beforeEach(() => { vi.useFakeTimers() })
   afterEach(() => { vi.useRealTimers() })
