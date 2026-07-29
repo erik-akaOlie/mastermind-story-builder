@@ -4,6 +4,28 @@ A running log of meaningful changes to MasterMind: Story Builder. Append-only. N
 
 ## [Unreleased]
 
+### Analytics: first-party reverse proxy — tester sessions survive ad-blockers (2026-07-28)
+
+A new tester's session (2026-07-27) produced zero PostHog data — no
+person, no events, no recording — despite a healthy production profile
+(`is_test_user=true`), unchanged analytics code since the last verified
+new-user recording (2026-07-09), and Erik's own sessions recording fine
+on the same build. That fingerprint matches client-side blocking:
+ad-blockers and privacy browsers blocklist PostHog's ingestion domains,
+so the data never leaves the tester's machine. Analytics traffic now
+routes through MasterMind's own domain at `/relay` — rewritten to
+PostHog's US servers by `vercel.json` in production and mirrored by the
+vite dev proxy locally — so domain-blocklist blockers no longer swallow
+tester sessions. Disclosed, not silent (Erik's option-C call): the
+signup recording notice now says recording works even with an
+ad-blocker, so the clickwrap disclosure matches the behavior.
+`VITE_POSTHOG_HOST` is retired; the PostHog region lives in the two
+proxy configs. Accepted limitation: the strictest privacy tools can
+still block same-origin proxies — beta observability is high-coverage,
+not total. See the 2026-07-28 amendment to ADR-0009. Production
+verification pending first post-deploy session (the rewrite only exists
+on Vercel).
+
 ### Bead View: expanded cards render at a constant readable size — the zoom-threshold slider no longer controls card size (2026-07-20 — smoke-tested by Erik on desktop, Android, and iPhone same day)
 
 Hover-expanding a bead (or selecting one, or hovering a connection line /

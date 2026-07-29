@@ -42,7 +42,6 @@ export async function initAnalytics(profile, email) {
   if (profile?.is_test_user !== true) return
 
   const key = import.meta.env.VITE_POSTHOG_KEY
-  const host = import.meta.env.VITE_POSTHOG_HOST
   if (!key) {
     console.warn('[analytics] VITE_POSTHOG_KEY not set; analytics disabled')
     return
@@ -58,7 +57,18 @@ export async function initAnalytics(profile, email) {
     const ph = mod.default
 
     ph.init(key, {
-      api_host: host || 'https://us.i.posthog.com',
+      // First-party reverse proxy (decided 2026-07-28, ADR-0009 amendment):
+      // analytics traffic goes to OUR domain at /relay, which vercel.json
+      // rewrites to PostHog's US ingestion servers in production and the
+      // vite dev proxy mirrors locally. Ad-blockers that blocklist
+      // posthog.com domains no longer silently swallow tester sessions
+      // (root cause of the missing 2026-07-27 new-user recording); the
+      // signup recording notice discloses this. ui_host keeps PostHog-app
+      // links (e.g. the toolbar) pointing at the real PostHog UI.
+      // VITE_POSTHOG_HOST is no longer read — the region lives in
+      // vercel.json + vite.config.js; keep all three in sync if it changes.
+      api_host: '/relay',
+      ui_host: 'https://us.posthog.com',
       // Autocapture gives us rage-click detection without per-event wiring.
       autocapture: true,
       // No routes in this SPA — pageviews/leaves are meaningless.

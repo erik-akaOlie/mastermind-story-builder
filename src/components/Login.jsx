@@ -303,6 +303,8 @@ export default function Login() {
               your account/email. They are never sold or used for advertising, and
               are only used by the MasterMind team and trusted services that help run
               and improve the product. Recordings are deleted after 30 days.
+              Session data is collected through MasterMind&rsquo;s own servers,
+              so recording works even if you use an ad-blocker.
             </p>
 
             {/* Single Terms + Privacy checkbox (ADR-0017 §2) */}

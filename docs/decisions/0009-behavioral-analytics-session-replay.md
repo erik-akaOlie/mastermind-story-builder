@@ -291,3 +291,38 @@ decision and their own consent model.
 - Related: [Known Divergences](../../CLAUDE.md) — `is_test_user` is a
   new field on `public.profiles`; the migration adds one column to
   the same table introduced by migration 003.
+
+---
+
+## Amendment — 2026-07-28: first-party reverse proxy for analytics traffic
+
+During early-tester QA, a brand-new tester (signed up 2026-07-27, profile
+row and `is_test_user=true` verified healthy in production) produced ZERO
+PostHog data — no person, no events, no recording. Code archaeology showed
+no analytics-path changes since the last verified new-user recording
+(2026-07-09), and the founder's own sessions recorded fine on the same
+build. The evidence fingerprint matches client-side blocking: ad-blockers
+and privacy browsers (uBlock, Brave, strict Safari) blocklist PostHog's
+ingestion domains, so the data never leaves the tester's machine.
+
+**Decision (Erik, 2026-07-28 — option C).** Route analytics traffic
+through a first-party reverse proxy AND disclose it in the signup
+recording notice:
+
+- `vercel.json` rewrites `/relay/*` → `us.i.posthog.com` (and
+  `/relay/static/*` → `us-assets.i.posthog.com`) in production;
+  `vite.config.js` mirrors both for local dev.
+- `analytics.js` sets `api_host: /relay` (same-origin) + `ui_host` so
+  PostHog-app links still resolve. `VITE_POSTHOG_HOST` is retired; the
+  region now lives in the two proxy configs.
+- The in-flow recording notice gains: "Session data is collected through
+  MasterMind's own servers, so recording works even if you use an
+  ad-blocker." Chosen over silent proxying (option B) so the disclosure
+  matches the behavior — a user running a blocker is expressing a privacy
+  preference, and the honest answer is to say plainly that beta recording
+  is not defeated by it, before they accept the terms.
+
+**Accepted limitation.** The strictest privacy tools can still block
+same-origin proxies (path heuristics, script-behavior detection). Beta
+observability is therefore high-coverage, not total; in-person sessions
+and direct feedback remain the fallback for invisible testers.

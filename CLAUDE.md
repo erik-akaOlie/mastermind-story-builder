@@ -89,8 +89,14 @@ Loaded from `.env` at the project root. See `.env.example`.
 VITE_SUPABASE_URL=https://<project-ref>.supabase.co
 VITE_SUPABASE_ANON_KEY=<publishable / anon public key>
 VITE_POSTHOG_KEY=phc_<project token>
-VITE_POSTHOG_HOST=https://us.i.posthog.com    # or https://eu.i.posthog.com
 ```
+
+`VITE_POSTHOG_HOST` was **retired 2026-07-28** (ADR-0009 amendment):
+analytics traffic now goes through a first-party reverse proxy at `/relay`
+so ad-blockers don't silently swallow tester sessions. The PostHog region
+(US) is hardcoded in `vercel.json` (production rewrites) and
+`vite.config.js` (dev proxy) — change BOTH, plus `ui_host` in
+`analytics.js`, if the PostHog project ever moves regions.
 
 Never use or reference the Supabase `service_role` key in client code.
 
@@ -209,7 +215,11 @@ src/
                                    posthog.identify(profile.id). track(eventName, props) and
                                    resetAnalytics() both no-op when init never ran. All three public
                                    functions wrap their PostHog calls in try/catch so a misbehaving
-                                   analytics call can't crash the host feature.
+                                   analytics call can't crash the host feature. Since 2026-07-28
+                                   (ADR-0009 amendment) api_host is the same-origin '/relay' proxy
+                                   (vercel.json rewrites in prod, vite.config.js proxy in dev) so
+                                   ad-blockers don't swallow tester sessions; disclosed in the signup
+                                   recording notice.
     betaConfig.js                  reads the single beta_config launch-switch row (isBetaOpen). Anon-
                                    readable; fail-safe defaults to OPEN if the read fails. Migration 014.
     waitlist.js                    joinWaitlist() — anon insert into public.waitlist with plain-English
@@ -350,7 +360,12 @@ src/
                                    Exports `newItem` for parents seeding initial state
     MediaSection.jsx               Inspiration grid: DnD-reorder image tiles + parallel-safe upload
                                    (uses a ref to track latest items so concurrent uploads don't clobber)
-    ConnectionsSection.jsx         chip list + node picker with click-outside-to-dismiss
+    ConnectionsSection.jsx         LEGACY (unmounted at the ADR-0016 E4 cutover, kept intact):
+                                   the old chip list + "+ Add connection" node picker. The live
+                                   Connections panel is editor/ConnectionsBlock.jsx (display +
+                                   delete only — adds happen via [[ links). Restoring an add
+                                   affordance to the panel is queued in BACKLOG (2026-07-28
+                                   triage); this file is the reference implementation.
     TypePicker.jsx                 type dropdown (used inside InspectorHeader) + "Create new type…" row
     SectionLabel.jsx               tiny uppercase-tracked label utility used across sections
     ContextMenu.jsx                right-click menu on canvas elements — nodes, text blocks, lines

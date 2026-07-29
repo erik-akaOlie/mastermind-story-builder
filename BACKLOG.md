@@ -137,13 +137,100 @@ They reorder relative to each other based on what #1 + #2 reveal.
   QA workspace are now safe to delete (housekeeping, Erik's call — deleting
   the Supabase account does not remove PostHog history).
 
-**Candidate must-fix before the Mox post** (pending re-triage against the
-"required to launch + learn" bar — the next product-lead decision)
-- First-run creation affordance (FTUE) — now includes a design review of
-  surfacing primary canvas tools; see the updated FTUE entry below
-- Mobile login + best-on-desktop expectation (no shipped evidence —
-  `Login.jsx` untouched since the signup cluster)
-- Terms of Service / Privacy Policy operator-name update (see entry below)
+**Launch queue — re-triaged 2026-07-28 against Mark's tester session**
+(order is Erik's and written in pencil — reorderable at any time; the full
+12-item triage lives in the 2026-07-28 session. Mark = D&D player, not a
+GM; one observed session, evidence-weighted accordingly)
+
+*Launch-gating*
+- ✅ PostHog missing-recording investigation — **RESOLVED 2026-07-28.**
+  Mark's 2026-07-27 session produced ZERO PostHog data (no person, no
+  events, no recording) despite a healthy profiles row
+  (`is_test_user=true`, terms captured) and no analytics-path code changes
+  since the last verified new-user recording (2026-07-09) → evidence
+  fingerprint = client-side blocking (ad-blocker / privacy browser).
+  Erik chose **option C**: first-party reverse proxy (`/relay` via
+  vercel.json + vite dev proxy) AND a disclosure sentence in the signup
+  recording notice so the clickwrap matches the behavior. Implemented
+  2026-07-28 (ADR-0009 amendment); **production verification pending**
+  first post-deploy session (the rewrite only exists on Vercel).
+- **Inspector A→B→A save bug (S)** — CONFIRMED with root cause
+  (2026-07-28): the auto-save skip-guard in `Inspector.jsx` compares
+  against the session-START snapshot instead of last-SAVED state, so any
+  header field reverted to its opening value after an intermediate save
+  is silently never saved — Inspector shows A, canvas/DB keep B. Exactly
+  reproduces Mark's hide-thumbnail repro (and the pre-existing "needs
+  close/reopen" report below). Affects title / node type / thumbnail
+  image / hide-thumbnail. Fix: compare against last-saved (ref updated in
+  doSave) + regression tests for all four fields + no-save-loop /
+  Realtime-echo checks.
+
+*Immediate first-use improvements (Erik-prioritized 2026-07-28)*
+- **Desktop FTUE guidance aligned with mobile** (S or M — Erik to choose
+  copy-level alignment vs full two-column legend layout). Reopens the
+  prior "FTUE frozen through beta" deferral on direct tester evidence
+  (Mark couldn't tell nodes / text blocks / lines apart on desktop;
+  mobile's content-vs-structure framing already teaches it).
+- **Empty homepage** (S): primary-button treatment for New workspace when
+  the user has zero workspaces + a deliberately designed empty state in
+  the gallery area (the current one-line footnote reads unintentional —
+  Mark found the button fine; this is presentation, not discoverability).
+- **Empty canvas** (S): hide the altitude rail until the first canvas
+  object (node / text block / line) exists, keyed off the same
+  canvas-empty condition the FTUE uses. Pan/zoom stay technically live
+  (Erik's explicit call — no input disabling). Product detail pending
+  Erik: with the ftueEligible condition the rail stays visible forever
+  once the FTUE completes, even after delete-to-empty; a plain-empty
+  condition would re-hide it. Alternative treatment (brighter grid dots
+  while empty, fading on first object) recorded but not preferred.
+
+*Core workflow (candidate pre-launch — founder decision after the gating
+items land)*
+- **Restore add-connection in the Connections panel (S–M, down from M).**
+  Verified 2026-07-28: the legacy `ConnectionsSection.jsx` picker survives
+  INTACT in the repo (chips + "+ Add connection" + dropdown + analytics
+  events) — it was unmounted at the block-editor E4 cutover, not deleted,
+  and the new panel's EditorContext already exposes `onAddConnection` +
+  `allOtherNodes`. Work = port the picker UI into the ConnectionsBlock
+  panel + add a type-to-filter input (the old dropdown scrolled but had
+  no filter) + tests. Restores the "two doors to the same connection
+  record" principle the cutover broke.
+- **Quick-connect redesign (M).** Erik's selected direction (2026-07-28):
+  no selection prerequisite (hover on card form suffices, incl.
+  hover-expanded beads), somewhat shorter dwell (currently 800ms
+  constant + the selection step Mark never discovered), and directionally
+  appropriate arrows (up/down/left/right) replacing the plus icons —
+  Mark read plus as "create a connected node here." Verify during
+  implementation: hover-shown buttons just outside the card edge vs
+  presses intended to drag the card. Existing drag-preview line +
+  crosshair cursor carry the "connection, not move" feedback; add
+  accessible labels ("Connect upward" etc.).
+
+*Founder-led design*
+- **Thumbnail upload + card display types** — awaiting Erik's single
+  mockup covering both (9/10 from the triage). Keep the three goals
+  individually testable: discover the thumbnail exists · add/replace
+  (incl. paste) · choose the card's display treatment.
+
+*Record and observe (no build)*
+- Story-beats usage: Mark (non-GM) built plot moments + characters — a
+  plot-board pattern. Observed usage, not misuse or validation; watch
+  whether GMs do it too (supports ADR-0013's broader-worldbuilder frame).
+- Character default on toolbar creation: watch. Founder evidence added:
+  Erik uses both creation routes and prefers the Canvas Tool Menu because
+  choosing a type there is frictionless — don't assume a type-selection
+  step is inherently high-friction. Noted inconsistency: one route lets
+  users choose a type, the other silently defaults.
+- Instructional-copy pattern is now at THREE testers (Mark, Todd, Chris):
+  essential capabilities discoverable only via prose (`[[` connections →
+  Connections-panel restore; image paste + thumbnail upload → Erik's 9/10
+  mockup; quick-connect tooltip → quick-connect redesign). Not solved by
+  more text; each instance mapped to its owning queue item.
+- Conceptual onboarding (knowledge-graph mental model): evidence
+  accumulating; activation timing is Erik's call — the prior "wait 4–6
+  weeks post-observation" note is sequencing history, not a constraint.
+- Mobile login + best-on-desktop expectation (pre-existing, still open —
+  `Login.jsx` copy untouched since the signup cluster)
 
 **Launch bugs — Erik-reported 2026-07-20 (production)**
 - Expanded-peek size tracked the altitude-rail slider — hover-expanding a
@@ -916,9 +1003,12 @@ and markdown export are Soon-after. **Honest sizing:** remaining Bucket-1 is
    the Inspector-only question above remains open for the card display
    types discussion.
 3. **Inspector "hide thumbnail" needs close/reopen + a second try.**
-   Reported from prior session context; **Erik to confirm it is still real
-   before any work starts** — recorded here so it isn't lost, not yet
-   accepted as a confirmed bug.
+   ✅ CONFIRMED + ROOT-CAUSED 2026-07-28 (reproduced live in Mark's tester
+   session): this is the Inspector A→B→A save bug — the auto-save
+   skip-guard compares against the session-start snapshot, not last-saved
+   state. Promoted to the launch-gating queue at the top of this file;
+   fix covers title/type/thumbnail image/hide-thumbnail, not just this
+   toggle.
 
 ### ✅ Terms of Service / Privacy Policy — operator-name update (SHIPPED 2026-07-19, `bd6d90a`)
 - **Outcome.** Scope grew (with Erik's approval) from a name swap to a
