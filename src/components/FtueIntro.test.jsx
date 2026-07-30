@@ -1,11 +1,13 @@
 // ============================================================================
-// FtueIntro tests — the handwritten first-run introduction (chunk 1):
+// FtueIntro tests — the handwritten first-run introduction:
 //   - ftueModeFor: creation tools → placement copy, everything else → welcome
-//   - welcome state renders the Figma 225-1971 copy
+//   - welcome state renders the content-vs-structure composition on BOTH
+//     variants (desktop: Figma 286-148; mobile: Figma 265:229)
 //   - arming Node / Text Block / Line swaps to the per-tool placement copy
-//   - phone portrait renders the MOBILE variant (Figma 265:229); tablets /
-//     phone landscape (touch-primary without portrait) render nothing —
-//     there is no toolbar to point at there
+//     ("label" for the text tool — FTUE-only term, both variants)
+//   - phone portrait renders the MOBILE variant; tablets / phone landscape
+//     (touch-primary without portrait) render nothing — there is no
+//     toolbar to point at there
 //   - visible=false unmounts (synchronously under reduced motion)
 //   - missing [data-ftue-target] buttons degrade to text-only (no throw)
 //   - hand-drawn path helpers emit valid SVG path data
@@ -24,9 +26,9 @@ import FtueIntro, {
   handArrowPath,
   handArrowPathWavy,
   arrowheadPath,
-  asideLeftPxFor,
-  shouldShowAside,
-  ASIDE_MIN_GAP_PX,
+  ftueScaleFor,
+  ftuePx,
+  FTUE_LADDER,
 } from './FtueIntro'
 import { useToolStore } from '../store/useToolStore'
 import { track } from '../lib/analytics.js'
@@ -34,14 +36,16 @@ import { track } from '../lib/analytics.js'
 const TOUCH_QUERY = '(hover: none) and (pointer: coarse)'
 const MOBILE_QUERY =
   '(hover: none) and (pointer: coarse) and (orientation: portrait) and (max-width: 640px)'
+const NARROW_QUERY = '(max-width: 640px)'
 const REDUCED_QUERY = '(prefers-reduced-motion: reduce)'
 
 let originalMatchMedia
-function setMedia({ touch = false, mobilePortrait = false, reduced = true }) {
+function setMedia({ touch = false, mobilePortrait = false, narrow = false, reduced = true }) {
   window.matchMedia = (query) => ({
     matches:
       query === MOBILE_QUERY ? mobilePortrait :
       query === TOUCH_QUERY ? touch :
+      query === NARROW_QUERY ? narrow || mobilePortrait :
       query === REDUCED_QUERY ? reduced :
       false,
     media: query,
@@ -148,49 +152,96 @@ describe('path helpers', () => {
   })
 })
 
-describe('hide-before-collision (responsive desktop pass)', () => {
-  it('mirrors the CSS min(): centered offset wide, right-edge clamp narrow', () => {
-    expect(asideLeftPxFor(1920)).toBe(1280)  // 1920/2 + 320
-    expect(asideLeftPxFor(1366)).toBe(950)   // clamp: 1366 − 416
+describe('two-dimensional scale model (pass 3)', () => {
+  const L = FTUE_LADDER
+
+  it('kW: 0 at the 640 breakpoint, 1 from 1440 up, monotonic between', () => {
+    expect(ftueScaleFor(640, 900).kW).toBe(0)
+    expect(ftueScaleFor(400, 900).kW).toBe(0)
+    expect(ftueScaleFor(1440, 900).kW).toBe(1)
+    expect(ftueScaleFor(1920, 900).kW).toBe(1)
+    const mid = ftueScaleFor(1040, 900).kW
+    expect(mid).toBeGreaterThan(0)
+    expect(mid).toBeLessThan(1)
   })
 
-  it('shows the aside when the gap to the instruction is ≥ the minimum', () => {
-    // 1366 window, instruction right edge at 859 (the measured laptop
-    // value): gap 91 ≥ 48 → shown.
-    expect(shouldShowAside(1366, 859)).toBe(true)
+  it('cH: uncompressed at laptop heights, floored at 0.5 on tiny ones', () => {
+    expect(ftueScaleFor(1920, 720).cH).toBe(1)
+    expect(ftueScaleFor(1920, 1080).cH).toBe(1)
+    expect(ftueScaleFor(1920, 400).cH).toBe(0.5)
+    expect(ftueScaleFor(1920, 200).cH).toBe(0.5)
+    const mid = ftueScaleFor(1920, 560).cH
+    expect(mid).toBeGreaterThan(0.5)
+    expect(mid).toBeLessThan(1)
   })
 
-  it('hides the aside before it can overlap the instruction', () => {
-    // Narrowed window: aside left (window − 416) crosses inside the
-    // instruction's right edge + minimum gap → hidden.
-    expect(shouldShowAside(1100, 700)).toBe(false)
-    // Exactly at the threshold stays visible; one px closer hides.
-    const w = 1366
-    expect(shouldShowAside(w, asideLeftPxFor(w) - ASIDE_MIN_GAP_PX)).toBe(true)
-    expect(shouldShowAside(w, asideLeftPxFor(w) - ASIDE_MIN_GAP_PX + 1)).toBe(false)
+  it('HEIGHT governs a short-but-wide window (the pass-2 failure case)', () => {
+    const short = ftueScaleFor(1600, 500)
+    const tall = ftueScaleFor(1600, 900)
+    expect(ftuePx(L.hero, short)).toBeLessThan(ftuePx(L.hero, tall))
+    // The arrow zone compresses too — and can never exceed its designed max.
+    expect(ftuePx(L.arrowZone, short)).toBeLessThan(ftuePx(L.arrowZone, tall))
+    expect(ftuePx(L.arrowZone, tall)).toBe(112)
   })
 
-  it('drops the aside from the DOM when the rule says hide', () => {
-    // jsdom: innerWidth 1024 → aside left 608; force a collision by
-    // narrowing the window below the aside block + gap.
-    window.innerWidth = 300 // aside left → −116 < 0 + 48 → hidden
-    render(<FtueIntro visible />)
-    expect(screen.queryByText('You can also:')).toBeNull()
-    window.innerWidth = 1024
+  it('desktop values converge to the mobile-system-at-640 values at the boundary', () => {
+    const s = ftueScaleFor(641, 800)
+    expect(ftuePx(L.hero, s)).toBeCloseTo(104, 0)
+    expect(ftuePx(L.mission, s)).toBeCloseTo(28, 0)
+    expect(ftuePx(L.nodesName, s)).toBeCloseTo(24, 0)
+    expect(ftuePx(L.contentDesc, s)).toBeCloseTo(16, 0)
+    expect(ftuePx(L.arrowZone, s)).toBeCloseTo(56, 0)
+  })
+
+  it('the hierarchy never flattens or inverts at any window shape', () => {
+    const widths = [660, 900, 1200, 1440, 1920, 2560]
+    const heights = [401, 500, 720, 900, 1200]
+    for (const w of widths) {
+      for (const h of heights) {
+        const s = ftueScaleFor(w, h)
+        const hero = ftuePx(L.hero, s)
+        const mission = ftuePx(L.mission, s)
+        const nodes = ftuePx(L.nodesName, s)
+        const orgName = ftuePx(L.orgName, s)
+        const contentDesc = ftuePx(L.contentDesc, s)
+        const orgDesc = ftuePx(L.orgDesc, s)
+        expect(hero).toBeGreaterThan(mission)
+        expect(mission).toBeGreaterThanOrEqual(nodes)
+        expect(nodes).toBeGreaterThanOrEqual(orgName)
+        expect(orgName).toBeGreaterThan(contentDesc)
+        expect(contentDesc).toBeGreaterThanOrEqual(orgDesc)
+      }
+    }
+  })
+
+  it('ftuePx honors floors', () => {
+    expect(ftuePx({ full: 112, mobileEnd: 56, floor: 48 }, { kW: 0, cH: 0.5 })).toBe(48)
   })
 })
 
 describe('guidance states', () => {
-  it('shows the welcome copy when no creation tool is armed', () => {
-    render(<FtueIntro visible />)
-    expect(screen.getByText('Welcome to your new workspace')).toBeTruthy()
-    expect(screen.getByText('You can also:')).toBeTruthy()
+  it('shows the desktop welcome composition (Figma 286-148: hero, mission, legend)', () => {
+    const { container } = render(<FtueIntro visible />)
+    expect(screen.getByText('Welcome')).toBeTruthy()
+    // Mission + descriptors carry hard <br/> breaks — match on fragments.
+    expect(container.textContent).toContain('Use the tools below to build')
+    expect(container.textContent).toContain('your workspace')
+    expect(container.textContent).toContain('add content')
+    expect(screen.getByText('Nodes')).toBeTruthy()
+    expect(container.textContent).toContain('structure and')
+    expect(container.textContent).toContain('organize with')
+    // The name row is span-composed (Labels / & / Lines) — fragments.
+    expect(container.textContent).toContain('Labels')
+    expect(container.textContent).toContain('Lines')
+    // The pre-286-148 desktop copy is gone.
+    expect(container.textContent).not.toContain('Get started')
+    expect(screen.queryByText('You can also:')).toBeNull()
     expect(track).toHaveBeenCalledWith('ftue_shown')
   })
 
   it.each([
     ['node', 'Now place the node wherever you like on the canvas'],
-    ['text', 'Now place the text block wherever you like on the canvas'],
+    ['text', 'Now place the label wherever you like on the canvas'],
     ['line', 'Now draw a line wherever you like on the canvas'],
   ])('arming %s shows its placement copy', (tool, copy) => {
     useToolStore.setState({ activeTool: tool })
@@ -230,9 +281,10 @@ describe('visibility gating', () => {
     setMedia({ touch: true, mobilePortrait: true })
     const { container } = render(<FtueIntro visible />)
     expect(screen.getByText('Welcome')).toBeTruthy()
-    // Mission line uses a hard <br/>, so match on the fragments.
-    expect(container.textContent).toContain('Use these tools to')
-    expect(container.textContent).toContain('build your workspace')
+    // Canonical mission copy (Erik 2026-07-29) — same sentence as
+    // desktop, phone line break. Match on fragments across the <br/>.
+    expect(container.textContent).toContain('Use the tools below')
+    expect(container.textContent).toContain('to build your workspace')
     // The tool legend: content vs structure, with the Labels term
     // (Erik's re-identification of text blocks as an organizing tool).
     // Descriptors carry hard <br/> breaks — match on fragments.
@@ -241,25 +293,31 @@ describe('visibility gating', () => {
     expect(container.textContent).toContain('structure and')
     expect(container.textContent).toContain('organize with')
     expect(screen.getByText('Labels & Lines')).toBeTruthy()
-    // The desktop copy does NOT render on mobile.
-    expect(screen.queryByText('You can also:')).toBeNull()
-    expect(container.textContent).not.toContain('Get started')
+    // Desktop's phrasing of the mission break does NOT render on mobile
+    // (desktop breaks after "build"; the sentence itself is shared).
+    expect(container.textContent).not.toContain('Use the tools below to build')
   })
 
-  it('mobile placement copy says LABEL for the text tool (FTUE-only term, Erik 2026-07-17)', () => {
-    setMedia({ touch: true, mobilePortrait: true })
+  it('a phone-narrow window renders the MOBILE layout even without touch (Erik QA 2026-07-29)', () => {
+    // Narrowing a desktop browser to ≤640px resolves to the mobile
+    // composition — never an invented intermediate desktop layout. The
+    // discriminator is the single-text-node name row ('Labels & Lines'
+    // is span-composed on desktop, one node on mobile).
+    setMedia({ narrow: true })
+    const { container } = render(<FtueIntro visible />)
+    expect(container.textContent).toContain('Use the tools below')
+    expect(screen.getByText('Labels & Lines')).toBeTruthy()
+  })
+
+  it.each([
+    ['mobile', { touch: true, mobilePortrait: true }],
+    ['desktop', {}],
+  ])('%s placement copy says LABEL for the text tool (FTUE-only term; desktop adopted the legend 2026-07-29)', (_variant, media) => {
+    setMedia(media)
     useToolStore.setState({ activeTool: 'text' })
     render(<FtueIntro visible />)
     expect(
       screen.getByText('Now place the label wherever you like on the canvas'),
-    ).toBeTruthy()
-  })
-
-  it('desktop placement copy still says text block (no product rename)', () => {
-    useToolStore.setState({ activeTool: 'text' })
-    render(<FtueIntro visible />)
-    expect(
-      screen.getByText('Now place the text block wherever you like on the canvas'),
     ).toBeTruthy()
   })
 

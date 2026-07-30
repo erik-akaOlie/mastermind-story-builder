@@ -119,7 +119,15 @@ src/
   index.css                        Tailwind base + RF overrides + .is-lifted z-index rule
   main.jsx                         entry; wraps app in AuthProvider → WorkspaceProvider → ProfileProvider →
                                    Root gatekeeper; hash routes to <MigrateImages /> at #migrate and to
-                                   <Profile /> at #profile
+                                   <Profile /> at #profile; DEV-ONLY #ftue-preview route (gated on
+                                   import.meta.env.DEV → dead-code-eliminated from production builds)
+
+  dev/
+    FtuePreview.jsx                DEV-ONLY design-QA harness (#ftue-preview, no auth): renders the REAL
+                                   FtueIntro over the REAL BottomToolbar on the canvas color, with a live
+                                   viewport readout — inspect/screenshot the FTUE at any window size
+                                   without signing in. Verified absent from the production bundle (grep
+                                   dist for FTUE-PREVIEW-HARNESS). Keep narrowly dev-only.
 
   lib/                             infrastructure & data-access layer
     supabase.js                    single shared Supabase client (reads env vars)
@@ -457,38 +465,44 @@ src/
                                    data-ftue-target="node|text|line" — the intro's arrows are
                                    anchored to these measured rects, so keep the attributes when
                                    restructuring the trays.
-    FtueIntro.jsx                  the handwritten first-run introduction (Figma 225-1971 desktop;
-                                   mobile portrait per Erik's revised pass-7 mockup 2026-07-17;
-                                   tablets/landscape render nothing — no toolbar to point at).
-                                   Screen-fixed pointer-events-none overlay in the Caveat brand font
-                                   (`font-hand` + `leading-hand` on wrapped text) with hand-drawn
-                                   SVG arrows COMPUTED from guidance-text rects to the measured
-                                   [data-ftue-target] toolbar buttons (never hardcoded coords;
-                                   remeasured on resize; arrival tangents AIMED at icon centers;
-                                   tips backed off the buttons; mobile paths end in a straight run
-                                   so heads can't cross their own stroke). DESKTOP: three-tier
-                                   hierarchy (96px title near center + coordinated 2:1 type scale;
-                                   instruction + placement copy bottom-anchored near the tray,
-                                   placement = one tray-height above it; tertiary aside clamped
-                                   on-screen, hidden-before-collision on narrow windows). MOBILE:
-                                   content-vs-structure teach — "Welcome" hero, "Use these tools to
-                                   map your work", two-column tool legend above the tray ("add
-                                   content with / Nodes" centered over the Node button — center
-                                   derived from the tray's 233px M_TRAY_W, keep in sync — + ONE
-                                   short arrow; "structure and organize with / Labels & Lines", no
-                                   arrows). "Labels" = the FTUE-ONLY introduction name for text
-                                   blocks (DECIDED, Erik 2026-07-17: a one-word frame that teaches
-                                   the tool's organizing intent; after the FTUE the object is a
-                                   TEXT BLOCK everywhere, deliberately, so the name never limits
-                                   creative use — there will be NO product-wide rename). Mobile
-                                   placement copy matches ("Now place the label…",
-                                   MOBILE_PLACEMENT_COPY); desktop FTUE keeps its current copy +
-                                   framing until the POST-BETA desktop/mobile unification (high
-                                   priority; mobile's content-vs-structure framing wins). Two
-                                   derived states: welcome ⇄ per-tool placement copy (derived from
-                                   activeTool, NOT effectiveTool, so spacebar suspension doesn't
-                                   flicker it). Visibility is App's derivation (canvas empty AND
-                                   flag unset); flag semantics in useFtueStore.js.
+    FtueIntro.jsx                  the handwritten first-run introduction. BOTH variants teach the
+                                   content-vs-structure model (mobile: Figma 265:229, Erik's 2026-07-17
+                                   mockup; desktop ADOPTED the same composition 2026-07-29 via Erik's
+                                   Figma 286-148 mockup): "Welcome" hero, canonical mission line "Use
+                                   the tools below to build your workspace" (SHARED wording — never
+                                   changes at the breakpoint), two-column tool legend ("add content
+                                   with / Nodes" primary-white, "or structure and organize with /
+                                   Labels & Lines" secondary-gray) + THREE hand-drawn SVG arrows
+                                   COMPUTED from the legend-name rects to the measured
+                                   [data-ftue-target] toolbar buttons (never hardcoded; remeasured on
+                                   resize; arrival tangents AIMED at icon centers; desktop node+text
+                                   arrows carry startDir straight-down for the two-motion read).
+                                   Caveat brand font (`font-hand` + `leading-hand` on wrapped text).
+                                   DESKTOP LAYOUT = one flex column ending at the tray top, driven by
+                                   the TWO-DIMENSIONAL scale (ftueScaleFor/ftuePx, pure + unit-
+                                   tested): kW interpolates every type size + designed gap between
+                                   its full value and what the MOBILE SYSTEM ITSELF renders at 640px
+                                   (breakpoint crossing ≈ 1px event); cH height-compresses short
+                                   windows (short-but-wide gets compressed vertical values). The
+                                   arrow zone + mission→legend gap are DESIGNED distances (floors,
+                                   never residual leftover space — the mockup specifies
+                                   RELATIONSHIPS, not pixels); residual height goes only above the
+                                   mission (top : hero-pause = 2 : 1). Hierarchy provably can't
+                                   invert (test sweeps 30 window shapes). Windows ≤640px wide render
+                                   the MOBILE layout regardless of input type (useIsNarrowViewport).
+                                   "Labels" = the FTUE-ONLY introduction name for text blocks
+                                   (DECIDED, Erik 2026-07-17; extended to desktop 2026-07-29 with
+                                   the legend): placement copy says "Now place the label…" on BOTH
+                                   variants; after the FTUE the object is a TEXT BLOCK everywhere —
+                                   NO product-wide rename. Two derived states: welcome ⇄ per-tool
+                                   placement copy (derived from activeTool, NOT effectiveTool, so
+                                   spacebar suspension doesn't flicker it). Visibility is App's
+                                   derivation (canvas empty AND flag unset); flag semantics in
+                                   useFtueStore.js. Design-QA via the dev-only #ftue-preview harness
+                                   (src/dev/FtuePreview.jsx). Deferred polish logged in BACKLOG:
+                                   breakpoint positional drift (~35px hero / ~40-70px columns),
+                                   arrow curve character, narrow-AND-short mobile-branch overlap
+                                   (19px at 620×500 — mobile's fixed offsets don't height-compress).
     CreateTypeModal.jsx            custom card type creation (label + icon + color picker)
     Lightbox.jsx                   shared <LightboxProvider>; any consumer calls useLightbox().open(value)
     MigrateImages.jsx              one-shot tool at #migrate to backfill base64 → Storage; safe to delete

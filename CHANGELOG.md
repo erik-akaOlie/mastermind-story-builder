@@ -4,6 +4,32 @@ A running log of meaningful changes to MasterMind: Story Builder. Append-only. N
 
 ## [Unreleased]
 
+### Desktop FTUE: content-vs-structure composition, responsive to both window dimensions (2026-07-29)
+
+The desktop first-run introduction now teaches the same mental model as
+mobile — a dominant "Welcome" hero, the mission line "Use the tools
+below to build your workspace" (now canonical wording on BOTH variants),
+and the two-column tool legend ("add content with / Nodes" primary,
+"or structure and organize with / Labels & Lines" secondary) with three
+hand-drawn arrows down to the real toolbar buttons — replacing the old
+"Get started / You can also…" tiers. Direct tester evidence drove the
+reopening (Mark couldn't tell nodes, text blocks, and lines apart on
+desktop); Erik supplied the desktop mockup (Figma 286-148) and drove
+three implementation passes to a two-dimensional responsive model:
+every desktop type size and designed gap derives from viewport width
+AND height through pure, unit-tested functions, the arrow zone is a
+designed distance (not leftover space), overlap is structurally
+impossible on short windows, and at the 640px breakpoint the desktop
+values converge to what the mobile layout itself renders there — so
+narrowing a browser flows into the phone composition instead of
+snapping between two layouts. The device-QA'd mobile FTUE is unchanged
+except the canonical mission wording. A dev-only preview harness
+(`#ftue-preview`) renders the real FTUE + toolbar without sign-in for
+design QA at any window size; verified absent from the production
+bundle. Deferred polish recorded in BACKLOG (breakpoint positional
+drift, arrow curve character, narrow-and-short mobile-branch overlap).
+Full suite 662/662.
+
 ### Inspector: reverting an edit now saves — the A→B→A silent-loss bug (2026-07-29)
 
 Change a card's title, type, thumbnail image, or thumbnail visibility in

@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useState } from 'react'
+import { StrictMode, Suspense, lazy, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import 'reactflow/dist/style.css'  // third-party first — our styles override below
 import './index.css'
@@ -21,6 +21,14 @@ import { RootErrorBoundary } from './components/RootErrorBoundary.jsx'
 import TermsOfServicePage from './components/TermsOfServicePage.jsx'
 import PrivacyPolicyPage from './components/PrivacyPolicyPage.jsx'
 import SpikeIndex from './spike/SpikeIndex.jsx'  // SPIKE-ONLY — remove with src/spike/
+
+// DEV-ONLY FTUE design-QA harness (#ftue-preview). import.meta.env.DEV is
+// statically `false` in production builds, so this whole definition — and
+// the dynamically-imported module behind it — is dead-code-eliminated from
+// the shipped bundle (verify: grep dist for FTUE-PREVIEW-HARNESS → absent).
+const FtuePreview = import.meta.env.DEV
+  ? lazy(() => import('./dev/FtuePreview.jsx'))
+  : null
 
 // Tiny hash-based router. We don't need React Router for one ad-hoc page;
 // the `#migrate` route is temporary and gets removed once Phase 5 lands.
@@ -57,6 +65,16 @@ function Root() {
   // SPIKE-ONLY — auth-independent so it renders even if Supabase is slow/offline.
   // Remove with src/spike/.
   if (hash === '#editor-spike') return <SpikeIndex />
+
+  // DEV-ONLY — the FTUE design-QA harness; auth-independent, absent from
+  // production builds (see the FtuePreview definition above).
+  if (import.meta.env.DEV && hash === '#ftue-preview') {
+    return (
+      <Suspense fallback={null}>
+        <FtuePreview />
+      </Suspense>
+    )
+  }
 
   if (loading) return null
   // Pre-auth routes — accessible without signing in so a prospective user can

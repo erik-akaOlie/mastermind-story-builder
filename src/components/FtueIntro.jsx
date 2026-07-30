@@ -1,26 +1,36 @@
 // ============================================================================
-// FtueIntro — the handwritten first-run introduction (Figma 225-1971)
+// FtueIntro — the handwritten first-run introduction
+//   Desktop: Figma 286-148 (Erik's approved mockup, 2026-07-29)
+//   Mobile portrait: Figma 265:229 (Erik's revised mockup, 2026-07-17)
 // ----------------------------------------------------------------------------
 // A screen-fixed, pointer-events-none overlay that teaches a brand-new user
-// to create (and name) their first node via the bottom toolbar. Handwritten
-// voice: the Caveat brand font (`font-hand` + `leading-hand` for wrapped
-// text — see tailwind.config.js) + hand-drawn-styled SVG arrows.
+// the CONTENT-vs-STRUCTURE model on BOTH variants (desktop adopted mobile's
+// proven composition 2026-07-29 — same architecture, desktop-scaled, per
+// Erik's mockup). Handwritten voice: the Caveat brand font (`font-hand` +
+// `leading-hand` for wrapped text — see tailwind.config.js) + hand-drawn-
+// styled SVG arrows.
 //
-// VISUAL HIERARCHY (Erik's design QA passes, 2026-07-16) — three tiers:
-//   1. "Welcome to your new workspace" — the primary hit. Desktop: 96px
-//      near the vertical center. Mobile portrait: kept HIGHER (much less
-//      vertical space — Erik's call) with the Figma 265:229 line breaks.
-//   2. "Get started by adding your first node" — second-tier instruction,
-//      anchored near the toolbar so text + arrow + action read as a unit.
-//   3. The "You can also…" aside — clearly tertiary; on mobile it tucks
-//      against the right edge above the tray (Figma 265:229).
-// Toolbar-pointing guidance is BOTTOM-ANCHORED (fixed offsets above the
-// tray — mobile offsets add the iOS safe-area inset) so arrow lengths stay
-// short and constant; only the welcome title is proportionally placed.
-// The placement message sits ONE TRAY-HEIGHT above its tray (both variants).
+// COMPOSITION (both variants; the mockup specifies RELATIONSHIPS — the
+// hierarchy, grouping, and spacing rhythm — not pixel values):
+//   1. Hero — one-word "Welcome", the clearly dominant text.
+//   2. Mission line — "Use the tools below to build your workspace"
+//      (desktop) / "Use these tools to build your workspace" (mobile).
+//   3. Two-column tool legend above the tray: "add content with / Nodes"
+//      (primary — full white, larger) and "or structure and organize with /
+//      Labels & Lines" (secondary — gray, smaller), with three measured
+//      arrows down to the Node / Text / Line buttons. The Node arrow is
+//      the loud one (bright, thicker); the structure arrows are quiet.
+// DESKTOP layout is ONE FLEX COLUMN ending at the tray top (see the
+// GAP_* rhythm constants): groups compress on short windows but can
+// never overlap, and the legend stays grouped with the toolbar. MOBILE
+// keeps its proven fixed-anchor model (bottom offsets + safe-area
+// inset). Windows ≤640px wide render the MOBILE layout regardless of
+// input type — narrowing a desktop browser resolves to the mobile
+// composition, never an invented intermediate. The placement message
+// sits ONE TRAY-HEIGHT above its tray (both variants).
 //
 // Two guidance states, derived — never stored:
-//   welcome    — no creation tool armed (tiers 1–3).
+//   welcome    — no creation tool armed (hero + mission + legend).
 //   placement  — a creation tool is armed: "Now place the node wherever
 //                you like on the canvas" (per-tool copy) + a decorative
 //                fan into open canvas. Derived from activeTool (NOT
@@ -40,93 +50,144 @@
 // Desktop force-expands the tray while visible; the mobile tray is always
 // expanded, so its buttons are always measurable.
 //
-// Variants: desktop (hover-primary) and MOBILE PORTRAIT (useMobilePortrait
-// — the same gate as the mobile tray). Touch-primary WITHOUT phone
-// portrait (tablets, landscape) renders nothing — there is no toolbar to
-// point at there.
+// Variants: the DESKTOP layout, and the MOBILE layout on phone portrait
+// (useMobilePortrait — the same gate as the mobile tray) OR any
+// phone-narrow window (useIsNarrowViewport, ≤640px — a narrowed desktop
+// browser resolves to the mobile composition, pointing its arrows at the
+// desktop tray). Touch-primary WITHOUT phone portrait (tablets,
+// landscape) renders nothing — there is no toolbar to point at there.
 // ============================================================================
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useToolStore } from '../store/useToolStore'
 import { useTouchPrimary } from '../hooks/useTouchPrimary'
 import { useMobilePortrait } from '../hooks/useMobilePortrait'
+import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport.js'
 import { useReducedMotion } from '../hooks/useReducedMotion'
 import { track } from '../lib/analytics.js'
 
 // Fade duration for state swaps + dismissal (0 under reduced motion).
 const FADE_MS = 300
 
-// ── Desktop layout constants ────────────────────────────────────────────────
-// Tier 1: proportional placement — the title's TOP; with the title's own
-// height this reads as "near the center of the screen".
-const TITLE_TOP = '34%'
+// ── Desktop layout constants (Figma 286-148) ────────────────────────────────
+// The mockup is a specification of VISUAL RELATIONSHIPS, not pixel values
+// (Erik, 2026-07-29 QA): what must hold at every window size is the
+// hierarchy (hero ≫ mission ≫ content column ≫ structure column ≫
+// ampersand), the grouping (each descriptor + its name is one unit; the
+// legend + toolbar reads as one cluster), and no-overlap. The desktop
+// welcome is therefore ONE FLEX COLUMN ending at the tray top — groups
+// can squeeze, but they structurally cannot collide (the bottom-anchored-
+// cluster-vs-proportional-hero overlap this replaces was a real QA
+// failure on short windows).
+//
+// TWO-DIMENSIONAL SCALE (pass-3 model, approved 2026-07-29). Two pure
+// inputs drive every desktop value:
+//
+//   kW — WIDTH interpolation, 0 at the 640px mobile breakpoint → 1 at
+//        1440px+. Each value interpolates between its `mobileEnd` (what
+//        the mobile FTUE's own responsive formulas produce at a 640px
+//        viewport — NOT literal phone pixels) and its `full` desktop
+//        value. At kW=0 the desktop branch renders the same numbers the
+//        mobile branch would, so crossing the breakpoint is visually
+//        continuous by construction.
+//   cH — HEIGHT compression multiplier, 1 at comfortable heights
+//        (≥720px, so laptops are uncompressed and boundary convergence
+//        is intact at real window heights) ramping to 0.5 by 400px.
+//        A short-but-wide window compresses because its HEIGHT says so,
+//        regardless of width. Known residual: below-breakpoint windows
+//        use the mobile branch's fixed offsets (no height compression),
+//        so a narrow window SHORTER than ~640px keeps a boundary
+//        discontinuity — evidenced in the harness, severity for Erik to
+//        judge (not pre-accepted).
+//
+// The hierarchy cannot flatten or invert: at any (kW, cH) every tier is
+// the same interpolation of two ordered ladders times a shared
+// multiplier. Endpoints follow the 8/4/2 grid; interpolated in-between
+// values are continuous by design (grid-snapping mid-scale would step
+// visibly). All pure + unit-tested.
+export function ftueScaleFor(width, height) {
+  const clamp01 = (v) => Math.min(1, Math.max(0, v))
+  return {
+    kW: clamp01((width - 640) / (1440 - 640)),
+    cH: Math.min(1, Math.max(0.5, 0.5 + (0.5 * (height - 400)) / 320)),
+  }
+}
+export function ftuePx({ full, mobileEnd, floor = 0 }, { kW, cH }) {
+  return Math.max(floor, Math.round((mobileEnd + (full - mobileEnd) * kW) * cH))
+}
 
-// COORDINATED type scale (responsive pass, Erik 2026-07-17): the title and
-// the tier-2 instruction scale TOGETHER through the same vw band, locked
-// at a 2:1 ratio (96/48 caps → 7vw/3.5vw → 56/28 floors), so narrowing
-// the window can never invert the hierarchy — the welcome stays the
-// primary hit at every width the desktop FTUE renders. Never scale one
-// tier without the other.
-const TITLE_FONT_CSS = 'clamp(3.5rem, 7vw, 6rem)'
-const SUBTITLE_FONT_CSS = 'clamp(1.75rem, 3.5vw, 3rem)'
+// TYPE LADDER, provisional pending Erik's visual QA: hierarchy per the
+// mockup with mobile's differentiation ratio as the reference (hero 3×
+// the mission, vs mobile's 3.7× and the mockup's 1.67×). `mobileEnd` =
+// the mobile formulas at 640px wide (hero min(104, 25vw) → 104, mission
+// 28, names 24, descriptors 16). The ampersand runs OPPOSITE to the
+// others (smallest at full scale, easing UP to mobile's uniform name
+// row at the boundary).
+const T_HERO = { full: 144, mobileEnd: 104 }        // "Welcome"
+const T_MISSION = { full: 48, mobileEnd: 28 }       // mission line
+const T_NODES_NAME = { full: 48, mobileEnd: 24 }    // "Nodes"
+const T_ORG_NAME = { full: 36, mobileEnd: 24 }      // "Labels & Lines"
+const T_CONTENT_DESC = { full: 32, mobileEnd: 16 }  // "add content with"
+const T_ORG_DESC = { full: 24, mobileEnd: 16 }      // "or structure and organize with"
+const T_AMP = { full: 20, mobileEnd: 24 }           // the "&"
 
-// Tier 2 + placement copy: bottom-anchored offsets (px above the window
-// bottom; the desktop tray is 72px tall, flush to the bottom). 8-grid.
-const SUBTITLE_BOTTOM_PX = 224
+// VERTICAL RHYTHM. The arrow zone and the mission→legend pause are
+// DESIGNED distances (kW/cH-scaled, hard floors) — never residual
+// storage, so they cannot inflate when leftover height grows. Arrow
+// zone full = 112 (half the pass-2 ~230, per Erik); mobileEnd = 56
+// (the mobile system's legend→tray distance at the boundary). Residual
+// height goes only ABOVE the mission line: the window-top gap and the
+// hero→mission pause split it 2:1 — Erik's pacing (big pause after
+// Welcome, smaller pause before the legend, mission favoring the
+// legend it describes). justify-end still guarantees no-overlap: an
+// impossibly short window clips the hero off the top, never the
+// cluster into the toolbar.
+const ARROW_ZONE = { full: 112, mobileEnd: 56, floor: 48 }
+const MISSION_LEGEND_GAP = { full: 48, mobileEnd: 44, floor: 24 }
+const LEGEND_ROW_GAP = { full: 16, mobileEnd: 8, floor: 8 }   // descriptor → name
+const LEGEND_COL_GAP = { full: 40, mobileEnd: 96, floor: 40 } // column separation aid:
+// grows as columns narrow so total separation approximates the mobile
+// 24%/62% arrangement at the boundary (small drift there is the
+// disclosed tunable).
+const GAP_TOP = { flexGrow: 2, minHeight: 32 }
+const GAP_HERO_MISSION = { flexGrow: 1, minHeight: 24 }
+const TRAY_H_PX = 72 // desktop tray height — the flex column's floor
+
+// Exported for the unit tests that pin the scale model's invariants
+// (hierarchy ordering, boundary convergence, height governance).
+export const FTUE_LADDER = {
+  hero: T_HERO,
+  mission: T_MISSION,
+  nodesName: T_NODES_NAME,
+  orgName: T_ORG_NAME,
+  contentDesc: T_CONTENT_DESC,
+  orgDesc: T_ORG_DESC,
+  amp: T_AMP,
+  arrowZone: ARROW_ZONE,
+}
+
 // Placement copy sits one tray-height above the tray (Erik, design QA
 // pass 3): gap = tray height = 72px, so bottom offset = 72 (tray) + 72.
 const PLACEMENT_BOTTOM_PX = 144
 
-// Tier 3 aside: pushed clearly right of the tier-2 column and slightly
-// lower (design QA pass 2 — at +192px the two read as one instruction
-// cluster; the user should process the primary action before noticing the
-// optional alternatives). The min() clamp keeps the whole block on-screen
-// on laptop widths: item text (ASIDE_MAX_W) + the 48px item indent + a
-// 48px right margin.
-const ASIDE_BOTTOM_PX = 120
-const ASIDE_LEFT_OFFSET_PX = 320
-const ASIDE_MAX_W_PX = 320
-const ASIDE_INDENT_PX = 48
-const asideLeftCss =
-  `min(calc(50% + ${ASIDE_LEFT_OFFSET_PX}px), calc(100% - ${ASIDE_MAX_W_PX + ASIDE_INDENT_PX + 48}px))`
-
-// Where the CSS min() above actually puts the aside's left edge, in px —
-// the JS mirror used by the hide-before-collision rule. Keep in sync with
-// asideLeftCss.
-export function asideLeftPxFor(windowWidth) {
-  return Math.min(
-    windowWidth / 2 + ASIDE_LEFT_OFFSET_PX,
-    windowWidth - (ASIDE_MAX_W_PX + ASIDE_INDENT_PX + 48),
-  )
-}
-
-// Hide-before-collision (responsive pass, Erik 2026-07-17): the tertiary
-// aside is OPTIONAL support — if there isn't room for it to stay clearly
-// separate from the tier-2 instruction, it (and its arrows) drops out
-// entirely rather than sliding over the text. Measured, not a breakpoint:
-// the instruction's width varies with the coordinated type scale.
-export const ASIDE_MIN_GAP_PX = 48
-export function shouldShowAside(windowWidth, subtitleRightEdge) {
-  return asideLeftPxFor(windowWidth) - subtitleRightEdge >= ASIDE_MIN_GAP_PX
-}
-
-// Arrow tips stop this far ABOVE a toolbar button's top edge — breathing
-// room so heads never sit on the icons (desktop button top = tray top +
-// 16, so tips float 16px clear of the tray itself).
-const ARROW_TIP_CLEARANCE = 32
+// Arrow tips stop this far ABOVE a toolbar button's top edge — real
+// breathing room between arrowheads and the tray (Erik QA 2026-07-29:
+// tips touching the tray read as crowding; button top = tray top + 16,
+// so 40 floats the tips 24px clear of the tray itself).
+const ARROW_TIP_CLEARANCE = 40
 
 // ── Mobile-portrait layout constants (Figma 265:229) ────────────────────────
 // The phone tray is 56px tall (40px buttons + 8px padding) and flush to
 // the bottom plus the iOS safe-area inset; every mobile bottom offset adds
 // env(safe-area-inset-bottom) so nothing hides behind the home indicator.
 //
-// COMPOSITION MODEL (mobile pass 4 — Erik's revised mockup, 2026-07-17):
-// a CONTENT-vs-STRUCTURE teach replacing the desktop copy's structure.
-// One-word "Welcome" hero, the mission line "Use these tools to map your
-// work", then a two-column tool legend right above the tray: "add
-// content with / Nodes" (aligned over the Node button, with the single
-// short arrow down to it) and "structure and organize with / Labels &
-// Lines" (no arrows — the legend sits above the tools it names). All
+// COMPOSITION MODEL (mobile pass 4 — Erik's revised mockup, 2026-07-17;
+// desktop adopted this same composition 2026-07-29, Figma 286-148):
+// a CONTENT-vs-STRUCTURE teach. One-word "Welcome" hero, the mission
+// line, then a two-column tool legend right above the tray: "add
+// content with / Nodes" (aligned over the Node button) and "structure
+// and organize with / Labels & Lines", with three arrows bridging the
+// legend names down to their tools (see the arrow block). All
 // blocks are bottom-anchored (+ safe-area): the legend's NAME row stays
 // aligned across wrap differences, arrow spans are device-stable, and
 // the surplus height breathes ABOVE the hero — total content is short
@@ -167,23 +228,15 @@ const mBottom = (px) => `calc(${px}px + env(safe-area-inset-bottom, 0px))`
 // Creation tools whose arming flips the copy to the placement state.
 const CREATION_TOOLS = new Set(['node', 'text', 'line'])
 
-// Placement-state message per armed tool. Product vocabulary: NODE is the
-// entity; annotations are TEXT BLOCKS and LINES.
+// Placement-state message per armed tool — SHARED by both variants since
+// the desktop legend adopted "Labels & Lines" (Figma 286-148, 2026-07-29).
+// "Label" remains an FTUE-ONLY introduction name for text blocks (Erik,
+// 2026-07-17): after the FTUE the object is a TEXT BLOCK everywhere —
+// there is NO product-wide rename.
 const PLACEMENT_COPY = {
   node: 'Now place the node wherever you like on the canvas',
-  text: 'Now place the text block wherever you like on the canvas',
-  line: 'Now draw a line wherever you like on the canvas',
-}
-
-// Mobile override (Erik, 2026-07-17): the FTUE — and ONLY the FTUE —
-// introduces text blocks as "labels" (a one-word frame for the tool;
-// thereafter the object is a text block everywhere, so the name never
-// limits creative use). The mobile legend says "Labels & Lines", so the
-// mobile placement copy matches it. Desktop FTUE keeps its current copy
-// until the post-beta desktop/mobile unification.
-const MOBILE_PLACEMENT_COPY = {
-  ...PLACEMENT_COPY,
   text: 'Now place the label wherever you like on the canvas',
+  line: 'Now draw a line wherever you like on the canvas',
 }
 
 // Pure helper (unit-tested): which guidance state a given active tool maps to.
@@ -228,16 +281,17 @@ export function handArrowPath(tail, tip, bow = 24, aim = null) {
   return `M ${tail.x} ${tail.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${tip.x} ${tip.y}`
 }
 
-// Mobile variant (pass 3 — pass 2's chained-S read as overdrawn, "three
-// tight curves"; Erik wants TWO BROAD MOTIONS, closer to desktop's
-// character): ONE cubic — a departure motion and an aimed sweep — ending
-// in a short DEAD-STRAIGHT run along the aim direction into the tip. The
-// straight arrival guarantees the arrowhead's barbs sit symmetrically
-// around the visible final stroke, so a barb can never cross the arrow's
-// own incoming line. Optional `startDir` (unit vector) pins the tail's
-// departure direction — the aside arrows use it to bend strongly AWAY
-// from their text line before sweeping toward the toolbar, which is what
-// visually attaches a tail to its text.
+// The legend-arrow curve, BOTH variants since the 286-148 desktop adoption
+// (born as the mobile pass-3 variant — pass 2's chained-S read as
+// overdrawn, "three tight curves"; Erik wants TWO BROAD MOTIONS): ONE
+// cubic — a departure motion and an aimed sweep — ending in a short
+// DEAD-STRAIGHT run along the aim direction into the tip. The straight
+// arrival guarantees the arrowhead's barbs sit symmetrically around the
+// visible final stroke, so a barb can never cross the arrow's own
+// incoming line. Optional `startDir` (unit vector) pins the tail's
+// departure direction (bend strongly AWAY from the text line before
+// sweeping toward the toolbar — what visually attaches a tail to its
+// text); currently unused but kept for tuning.
 export function handArrowPathWavy(tail, tip, bow = 24, aim = null, startDir = null) {
   const aimDir = aim ? unitToward(tip, aim) : unitToward(tail, tip)
   const straight = 20
@@ -317,10 +371,19 @@ function measureTarget(tool) {
 export default function FtueIntro({ visible }) {
   const touchPrimary = useTouchPrimary()
   const mobilePortrait = useMobilePortrait()
+  const narrowViewport = useIsNarrowViewport()
   const reducedMotion = useReducedMotion()
 
   const activeTool = useToolStore((s) => s.activeTool)
   const mode = ftueModeFor(activeTool)
+
+  // Which LAYOUT renders. Phone portrait, of course — but also any
+  // phone-narrow window (≤640px, the shared breakpoint), so narrowing a
+  // desktop browser resolves to the proven mobile composition instead of
+  // inventing an intermediate layout (Erik QA 2026-07-29). The arrows
+  // measure the real toolbar buttons, so the mobile layout points at the
+  // desktop tray correctly in that case.
+  const mobileLayout = mobilePortrait || narrowViewport
 
   // Dismissal fade: keep rendering for FADE_MS after `visible` drops so the
   // handwriting fades out instead of vanishing on the placement tap.
@@ -342,21 +405,25 @@ export default function FtueIntro({ visible }) {
   }, [visible])
 
   // ── Geometry: guidance-text rects (refs) + toolbar-button anchors ────────
-  const subtitleRef = useRef(null)
-  const asideTextRef = useRef(null)
-  const asideLineRef = useRef(null)
-  const nodesLabelRef = useRef(null)   // mobile: the "Nodes" legend name
-  const labelsLinesRef = useRef(null)  // mobile: the "Labels & Lines" name
+  // Both variants share the legend refs: the "Nodes" name and the
+  // "Labels & Lines" name are the arrow tails on desktop AND mobile.
+  const nodesLabelRef = useRef(null)
+  const labelsLinesRef = useRef(null)
   const placementRef = useRef(null)
   const [geom, setGeom] = useState(null)
   const [measureTick, setMeasureTick] = useState(0)
 
+  // Live viewport for the two-dimensional scale (kW, cH). Updated by the
+  // same resize listener that re-measures the arrows.
+  const [viewport, setViewport] = useState(() =>
+    typeof window === 'undefined'
+      ? { w: 1280, h: 800 }
+      : { w: window.innerWidth, h: window.innerHeight },
+  )
+
   useLayoutEffect(() => {
     if (!mounted) return
     const measure = () => {
-      const subtitle = subtitleRef.current?.getBoundingClientRect() ?? null
-      const asideText = asideTextRef.current?.getBoundingClientRect() ?? null
-      const asideLine = asideLineRef.current?.getBoundingClientRect() ?? null
       const nodesLabel = nodesLabelRef.current?.getBoundingClientRect() ?? null
       const labelsLines = labelsLinesRef.current?.getBoundingClientRect() ?? null
       const placement = placementRef.current?.getBoundingClientRect() ?? null
@@ -364,36 +431,38 @@ export default function FtueIntro({ visible }) {
         node: measureTarget('node'),
         text: measureTarget('text'),
         line: measureTarget('line'),
-        subtitle, asideText, asideLine, nodesLabel, labelsLines, placement,
-        // Desktop-only collision rule; the mobile stack can't collide.
-        // Runs in a LAYOUT effect, so a colliding aside is hidden before
-        // the first paint — it never flashes over the instruction.
-        showAside: mobilePortrait
-          ? true
-          : shouldShowAside(window.innerWidth, subtitle?.right ?? 0),
+        nodesLabel, labelsLines, placement,
       })
     }
     measure()
     // Second pass after the desktop tray's 200ms morph settles (first mount
     // only matters when the tray was mid-transition; cheap insurance).
     const t = setTimeout(measure, 260)
-    const onResize = () => setMeasureTick((n) => n + 1)
+    const onResize = () => {
+      setViewport({ w: window.innerWidth, h: window.innerHeight })
+      setMeasureTick((n) => n + 1)
+    }
     window.addEventListener('resize', onResize)
     return () => {
       clearTimeout(t)
       window.removeEventListener('resize', onResize)
     }
-  }, [mounted, mode, measureTick, mobilePortrait])
+  }, [mounted, mode, measureTick, mobileLayout])
 
   // Tablets / phone landscape: no toolbar exists to point at → no intro.
   if (touchPrimary && !mobilePortrait) return null
   if (!mounted) return null
 
-  const mobile = mobilePortrait
+  const mobile = mobileLayout
   const fade = reducedMotion ? 0 : FADE_MS
   const welcomeActive = visible && mode === 'welcome'
   const placementActive = visible && mode === 'placement'
   const tipClearance = mobile ? M_ARROW_TIP_CLEARANCE : ARROW_TIP_CLEARANCE
+
+  // Desktop two-dimensional scale: every type size and designed gap is a
+  // pure function of the live viewport (see ftueScaleFor / ftuePx).
+  const scale = ftueScaleFor(viewport.w, viewport.h)
+  const px = (tier) => ftuePx(tier, scale)
 
   // ── Arrow paths (screen coordinates; guarded on measurement) ─────────────
   // Supporting, not starring (design QA): short spans, lighter strokes,
@@ -401,59 +470,51 @@ export default function FtueIntro({ visible }) {
   // small per-arrow horizontal bias on tips approached from the side.
   const arrows = { welcome: [], placement: [] }
   if (geom) {
-    const { node, text, line, subtitle, asideText, asideLine, nodesLabel, labelsLines, placement } = geom
-    if (mobile) {
-      // Mobile (annotated mockup): THREE short, subtle arrows bridging
-      // the legend down to the tray — "the arrows make the text feel
-      // closer to the toolbar." Nodes → Node button (near-straight);
-      // the Labels and Lines WORDS in the right column's name each get
-      // their own gentle down-left curve to their tool. Tails hang 8px
-      // under the word they belong to (word positions as fractions of
-      // the measured name rect); tips keep the standard clearance.
-      if (nodesLabel && node) {
-        const tail = { x: nodesLabel.left + nodesLabel.width / 2, y: nodesLabel.bottom + 8 }
-        const tip = { x: node.cx, y: node.top - tipClearance }
-        arrows.welcome.push({
-          tail, tip, aim: node.center, wavy: true,
-          bow: -6, width: 2, opacity: 0.55, head: 10,
-        })
-      }
-      if (labelsLines && text) {
-        const tail = { x: labelsLines.left + labelsLines.width * 0.1, y: labelsLines.bottom + 8 }
-        const tip = { x: text.cx + 4, y: text.top - tipClearance }
-        arrows.welcome.push({
-          tail, tip, aim: text.center, wavy: true,
-          bow: -14, width: 2, opacity: 0.55, head: 10,
-        })
-      }
-      if (labelsLines && line) {
-        const tail = { x: labelsLines.left + labelsLines.width * 0.85, y: labelsLines.bottom + 8 }
-        const tip = { x: line.cx + 4, y: line.top - tipClearance }
-        arrows.welcome.push({
-          tail, tip, aim: line.center, wavy: true,
-          bow: -18, width: 2, opacity: 0.55, head: 10,
-        })
-      }
-    } else {
-      if (subtitle && node) {
-        const tail = { x: subtitle.left + subtitle.width / 2 + 16, y: subtitle.bottom + 16 }
-        const tip = { x: node.cx, y: node.top - tipClearance }
-        arrows.welcome.push({
-          tail, tip, aim: node.center, bow: -24, width: 3, opacity: 0.75, head: 12,
-        })
-      }
-      if (asideText && text) {
-        const tail = { x: asideText.left - 16, y: asideText.top + asideText.height / 2 }
-        // Approached from the upper right → nudge the tip slightly right
-        // of the icon center so the aimed curve reads on-target.
-        const tip = { x: text.cx + 4, y: text.top - tipClearance }
-        arrows.welcome.push({ tail, tip, aim: text.center, bow: 16, width: 2, opacity: 0.5, head: 10 })
-      }
-      if (asideLine && line) {
-        const tail = { x: asideLine.left - 16, y: asideLine.top + asideLine.height / 2 }
-        const tip = { x: line.cx + 4, y: line.top - tipClearance }
-        arrows.welcome.push({ tail, tip, aim: line.center, bow: 12, width: 2, opacity: 0.5, head: 10 })
-      }
+    const { node, text, line, nodesLabel, labelsLines, placement } = geom
+    // THREE arrows bridging the legend down to the tray, both variants —
+    // "the arrows make the text feel closer to the toolbar." Nodes →
+    // Node button; the Labels and Lines WORDS in the right column's name
+    // each get their own down-left curve to their tool. Tails hang 8px
+    // under the word they belong to (word positions as fractions of the
+    // measured name rect); tips keep the standard clearance. Per-variant
+    // styling (mobile: three equal quiet arrows over short spans;
+    // desktop, per the 286-148 mockup: long sweeps where the Node arrow
+    // is LOUD — bright + thicker — and the structure arrows are faint).
+    // Desktop's node + text arrows carry startDir STRAIGHT DOWN: the
+    // departure visibly leaves from under the label before the aimed
+    // sweep begins — the two-motion read (Erik QA 2026-07-29: without
+    // it, long shallow arrows look like they spawn off the label's left
+    // edge). The line arrow already reads as intentional without it.
+    const down = { x: 0, y: 1 }
+    const style = mobile
+      ? {
+          node: { bow: -6, width: 2, opacity: 0.55, head: 10 },
+          text: { bow: -14, width: 2, opacity: 0.55, head: 10 },
+          line: { bow: -18, width: 2, opacity: 0.55, head: 10 },
+          labelsWordFrac: 0.1,
+        }
+      : {
+          node: { bow: -24, width: 3, opacity: 0.9, head: 14, startDir: down },
+          text: { bow: -28, width: 2, opacity: 0.3, head: 12, startDir: down },
+          line: { bow: -36, width: 2, opacity: 0.3, head: 12 },
+          // Desktop name row is larger: 0.2 lands the tail under the
+          // CENTER of the word "Labels" instead of its first letter.
+          labelsWordFrac: 0.2,
+        }
+    if (nodesLabel && node) {
+      const tail = { x: nodesLabel.left + nodesLabel.width / 2, y: nodesLabel.bottom + 8 }
+      const tip = { x: node.cx, y: node.top - tipClearance }
+      arrows.welcome.push({ tail, tip, aim: node.center, wavy: true, ...style.node })
+    }
+    if (labelsLines && text) {
+      const tail = { x: labelsLines.left + labelsLines.width * style.labelsWordFrac, y: labelsLines.bottom + 8 }
+      const tip = { x: text.cx + 4, y: text.top - tipClearance }
+      arrows.welcome.push({ tail, tip, aim: text.center, wavy: true, ...style.text })
+    }
+    if (labelsLines && line) {
+      const tail = { x: labelsLines.left + labelsLines.width * 0.85, y: labelsLines.bottom + 8 }
+      const tip = { x: line.cx + 4, y: line.top - tipClearance }
+      arrows.welcome.push({ tail, tip, aim: line.center, wavy: true, ...style.line })
     }
     if (placement) {
       // Decorative fan out of the placement message into open canvas.
@@ -502,13 +563,15 @@ export default function FtueIntro({ visible }) {
               Welcome
             </div>
             <div
-              ref={subtitleRef}
               className="font-hand leading-hand absolute left-1/2 -translate-x-1/2 text-center text-white/75"
               style={{ bottom: mBottom(M_SUBTITLE_BOTTOM_PX), fontSize: 'min(1.75rem, 7vw)', width: 'max-content', maxWidth: '80vw' }}
             >
-              Use these tools to
+              {/* Canonical mission copy (Erik 2026-07-29): identical
+                  sentence to desktop so the wording never changes at the
+                  breakpoint; phone-width line break. */}
+              Use the tools below
               <br />
-              build your workspace
+              to build your workspace
             </div>
             {/* The tool legend — small and quiet per the annotated
                 mockup. Hard line breaks make both descriptors exactly
@@ -543,53 +606,76 @@ export default function FtueIntro({ visible }) {
             </div>
           </>
         ) : (
-          /* DESKTOP: tier 1 near center; tiers 2–3 bottom-anchored near
-             the tray. width:max-content on every translate-centered
-             block: an absolute element at left:50% otherwise
-             shrink-to-fits into the RIGHT HALF of the window and wraps
-             far too early. */
-          <>
+          /* DESKTOP (Figma 286-148): ONE COMPOSITION — a flex column
+             ending at the tray top: [breathing] hero [gap] mission [gap]
+             legend [arrow zone] toolbar. Groups squeeze via the GAP_*
+             rhythm but structurally cannot overlap; justify-end keeps
+             the legend+toolbar cluster intact and clips the hero first
+             on impossibly short windows. Colors per the mockup: primary
+             column full white, mission + structure column gray-400
+             (#9ca3af — the mockup's content/weak token). */
+          <div
+            className="absolute inset-x-0 top-0 flex flex-col items-center justify-end overflow-hidden"
+            style={{ bottom: TRAY_H_PX }}
+          >
+            <div className="shrink-0" style={GAP_TOP} />
             <div
-              className="font-hand leading-hand absolute left-1/2 -translate-x-1/2 text-center text-white"
-              style={{ top: TITLE_TOP, fontSize: TITLE_FONT_CSS, width: 'max-content', maxWidth: '92vw' }}
+              className="font-hand shrink-0 text-center text-white"
+              style={{ fontSize: px(T_HERO) }}
             >
-              Welcome to your new workspace
+              Welcome
             </div>
+            <div className="shrink-0" style={GAP_HERO_MISSION} />
             <div
-              ref={subtitleRef}
-              className="font-hand leading-hand absolute left-1/2 -translate-x-1/2 text-center text-white/75"
-              style={{ bottom: SUBTITLE_BOTTOM_PX, fontSize: SUBTITLE_FONT_CSS, width: 'max-content' }}
+              className="font-hand leading-hand shrink-0 text-center text-gray-400"
+              style={{ fontSize: px(T_MISSION) }}
             >
-              Get started by adding
+              Use the tools below to build
               <br />
-              your first node
+              your workspace
             </div>
-            {/* Tier 3 — the quieter "You can also…" aside: pushed well
-                right of the tier-2 column (see asideLeftCss); 28px heading
-                (4-grid step: 24px went blobby in Caveat, 32px competed
-                with tier 2) over 24px items; HIDDEN (with its arrows)
-                when the window is too narrow for clear separation
-                (shouldShowAside) — optional support drops out before it
-                can overlap the primary instruction. */}
-            {(geom?.showAside ?? true) && (
-              <div
-                className="font-hand absolute text-white/60"
-                style={{ bottom: ASIDE_BOTTOM_PX, left: asideLeftCss }}
-              >
-                <div className="text-[1.75rem]">You can also:</div>
-                <div ref={asideTextRef} className="mt-2 ml-12 text-2xl">
-                  add text blocks
-                </div>
-                <div
-                  ref={asideLineRef}
-                  className="leading-hand mt-3 ml-12 text-2xl"
-                  style={{ maxWidth: ASIDE_MAX_W_PX }}
-                >
-                  or draw lines to help segment and organize your workspace
-                </div>
+            <div className="shrink-0" style={{ height: px(MISSION_LEGEND_GAP) }} />
+            {/* The tool legend — a 2×2 grid so each descriptor + name
+                pair moves as one unit and the rows stay aligned at every
+                size: descriptors self-end (base-aligned boxes of roughly
+                equal height — 2 lines × 32px ≈ 3 lines × 24px by
+                design), names baseline-aligned. */}
+            <div
+              className="font-hand grid shrink-0 grid-cols-2 text-center"
+              style={{ columnGap: px(LEGEND_COL_GAP), rowGap: px(LEGEND_ROW_GAP) }}
+            >
+              <div className="leading-hand self-end text-white" style={{ fontSize: px(T_CONTENT_DESC) }}>
+                add content
+                <br />
+                with
               </div>
-            )}
-          </>
+              <div className="leading-hand self-end text-gray-400" style={{ fontSize: px(T_ORG_DESC) }}>
+                or
+                <br />
+                structure and
+                <br />
+                organize with
+              </div>
+              <div
+                ref={nodesLabelRef}
+                className="self-baseline whitespace-nowrap text-white"
+                style={{ fontSize: px(T_NODES_NAME) }}
+              >
+                Nodes
+              </div>
+              <div
+                ref={labelsLinesRef}
+                className="self-baseline whitespace-nowrap text-gray-400"
+                style={{ fontSize: px(T_ORG_NAME) }}
+              >
+                Labels{' '}
+                <span className="mx-1" style={{ fontSize: px(T_AMP) }}>&amp;</span>{' '}
+                Lines
+              </div>
+            </div>
+            {/* The arrow zone — a DESIGNED distance, never residual. */}
+            <div className="shrink-0" style={{ height: px(ARROW_ZONE) }} />
+          </div>
         )}
         <svg className="absolute inset-0 h-full w-full">{renderArrows(arrows.welcome)}</svg>
       </div>
@@ -610,7 +696,7 @@ export default function FtueIntro({ visible }) {
               : { bottom: PLACEMENT_BOTTOM_PX, fontSize: '2.5rem', width: 'max-content', maxWidth: '560px' }
           }
         >
-          {(mobile ? MOBILE_PLACEMENT_COPY : PLACEMENT_COPY)[activeTool] ?? PLACEMENT_COPY.node}
+          {PLACEMENT_COPY[activeTool] ?? PLACEMENT_COPY.node}
         </div>
         <svg className="absolute inset-0 h-full w-full">{renderArrows(arrows.placement)}</svg>
       </div>

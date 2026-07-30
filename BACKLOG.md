@@ -193,11 +193,28 @@ GM; one observed session, evidence-weighted accordingly)
   no-save-loop check. Full suite 659/659.
 
 *Immediate first-use improvements (Erik-prioritized 2026-07-28)*
-- **Desktop FTUE guidance aligned with mobile** (S or M — Erik to choose
-  copy-level alignment vs full two-column legend layout). Reopens the
-  prior "FTUE frozen through beta" deferral on direct tester evidence
-  (Mark couldn't tell nodes / text blocks / lines apart on desktop;
-  mobile's content-vs-structure framing already teaches it).
+- ✅ **Desktop FTUE guidance aligned with mobile — DONE 2026-07-29, Erik
+  QA-approved ("good enough — fine-tune later; the FTUE will evolve
+  through beta").** Erik chose full adoption of mobile's
+  content-vs-structure composition via his own desktop mockup (Figma
+  286-148), then drove three implementation passes to a two-dimensional
+  responsive model: every desktop type size and designed gap is a pure
+  function of viewport width AND height (`ftueScaleFor`/`ftuePx` in
+  FtueIntro.jsx, unit-tested for hierarchy-never-inverts, boundary
+  convergence, and height-governs-short-windows), converging at the
+  640px breakpoint to what the mobile system itself renders there — the
+  breakpoint crossing is now a ~1px event instead of a layout swap.
+  Canonical mission copy both variants: "Use the tools below to build
+  your workspace" (Erik). A dev-only preview harness (`#ftue-preview`,
+  src/dev/FtuePreview.jsx, no auth needed) renders the real FTUE + real
+  toolbar for design QA at any window size; verified absent from the
+  production bundle. **Deferred polish, accepted 2026-07-29 (not
+  blockers):** (a) ~35px hero vertical drift + ~40–70px legend-column
+  horizontal drift at the breakpoint crossing; (b) arrow curve
+  character at the new half-length; (c) narrow-AND-short windows
+  (≤640px wide, ~500px tall): the mobile branch's fixed offsets don't
+  height-compress — measured 19px hero/mission box overlap at 620×500;
+  revisit only if a real tester environment hits that shape.
 - **Empty homepage** (S): primary-button treatment for New workspace when
   the user has zero workspaces + a deliberately designed empty state in
   the gallery area (the current one-line footnote reads unintentional —
@@ -974,6 +991,11 @@ and markdown export are Soon-after. **Honest sizing:** remaining Bucket-1 is
     framing wins) is a HIGH-PRIORITY POST-BETA item. Behavioral
     acceptance (~10s create+name) will be measured from PostHog
     session replays of real beta users (ftue_shown→ftue_completed).
+    *[Superseded 2026-07-29: the desktop/mobile unification happened
+    PRE-beta on direct tester evidence — see "Desktop FTUE guidance
+    aligned with mobile" in the launch queue. The canonical mission
+    copy is now shared, and the FTUE-only "label" placement copy
+    applies to BOTH variants.]*
   - **iPhone production QA PASSED (Erik, on-device, 2026-07-18) — FTUE
     launch verification CLOSED on all three platforms.** Fresh production
     signup from an iPhone (Safari): confirmation email arrived in inbox
