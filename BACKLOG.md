@@ -230,15 +230,23 @@ GM; one observed session, evidence-weighted accordingly)
 
 *Core workflow (candidate pre-launch — founder decision after the gating
 items land)*
-- **Restore add-connection in the Connections panel (S–M, down from M).**
-  Verified 2026-07-28: the legacy `ConnectionsSection.jsx` picker survives
-  INTACT in the repo (chips + "+ Add connection" + dropdown + analytics
-  events) — it was unmounted at the block-editor E4 cutover, not deleted,
-  and the new panel's EditorContext already exposes `onAddConnection` +
-  `allOtherNodes`. Work = port the picker UI into the ConnectionsBlock
-  panel + add a type-to-filter input (the old dropdown scrolled but had
-  no filter) + tests. Restores the "two doors to the same connection
-  record" principle the cutover broke.
+- ✅ **Restore add-connection in the Connections panel — DONE 2026-07-29,
+  Erik QA-approved (all checks passed).** Shipped as
+  `editor/AddConnectionControl.jsx` inside the ConnectionsBlock panel: a
+  chip-height (28px) circular plus at the end of the chip row that morphs
+  into a search input with a filtered, alphabetized picker beneath
+  (portal + placeDropdown so the zone's scroll container can't clip it).
+  Reuses `searchNodes()` from the [[ autocomplete (gained an optional
+  limit param; menu shows 12 + "+N more — keep typing" so the cap never
+  reads as complete) and the canonical `onAddConnection` EditorContext
+  path — dedup, canvas edge, auto-save, undo, Realtime all via the
+  existing flow. Keyboard nav (arrows/Enter/Escape), click-away,
+  two empty states, keystroke containment so BlockNote never sees the
+  search input (tested), legacy analytics funnel restored
+  (connection_started/completed/abandoned). 14 new tests; suite
+  676/676. Restores the "two doors to the same connection record"
+  principle the cutover broke; the legacy ConnectionsSection.jsx stays
+  as historical reference only.
 - **Quick-connect redesign (M).** Erik's selected direction (2026-07-28):
   no selection prerequisite (hover on card form suffices, incl.
   hover-expanded beads), somewhat shorter dwell (currently 800ms

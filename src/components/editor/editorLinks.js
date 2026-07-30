@@ -12,15 +12,17 @@
 // directly, and strip the stray leading "[" after insert.
 // ============================================================================
 
-// Filter the candidate nodes for the [[ autocomplete. `allOtherNodes` are React
-// Flow nodes ({ id, data: { label, type } }); match on label, cap the list.
-export function searchNodes(allOtherNodes, query) {
+// Filter the candidate nodes for the [[ autocomplete AND the Connections
+// panel's add-picker. `allOtherNodes` are React Flow nodes ({ id, data:
+// { label, type } }); match on label, cap the list (default 12 — pass
+// Infinity to get every match, e.g. to count overflow for a "+N more" row).
+export function searchNodes(allOtherNodes, query, limit = 12) {
   const q = (query || '').toLowerCase().trim()
   const list = allOtherNodes || []
   const matched = q
     ? list.filter((n) => (n.data?.label || '').toLowerCase().includes(q))
     : list
-  return matched.slice(0, 12)
+  return matched.slice(0, limit)
 }
 
 // Insert an inline [[Node]] link at the cursor and declare the connection.

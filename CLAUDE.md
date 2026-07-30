@@ -370,10 +370,17 @@ src/
                                    (uses a ref to track latest items so concurrent uploads don't clobber)
     ConnectionsSection.jsx         LEGACY (unmounted at the ADR-0016 E4 cutover, kept intact):
                                    the old chip list + "+ Add connection" node picker. The live
-                                   Connections panel is editor/ConnectionsBlock.jsx (display +
-                                   delete only — adds happen via [[ links). Restoring an add
-                                   affordance to the panel is queued in BACKLOG (2026-07-28
-                                   triage); this file is the reference implementation.
+                                   Connections panel is editor/ConnectionsBlock.jsx, which since
+                                   2026-07-29 has BOTH doors: display/delete chips AND add via
+                                   editor/AddConnectionControl.jsx — a chip-height circular plus
+                                   that morphs into a search input (portal menu via placeDropdown;
+                                   same searchNodes() as the [[ autocomplete, now with a limit
+                                   param + "+N more" overflow hint; canonical onAddConnection from
+                                   EditorContext, so dedup/undo/Realtime ride the existing flow;
+                                   legacy connection_started/completed/abandoned funnel restored).
+                                   Key events stop propagation so BlockNote never sees search
+                                   keystrokes. This legacy file remains as historical reference
+                                   only — safe to delete in a future cleanup pass.
     TypePicker.jsx                 type dropdown (used inside InspectorHeader) + "Create new type…" row
     SectionLabel.jsx               tiny uppercase-tracked label utility used across sections
     ContextMenu.jsx                right-click menu on canvas elements — nodes, text blocks, lines

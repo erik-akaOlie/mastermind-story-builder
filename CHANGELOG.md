@@ -4,6 +4,25 @@ A running log of meaningful changes to MasterMind: Story Builder. Append-only. N
 
 ## [Unreleased]
 
+### Connections panel: add connections directly again — searchable picker (2026-07-29)
+
+The Inspector's Connections panel can create connections again, not just
+delete them — restoring the second door the block-editor cutover removed
+(since then, typing `[[` in the text was the only way to add one).
+A circular plus at the end of the chip row (chip-sized) expands into a
+search input; a menu beneath lists every connectable node in the
+workspace — alphabetized, excluding the card itself and nodes already
+connected — and filters live as you type (the same search the `[[` menu
+uses; when more than 12 match, a "+N more — keep typing to narrow" hint
+makes clear the list isn't complete). Selecting a node creates the same
+canonical connection as every other method (one connection per pair,
+canvas line, auto-save, undo, Realtime) and the control collapses back
+to the plus. Full keyboard support (arrows, Enter, Escape), click-away
+to dismiss, and the search field's keystrokes are contained so the
+surrounding text editor never reacts to them. The legacy
+connection-funnel analytics (started / completed / abandoned) fire
+again from this surface. 14 new tests; suite 676/676.
+
 ### Desktop FTUE: content-vs-structure composition, responsive to both window dimensions (2026-07-29)
 
 The desktop first-run introduction now teaches the same mental model as

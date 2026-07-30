@@ -8,7 +8,27 @@
 // ============================================================================
 
 import { describe, it, expect } from 'vitest'
-import { revertLinksInBlocks } from './editorLinks.js'
+import { revertLinksInBlocks, searchNodes } from './editorLinks.js'
+
+const rf = (id, label) => ({ id, data: { label, type: 'character' } })
+
+describe('searchNodes', () => {
+  const nodes = Array.from({ length: 15 }, (_, i) => rf(`n${i}`, `Node ${i}`))
+
+  it('caps at 12 by default (the [[ menu contract)', () => {
+    expect(searchNodes(nodes, '')).toHaveLength(12)
+  })
+
+  it('accepts a limit override — Infinity returns every match', () => {
+    expect(searchNodes(nodes, '', Infinity)).toHaveLength(15)
+    expect(searchNodes(nodes, '', 3)).toHaveLength(3)
+  })
+
+  it('filters case-insensitively on label', () => {
+    const out = searchNodes([rf('a', 'Ireena'), rf('b', 'Strahd')], 'IRE', Infinity)
+    expect(out.map((n) => n.id)).toEqual(['a'])
+  })
+})
 
 const link = (nodeId, label) => ({ type: 'nodeLink', props: { nodeId, label } })
 const text = (t) => ({ type: 'text', text: t, styles: {} })
