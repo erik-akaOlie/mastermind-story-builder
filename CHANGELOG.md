@@ -4,6 +4,20 @@ A running log of meaningful changes to MasterMind: Story Builder. Append-only. N
 
 ## [Unreleased]
 
+### Quick-connect: outward carets replace the plus signs (2026-07-29)
+
+The four buttons that appear around a hovered, selected card now show
+outward-facing chevrons (up / right / down / left) instead of plus
+signs. Tester evidence drove it: a plus reads as "add or duplicate a
+node here," not "begin a connection between existing nodes." The
+chevron points the way you drag — outward from that edge — and
+deliberately avoids full arrow icons, which could imply the resulting
+relationship itself has a direction (MasterMind connections don't).
+Each button also gains an accessible label ("Connect upward" etc.).
+Iconography only: sizing, placement, hover behavior, dwell timing, and
+drag behavior are unchanged. This delivers the icon slice of the
+BACKLOG quick-connect redesign early; the rest stays pending.
+
 ### Connections panel: add connections directly again — searchable picker (2026-07-29)
 
 The Inspector's Connections panel can create connections again, not just

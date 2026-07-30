@@ -255,8 +255,16 @@ items land)*
   Mark read plus as "create a connected node here." Verify during
   implementation: hover-shown buttons just outside the card edge vs
   presses intended to drag the card. Existing drag-preview line +
-  crosshair cursor carry the "connection, not move" feedback; add
-  accessible labels ("Connect upward" etc.).
+  crosshair cursor carry the "connection, not move" feedback.
+  **ICONOGRAPHY SLICE DONE 2026-07-29** (pulled forward as a tightly
+  scoped standalone chunk): the four plus signs are now outward-facing
+  CARETS (CaretUp/Right/Down/Left, 18px in the unchanged 24px button)
+  with per-side accessible labels ("Connect upward" etc.). Carets, not
+  Arrow* icons — Erik's product-risk call: the direction means "drag
+  outward from this edge", never that the relationship itself is
+  directional. Everything else (dwell, selection prerequisite, hit
+  targets, drag behavior) unchanged — the REMAINING redesign scope
+  above stays pending.
 
 *Founder-led design*
 - **Thumbnail upload + card display types** — awaiting Erik's single

@@ -21,13 +21,26 @@
 // ============================================================================
 
 import { useEffect, useRef } from 'react'
-import { Plus } from '@phosphor-icons/react'
+import { CaretUp, CaretRight, CaretDown, CaretLeft } from '@phosphor-icons/react'
 
 const BUTTON_PX = 24       // ÷8 ✓ — base on-screen diameter
 const GAP_PX    = 8        // ÷8 ✓ — clear space between card edge and button
 const CTA_COLOR = '#0284C7' // system CTA (sky-600) — type-agnostic action
 
 const SIDES = ['top', 'right', 'bottom', 'left']
+
+// Outward-facing chevrons (Erik, 2026-07-29, from Mark's session: a plus
+// reads as "add/duplicate a node here", not "begin a connection"). CARETS,
+// deliberately not Arrow* icons: the icon direction means "drag outward
+// from this edge" — a full arrow would risk implying the RELATIONSHIP is
+// directional, and MasterMind connections are not.
+const SIDE_ICONS = { top: CaretUp, right: CaretRight, bottom: CaretDown, left: CaretLeft }
+const SIDE_LABELS = {
+  top: 'Connect upward',
+  right: 'Connect right',
+  bottom: 'Connect downward',
+  left: 'Connect left',
+}
 
 function sidePosition(side, size, gap, cardWidth, cardHeight) {
   const cx = cardWidth / 2 - size / 2
@@ -72,6 +85,7 @@ function SideButton({ side, size, gap, cardWidth, cardHeight, onBeginConnect }) 
   }, [])
 
   const pos = sidePosition(side, size, gap, cardWidth, cardHeight)
+  const Icon = SIDE_ICONS[side]
   return (
     <button
       ref={ref}
@@ -79,6 +93,7 @@ function SideButton({ side, size, gap, cardWidth, cardHeight, onBeginConnect }) 
       // starts a node drag or canvas pan.
       className="nodrag nopan quick-connect-btn"
       title="Drag to connect"
+      aria-label={SIDE_LABELS[side]}
       style={{
         position: 'absolute',
         left:   pos.left,
@@ -100,8 +115,11 @@ function SideButton({ side, size, gap, cardWidth, cardHeight, onBeginConnect }) 
         // rest of the card.
       }}
     >
-      {/* Icon scales with the button (16/24 of the diameter — base 16px). */}
-      <Plus size={size * (16 / 24)} weight="bold" />
+      {/* Icon scales with the button (18/24 of the diameter — base 18px,
+          2-grid: carets have a smaller optical footprint than the plus they
+          replaced, so 16 read undersized; drop back to 16 if Erik's QA says
+          18 crowds the circle). */}
+      <Icon size={size * (18 / 24)} weight="bold" />
     </button>
   )
 }

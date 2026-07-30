@@ -319,6 +319,15 @@ src/
                                    Cap policy: solid = round, dashed = BUTT (round caps extend each dash by
                                    weight/2 per end, visually coupling weight to dash length — never
                                    reintroduce round caps on dashed strokes).
+    QuickConnectButtons.jsx        the four per-side connection-creation buttons shown on a hovered/
+                                   selected card (24px sky-600 circles just outside each edge, zoom-
+                                   compensated, NATIVE pointer listeners per the RF v11 selected-node
+                                   footgun). Icons are outward-facing CARETS (CaretUp/Right/Down/Left
+                                   at 18/24 of the button + per-side aria-labels, 2026-07-29 —
+                                   deliberately NOT Arrow*: the direction means "drag outward from
+                                   this edge"; a full arrow would imply the RELATIONSHIP is
+                                   directional, and connections aren't). Presentation pinned by
+                                   QuickConnectButtons.test.jsx; interaction logic in lib/quickConnect.js.
     iconRegistry.js                70+ Phosphor icons with keywords; getIcon(), recommendIcons()
 
   edges/
