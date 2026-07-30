@@ -44,4 +44,22 @@ The schema and feature design assume Pathfinder 2e, Daggerheart, Shadowdark, and
 
 ---
 
+## Decision Tenets (adopted 2026-07-30)
+
+When competing solutions to a design or engineering problem conflict, these five dimensions frame the evaluation, listed in their current order of priority:
+
+1. **Preserve trust in the graph.**
+2. **Preserve visual comprehension.**
+3. **Reduce friction in creating and organizing information.**
+4. **Prefer progressive disclosure over adding controls.**
+5. **Engineer for extensibility — never at the expense of today's UX.**
+
+**The ordering is not a decision procedure.** Its purpose is to ensure every meaningful option is evaluated across all five dimensions, and to indicate which compromises deserve the greatest scrutiny — not which option automatically wins. A solution that slightly compromises a higher-ranked tenet while substantially serving the other four may still be the better solution; the goal is the strongest overall product outcome with the fewest meaningful tradeoffs, chosen by judgment, not by mechanically following the list.
+
+These tenets are authoritative but written in pencil — in the Amazon spirit, *these are our decision tenets until we think of better ones*. Question and refine them as evidence accumulates.
+
+**Decision Tenets and vision.md's failure signals are different instruments.** The failure signals (data-entry friction first, loss of trust second) describe how the product *dies* in users' hands; the Decision Tenets rank which compromises deserve scrutiny when *we* weigh competing solutions. Their differing orders are intentional, not a contradiction.
+
+---
+
 *See [`docs/design/design-system.md`](../design/design-system.md) for interface-grammar principles (the graph is the model; one signifier, one meaning; content is the signal; skinnable by design).*

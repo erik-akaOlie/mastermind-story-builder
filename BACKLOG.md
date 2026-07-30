@@ -383,10 +383,23 @@ no code needed.
   post lives in [docs/strategy/brandscript.md](./docs/strategy/brandscript.md)
   (hero, villain "The Page-by-Page Trap", plan, agreement, CTAs, one-liner,
   claim guardrails + evidence appendix). **Read its ⚠️ Flags section before
-  writing copy** — 3 known conflicts: markdown-export claim (not shipped; use
-  ToS §4 on-request framing), "5 free workspaces" (entitlement undecided — cap
-  decision below leans 3), and the missing "not a free-forever guarantee"
-  clause from ADR-0017 §6's locked promise.
+  writing copy** — 3 known conflicts: markdown-export claim (not shipped —
+  see the data-commitments note below, updated 2026-07-30), "5 free
+  workspaces" (entitlement undecided — cap decision below leans 3), and the
+  missing "not a free-forever guarantee" clause from ADR-0017 §6's locked
+  promise.
+- **Data-commitments copy guidance (Erik, 2026-07-30 — supersedes the
+  earlier "ToS §4 on-request" framing).** Launch copy and ToS must state
+  exactly three commitments, no more: (1) an active account retains access
+  to its workspace data; (2) closing the account initiates deletion of that
+  data; (3) markdown export is PLANNED, not available — never imply users
+  can currently export. Do NOT claim "no lock-in" or full data ownership
+  until export actually ships (tenet 6 is the aspiration, not the current
+  state). Avoid absolutes ("always", "deleted the minute") — backups and
+  legal retention make them operationally false. At post time VERIFY the
+  current ToS text matches these commitments, and verify whether an
+  account-closure/deletion flow exists in the product at all (unverified
+  as of 2026-07-30).
 - Beta-promise + Discord redirect script + support-expectation copy
 - MB-9: email-template copy edit
 
@@ -395,6 +408,15 @@ no code needed.
   · custom app domain · company-level DMARC · re-home Resend account to a
   company identity · iOS long-press native selection-highlight flash (S, logged
   in the QA dispositions file)
+- **"Media Gallery" terminology alignment pass (S–M).** Erik's product call
+  (2026-07-30): the media feature is the MEDIA GALLERY (images today;
+  envisioned for video/audio/possibly files; "Inspiration" = seeded example
+  heading, not the name). Align front-end copy (the "Image Album" block
+  label, slash-menu entry), back-end/code identifiers where cheap, and doc
+  rule-statements to "Media Gallery". Explicitly POST-LAUNCH: semantic
+  naming matters long-term, but getting the product in front of users
+  outranks it (Erik). Historical docs/CHANGELOG entries stay as written.
+  See the CLAUDE.md Known Divergences row.
 
 ---
 
