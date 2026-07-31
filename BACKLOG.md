@@ -249,14 +249,30 @@ GM; one observed session, evidence-weighted accordingly)
   product pattern). Dev-only `#empty-picker-preview` harness for design
   QA without a zero-workspace account (verified absent from the
   production bundle). 8 new tests; suite 686/686.
-- **Empty canvas** (S): hide the altitude rail until the first canvas
-  object (node / text block / line) exists, keyed off the same
-  canvas-empty condition the FTUE uses. Pan/zoom stay technically live
-  (Erik's explicit call — no input disabling). Product detail pending
-  Erik: with the ftueEligible condition the rail stays visible forever
-  once the FTUE completes, even after delete-to-empty; a plain-empty
-  condition would re-hide it. Alternative treatment (brighter grid dots
-  while empty, fading on first object) recorded but not preferred.
+- ✅ **Empty canvas — DONE 2026-07-31, Erik QA-approved on desktop AND
+  Android (iPhone explicitly unverified).** Erik's product decision:
+  PRESENT-STATE rule, not history — the rail renders only while the
+  canvas currently has content (any kind: node / text block / line —
+  all three live in App's `nodes` array, so `!loading &&
+  nodes.length > 0` is the whole gate). Delete-to-empty re-hides it
+  even after FTUE completion; create/undo/remote insert bring it back;
+  `!loading` prevents flash during hydration and workspace switching.
+  Pan/zoom stay live; the 64px reserved framing band is deliberately
+  unchanged (camera-centering rule — QA confirmed no visible jump or
+  off-weight composition; revisit only on new evidence). Appearance is
+  instant (first cut; transition only if it ever feels abrupt).
+  Full QA checklist passed on both platforms: hidden-when-empty,
+  appears per object kind, delete-to-empty, undo-restores, no stale
+  rail on workspace switch.
+- **Process/product requirement — cross-platform by default (Erik,
+  2026-07-31, authoritative):** MasterMind must be accessible across
+  mobile, tablet, and desktop; a feature request applies to all
+  supported platforms unless phasing is explicitly agreed — and phased
+  platforms must be NAMED and tracked, never silently implied complete.
+  Also capture (dev-workflow rules, from the harness incident): dev
+  harnesses must be non-destructive BY CONSTRUCTION, especially when
+  they can run inside authenticated sessions. Normalize both into
+  tenets/docs wording with Erik in a dedicated pass — not mid-bugfix.
 
 *Core workflow (candidate pre-launch — founder decision after the gating
 items land)*

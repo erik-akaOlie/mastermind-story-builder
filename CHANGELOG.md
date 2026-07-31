@@ -4,6 +4,22 @@ A running log of meaningful changes to MasterMind: Story Builder. Append-only. N
 
 ## [Unreleased]
 
+### Empty canvas: altitude rail appears only when there's something to navigate (2026-07-31)
+
+The left-edge altitude rail now follows a present-state rule (Erik's
+call): it renders only while the canvas actually contains content —
+a node, text block, or line. An empty canvas (including during the
+first-run introduction) stays visually quiet; the rail appears the
+moment the first object lands, hides again if the last object is
+deleted, and returns on undo. The rule reads the canvas's current
+state, never its history — completing the FTUE grants nothing
+permanent. Pan and zoom stay fully live while the rail is hidden, and
+the camera's reserved left band is unchanged, so nothing shifts when
+the rail appears. Verified on desktop and Android (full checklist:
+hidden-when-empty, appears per object kind, delete-to-empty re-hides,
+undo restores, workspace switching shows no stale rail or flash);
+iPhone not yet verified.
+
 ### Empty homepage: handwritten guidance + primary New-workspace button (2026-07-30)
 
 A brand-new account (or one whose last workspace was deleted) no longer

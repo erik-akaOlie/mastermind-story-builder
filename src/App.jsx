@@ -2373,7 +2373,16 @@ export default function App() {
 
       <MarqueeRect marquee={marqueeOverlay} rfInstanceRef={rfInstanceRef} />
       <QuickConnectLine quickConnect={quickConnect} rfInstanceRef={rfInstanceRef} />
-      <AltitudeRail onZoomTo={onZoomToFromRail} />
+      {/* Present-state rule (Erik, 2026-07-31): the rail exists only while
+          the canvas has content to navigate — ANY object kind (nodes/text
+          blocks/lines all live in `nodes`). Not tied to FTUE history;
+          delete-to-empty re-hides it, any create/undo/remote insert brings
+          it back. `!loading` keeps it from flashing during hydration or a
+          workspace switch. Pan/zoom stay live regardless; the 64px framing
+          band stays reserved either way (camera-centering rule). */}
+      {!loading && nodes.length > 0 && (
+        <AltitudeRail onZoomTo={onZoomToFromRail} />
+      )}
       {/* Handwritten first-run introduction — pointer-events-none overlay;
           also holds the tray open below so its arrows have real targets. */}
       <FtueIntro visible={ftueEligible} />
