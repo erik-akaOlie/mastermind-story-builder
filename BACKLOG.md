@@ -232,9 +232,15 @@ GM; one observed session, evidence-weighted accordingly)
   moving the head away from the button on spacious layouts); the tail's
   TANGENT extended backward must intersect the text block (startDir
   points straight out of the message). All pure + unit-tested
-  (`emptyGuideArrowGeometry`); re-measures on resize AND after webfont
-  load (Caveat shifts metrics post-paint). The guide unmounts while the
-  create flow is open. Arrow-path helpers extracted to
+  (`emptyGuideArrowGeometry`); re-measures on resize, scroll, AND after
+  webfont load (Caveat shifts metrics post-paint). The guide unmounts
+  while the create flow is open. SHORT-VIEWPORT adaptation (Erik's
+  Android landscape QA, 2026-07-30 — "the same requirements apply in
+  all scenarios across all platforms"): available height < 320px →
+  compact type scale (the narrow sizes, hierarchy intact) + the
+  min-rise threshold is 48px (not the tall-layout 96 first shipped) so
+  a landscape phone's ~56px of rise still draws a shallow right-form
+  arrow. Arrow-path helpers extracted to
   `lib/handDrawn.js` (shared FTUE + picker — the "handwritten guidance"
   product pattern). Dev-only `#empty-picker-preview` harness for design
   QA without a zero-workspace account (verified absent from the

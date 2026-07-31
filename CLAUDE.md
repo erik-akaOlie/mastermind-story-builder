@@ -362,16 +362,20 @@ src/
                                    "to get started"; the break is designed, never responsive) +
                                    a hand-drawn arrow (lib/handDrawn.js) to the button
                                    ([data-empty-guide-target] on both branches' closed buttons).
-                                   Everything is measured, never fixed (re-measured on resize AND
-                                   after webfont load — Caveat shifts metrics post-paint). Arrow
-                                   rules (Erik 2026-07-30, all in the pure exported
-                                   emptyGuideArrowGeometry): ADAPT-BEFORE-REMOVE — tail prefers the
-                                   text's right edge, re-attaches to its TOP edge when that no longer
-                                   fits, null ONLY when anchors are unmeasurable or no vertical room
-                                   in any form; EQUAL 32px breathing room at both ends (the arrow
-                                   bridges a relationship — never let it belong to one element);
-                                   startDir points straight OUT of the text so the tail's tangent
-                                   extended backward intersects the message. The guide unmounts while
+                                   Everything is measured, never fixed (re-measured on resize,
+                                   scroll, AND after webfont load — Caveat shifts metrics
+                                   post-paint). Arrow rules (Erik 2026-07-30, all in the pure
+                                   exported emptyGuideArrowGeometry): ADAPT-BEFORE-REMOVE — tail
+                                   prefers the text's right edge, re-attaches to its TOP edge when
+                                   that no longer fits, null ONLY when anchors are unmeasurable or
+                                   no vertical room in any form; EQUAL 32px breathing room at both
+                                   ends (the arrow bridges a relationship — never let it belong to
+                                   one element); startDir points straight OUT of the text so the
+                                   tail's tangent extended backward intersects the message. SHORT
+                                   viewports adapt on the height axis (Erik's Android landscape QA):
+                                   available height < 320 → compact type scale (the narrow sizes,
+                                   2:1 intact) and the 48px min-rise accepts a landscape phone's
+                                   shallow sweep — never demand tall-layout rise. The guide unmounts while
                                    `creating`. `previewEmpty` prop is DEV-ONLY (honored only when
                                    import.meta.env.DEV) for the #empty-picker-preview harness.
                                    Pinned by CampaignPicker.test.jsx.

@@ -116,6 +116,23 @@ describe('CampaignPicker — empty-library state', () => {
     expect(screen.getByText(GUIDE_LINE_1)).toBeInTheDocument()
   })
 
+  it('steps down to the compact type scale on short viewports, even at desktop widths', async () => {
+    // Landscape phone / short desktop window: available height below 320 →
+    // the compact (narrow) sizes render so the arrow has room to
+    // communicate. jsdom rects are zero, so avail = innerHeight − 0 − 48.
+    const original = Object.getOwnPropertyDescriptor(window, 'innerHeight')
+    Object.defineProperty(window, 'innerHeight', { value: 300, configurable: true })
+    try {
+      mockList.mockResolvedValue([])
+      render(<CampaignPicker />)
+      const line1 = await screen.findByText(GUIDE_LINE_1)
+      expect(line1).toHaveStyle({ fontSize: '40px' })
+      expect(screen.getByText(GUIDE_LINE_2)).toHaveStyle({ fontSize: '20px' })
+    } finally {
+      if (original) Object.defineProperty(window, 'innerHeight', original)
+    }
+  })
+
   it('renders the narrow-layout guide at stepped-down sizes with the 2:1 hierarchy intact', async () => {
     narrowState.value = true
     mockList.mockResolvedValue([])
@@ -170,6 +187,20 @@ describe('emptyGuideArrowGeometry — adaptive attachment (pure)', () => {
     expect(g.tail.x).toBeCloseTo(text.left + text.width * 0.65)
     expect(g.tail.y).toBe(text.top - 32)
     expect(g.startDir).toEqual({ x: 0, y: -1 })
+    expect(g.tip.y).toBe(btn.bottom + 32)
+  })
+
+  it('keeps a shallow right-form arrow on short-wide viewports (landscape phones)', () => {
+    // Rects measured at 915×412 during browser QA (compact type applied):
+    // only ~56px of rise is available — the arrow must still draw
+    // (adapt-before-remove; Erik's Android landscape QA 2026-07-30).
+    const text = rect(314, 253, 287, 51)
+    const btn = rect(741, 145, 150, 38)
+    const g = emptyGuideArrowGeometry(text, btn)
+    expect(g).not.toBeNull()
+    expect(g.attach).toBe('right')
+    expect(g.tail.y - g.tip.y).toBeGreaterThanOrEqual(48)
+    expect(g.tail.x).toBe(text.right + 32)
     expect(g.tip.y).toBe(btn.bottom + 32)
   })
 

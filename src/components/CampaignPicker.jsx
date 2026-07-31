@@ -578,13 +578,19 @@ const GUIDE_OPTICAL_BIAS = 0.12
 // so it must feel equally related to both; on a spacious layout, equalize by
 // moving the head AWAY from the button, never the tail closer).
 const GUIDE_END_GAP = 32
-// Minimum clear runs for each attachment form to read as a gesture. The
-// right-side form needs real horizontal + vertical sweep; the top form only
-// needs vertical room. Below the last of these the arrow truly has no room
-// in any form (the only case where the text stands alone).
-const GUIDE_MIN_RUN_Y = 96
+// Minimum clear runs for an attachment form to read as a gesture. The rise
+// minimum is deliberately SHALLOW (48, not the 96 first shipped): a
+// landscape phone leaves only ~56px of rise, and the requirement is
+// adapt-before-remove — a shallow sweep that clearly bridges text → button
+// beats no arrow (Erik, Android landscape QA 2026-07-30). Below these the
+// arrow truly has no room in any form (the only case the text stands alone).
+const GUIDE_MIN_RISE = 48
 const GUIDE_MIN_RUN_X = 48
-const GUIDE_MIN_RUN_TOP = 48
+// Available heights below this render the compact type scale (the narrow
+// sizes) even on desktop-width layouts — short viewports (landscape phones,
+// short desktop windows) can't fit the full-size text AND leave the arrow
+// room to communicate. 8pt: 320 = 40×8.
+const GUIDE_COMPACT_BELOW = 320
 
 // Pure (exported for tests): the arrow's anchors from the two measured rects.
 // Design rule (Erik, 2026-07-30): the arrow is instructional language, not
@@ -612,7 +618,7 @@ export function emptyGuideArrowGeometry(textRect, btnRect) {
     x: textRect.right + GUIDE_END_GAP,
     y: textRect.top + textRect.height * 0.35,
   }
-  if (btnCx - rightTail.x >= GUIDE_MIN_RUN_X && rightTail.y - tip.y >= GUIDE_MIN_RUN_Y) {
+  if (btnCx - rightTail.x >= GUIDE_MIN_RUN_X && rightTail.y - tip.y >= GUIDE_MIN_RISE) {
     return { tail: rightTail, tip, aim, startDir: { x: 1, y: 0 }, attach: 'right' }
   }
 
@@ -623,7 +629,7 @@ export function emptyGuideArrowGeometry(textRect, btnRect) {
     x: textRect.left + textRect.width * frac,
     y: textRect.top - GUIDE_END_GAP,
   }
-  if (topTail.y - tip.y >= GUIDE_MIN_RUN_TOP) {
+  if (topTail.y - tip.y >= GUIDE_MIN_RISE) {
     return { tail: topTail, tip, aim, startDir: { x: 0, y: -1 }, attach: 'top' }
   }
 
@@ -640,6 +646,9 @@ function EmptyLibraryGuide({ narrow }) {
   useEffect(() => {
     const remeasure = () => setTick((n) => n + 1)
     window.addEventListener('resize', remeasure)
+    // Cramped viewports can scroll the page; the arrow overlay is fixed, so
+    // its anchors must follow the scrolled elements.
+    window.addEventListener('scroll', remeasure, { passive: true })
     // Caveat loading changes the text block's metrics after first paint —
     // re-measure when the webfonts settle (plus a delayed second pass as
     // cheap insurance, mirroring FtueIntro).
@@ -650,6 +659,7 @@ function EmptyLibraryGuide({ narrow }) {
     return () => {
       clearTimeout(t)
       window.removeEventListener('resize', remeasure)
+      window.removeEventListener('scroll', remeasure)
     }
   }, [])
 
@@ -674,6 +684,11 @@ function EmptyLibraryGuide({ narrow }) {
     setArrow(emptyGuideArrowGeometry(text, btn))
   }, [avail, narrow, tick])
 
+  // Compact type scale: narrow viewports (width-driven) and short ones
+  // (height-driven, measured available space) share the same stepped-down
+  // sizes; the 2:1 hierarchy holds in every case.
+  const compact = narrow || (avail != null && avail < GUIDE_COMPACT_BELOW)
+
   return (
     <>
       <div
@@ -689,16 +704,18 @@ function EmptyLibraryGuide({ narrow }) {
         {/* The line break is INTENTIONAL, never responsive (Erik, 2026-07-30):
             the action dominates ("Add a new workspace", 2× size) and the
             second line answers why ("to get started"). The 2:1 hierarchy
-            holds at every breakpoint; only the absolute sizes step down
-            (narrow sizes chosen so line 1 fits a 375px viewport). */}
+            holds at every breakpoint; only the absolute sizes step down —
+            for narrow viewports (line 1 must fit 375px) AND for short ones
+            (landscape phones / short windows: full-size text leaves the
+            arrow no room to communicate — the compact scale frees it). */}
         <p
           ref={textRef}
           className="font-hand leading-hand text-center text-gray-400 select-none"
         >
-          <span className="block" style={{ fontSize: narrow ? 40 : 80 }}>
+          <span className="block" style={{ fontSize: compact ? 40 : 80 }}>
             Add a new workspace
           </span>
-          <span className="block" style={{ fontSize: narrow ? 20 : 40 }}>
+          <span className="block" style={{ fontSize: compact ? 20 : 40 }}>
             to get started
           </span>
         </p>

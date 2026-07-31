@@ -24,7 +24,13 @@ always emerges from the message, the head always aims at the button's
 center, and both ends keep the same breathing room so the arrow bridges
 the relationship rather than belonging to either element. The whole
 guide steps aside while the create flow is open (the arrow must never
-point at a control that has morphed into the name input). This makes
+point at a control that has morphed into the name input). Short
+viewports (landscape phones, short desktop windows — caught in Erik's
+Android landscape QA) adapt on the height axis too: below 320px of
+available space the compact type scale renders (same 2:1 hierarchy)
+and the arrow accepts a shallow sweep instead of demanding tall-layout
+rise, so the instruction keeps its arrow in every orientation; page
+scroll re-anchors it. This makes
 the handwritten-guidance pattern a shared product asset: the FTUE's
 arrow-path helpers moved to `lib/handDrawn.js` with both surfaces
 consuming them. A dev-only `#empty-picker-preview` harness (absent from
