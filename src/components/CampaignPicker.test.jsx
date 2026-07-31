@@ -149,6 +149,30 @@ describe('CampaignPicker — empty-library state', () => {
   })
 })
 
+describe('CampaignPicker — preview-harness guard', () => {
+  beforeEach(() => {
+    mockList.mockReset()
+    narrowState.value = false
+  })
+
+  it('previewEmpty mode NEVER calls the real creation path, even with a live session', async () => {
+    const { createWorkspace } = await import('../lib/workspaces.js')
+    render(<CampaignPicker previewEmpty />)
+    await screen.findByText(GUIDE_LINE_1)
+
+    fireEvent.click(newWorkspaceButton())
+    const input = screen.getByLabelText('Workspace name')
+    fireEvent.change(input, { target: { value: 'Sneaky Real Row' } })
+    fireEvent.submit(input.closest('form'))
+
+    // Structural guard: the persistence call is unreachable in preview mode
+    // (Erik's Android QA created real backend rows through the harness).
+    expect(createWorkspace).not.toHaveBeenCalled()
+    // The harness says so instead of silently swallowing the attempt.
+    expect(screen.getByText(/workspace creation is disabled/i)).toBeInTheDocument()
+  })
+})
+
 describe('emptyGuideArrowGeometry — adaptive attachment (pure)', () => {
   // Rect helper in the DOMRect shape the component reads.
   const rect = (left, top, width, height) => ({

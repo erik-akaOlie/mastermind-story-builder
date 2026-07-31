@@ -153,6 +153,17 @@ function CampaignPickerInner({ previewEmpty: previewEmptyProp = false }) {
   async function handleCreate(e) {
     e.preventDefault()
     if (!newName.trim()) return
+    // HARNESS GUARD (2026-07-31): the #empty-picker-preview harness is
+    // look-only BY CONSTRUCTION — the real persistence path is unreachable
+    // in preview mode, not merely undocumented. Without this, a viewer with
+    // a live session created REAL workspace rows the harness UI could never
+    // show or navigate to (Erik's Android QA found exactly that).
+    if (previewEmpty) {
+      setError('Design-QA harness — workspace creation is disabled here. Use the real picker to create workspaces.')
+      setNewName('')
+      setCreating(false)
+      return
+    }
     setError(null)
     try {
       const { workspace } = await createWorkspace(newName)
