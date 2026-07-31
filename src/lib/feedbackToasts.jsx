@@ -163,11 +163,21 @@ export function toastDeleteCaptureFailed() {
 
 // `context` is the human-readable label persistWrite was given
 // (default "your changes"; some call sites pass a more specific phrase).
+//
+// HONEST-CAUSE RULE (Erik, 2026-07-31 — bug-2 QA found "check your
+// connection" shown for a failure that had nothing to do with connectivity):
+// name the connection ONLY when the browser itself reports offline
+// (navigator.onLine === false is trustworthy evidence of offline; true
+// proves little, which is why the default wording stays neutral). Never
+// invent a cause the system hasn't verified.
 export function toastSaveFailed(context = 'your changes') {
+  const offline = typeof navigator !== 'undefined' && navigator.onLine === false
   push({
     stickyId: 'persist-fail',
     variant: 'error',
-    content: `Can't save ${context} — check your connection.`,
+    content: offline
+      ? `Can't save ${context} — you appear to be offline.`
+      : `Couldn't save ${context}.`,
     durationMs: SAVE_FAIL_DURATION_MS,
   })
 }

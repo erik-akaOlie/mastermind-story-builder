@@ -62,7 +62,7 @@ export async function createTextNode({
     if (error) throw error
 
     return dbTextNodeToReactFlow(data)
-  }, 'your text note')
+  }, 'your text block')
 }
 
 // ----------------------------------------------------------------------------
@@ -108,7 +108,7 @@ export async function updateTextNode(id, {
   return persistWrite(async () => {
     const { error } = await supabase.from('text_nodes').update(patch).eq('id', id)
     if (error) throw error
-  }, 'your text note')
+  }, 'your text block')
 }
 
 // ----------------------------------------------------------------------------
