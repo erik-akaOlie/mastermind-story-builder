@@ -230,8 +230,8 @@ GM; one observed session, evidence-weighted accordingly)
   form); EQUAL BREATHING ROOM at both ends — a LADDER, not a constant
   (32→24→16, both ends always equal; the balance invariant is equality:
   Erik's real 617×290 Android landscape missed both forms by 7px/2px at
-  a rigid 32, fits at 24 — diagnosed via the harness's on-device debug
-  strip, which is kept for future device QA); the arrow bridges the
+  a rigid 32, fits at 24 — diagnosed via a temporary on-device debug
+  strip, removed after diagnosis at Erik's call); the arrow bridges the
   relationship, favoring moving the head away from the button on
   spacious layouts; the tail's
   TANGENT extended backward must intersect the text block (startDir

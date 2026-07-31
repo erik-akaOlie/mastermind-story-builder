@@ -541,9 +541,7 @@ function CampaignPickerInner({ previewEmpty: previewEmptyProp = false }) {
         {/* Empty-library guidance — the handwritten FTUE voice on the picker.
             Unmounted while the create flow is open: the arrow must never
             point at a control that has morphed into something else. */}
-        {isEmpty && !creating && (
-          <EmptyLibraryGuide narrow={narrow} debug={previewEmpty} />
-        )}
+        {isEmpty && !creating && <EmptyLibraryGuide narrow={narrow} />}
       </div>
     </div>
   )
@@ -650,14 +648,12 @@ export function emptyGuideArrowGeometry(textRect, btnRect) {
   return null
 }
 
-function EmptyLibraryGuide({ narrow, debug = false }) {
+function EmptyLibraryGuide({ narrow }) {
   const wrapRef = useRef(null)
   const textRef = useRef(null)
   const [avail, setAvail] = useState(null)
   const [arrow, setArrow] = useState(null)
   const [tick, setTick] = useState(0)
-  // Harness-only diagnostics (see the debug strip below).
-  const [debugInfo, setDebugInfo] = useState(null)
 
   useEffect(() => {
     const remeasure = () => setTick((n) => n + 1)
@@ -697,22 +693,8 @@ function EmptyLibraryGuide({ narrow, debug = false }) {
     const btn = document
       .querySelector('[data-empty-guide-target]')
       ?.getBoundingClientRect() ?? null
-    const g = emptyGuideArrowGeometry(text, btn)
-    setArrow(g)
-    if (debug && import.meta.env.DEV) {
-      const r = (v) => Math.round(v)
-      setDebugInfo(
-        `dbg2 ${window.innerWidth}x${window.innerHeight} narrow=${narrow} ` +
-        `avail=${r(avail)} scrollY=${r(window.scrollY)} ` +
-        `text=${text ? [r(text.left), r(text.top), r(text.width), r(text.height)].join(',') : 'null'} ` +
-        `btn=${btn ? [r(btn.left), r(btn.top), r(btn.width), r(btn.height)].join(',') : 'null'} ` +
-        `→ ${g ? `${g.attach} gap=${g.gap}` : 'NO ARROW'}` +
-        (g ? '' : text && btn
-          ? ` (@16: xRun=${r((btn.left + btn.width / 2) - (text.right + 16))} rise=${r((text.top + text.height * 0.35) - (btn.bottom + 16))} topRise=${r((text.top - 16) - (btn.bottom + 16))})`
-          : ''),
-      )
-    }
-  }, [avail, narrow, tick, debug])
+    setArrow(emptyGuideArrowGeometry(text, btn))
+  }, [avail, narrow, tick])
 
   // Compact type scale: narrow viewports (width-driven) and short ones
   // (height-driven, measured available space) share the same stepped-down
@@ -765,18 +747,6 @@ function EmptyLibraryGuide({ narrow, debug = false }) {
             <path d={arrowheadPath(arrow.tail, arrow.tip, 40, 14, arrow.aim)} />
           </g>
         </svg>
-      )}
-      {/* HARNESS-ONLY diagnostics (#empty-picker-preview): the guide's live
-          decision inputs, readable on a device with no devtools. Never
-          renders in production (debug flows from previewEmpty, which is
-          import.meta.env.DEV-gated). */}
-      {debug && import.meta.env.DEV && debugInfo && (
-        <div
-          className="fixed bottom-0 left-0 right-0 z-50 bg-gray-900 text-white px-2 py-1"
-          style={{ fontSize: 11, fontFamily: 'ui-monospace, monospace', wordBreak: 'break-all' }}
-        >
-          {debugInfo}
-        </div>
       )}
     </>
   )

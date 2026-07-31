@@ -371,8 +371,8 @@ src/
                                    no vertical room in any form; EQUAL breathing room at both ends
                                    via a gap LADDER (32→24→16 — both ends always equal, compress
                                    before ever dropping the arrow; a real 617×290 Android landscape
-                                   missed both forms by single digits at rigid 32; the harness's
-                                   on-device debug strip diagnosed it and is kept for device QA);
+                                   missed both forms by single digits at rigid 32, diagnosed via a
+                                   temporary on-device debug strip — removed after diagnosis);
                                    the arrow bridges a relationship — never let it belong to one
                                    element; startDir points straight OUT of the text so the
                                    tail's tangent extended backward intersects the message. SHORT
