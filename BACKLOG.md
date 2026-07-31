@@ -227,9 +227,13 @@ GM; one observed session, evidence-weighted accordingly)
   language, so when the preferred right-edge tail no longer fits, it
   re-attaches to the text's TOP edge rather than disappearing (null
   only when anchors are unmeasurable or there's no vertical room in any
-  form); EQUAL BREATHING ROOM at both ends (32px tail-to-text =
-  32px head-to-button — the arrow bridges the relationship, favoring
-  moving the head away from the button on spacious layouts); the tail's
+  form); EQUAL BREATHING ROOM at both ends — a LADDER, not a constant
+  (32→24→16, both ends always equal; the balance invariant is equality:
+  Erik's real 617×290 Android landscape missed both forms by 7px/2px at
+  a rigid 32, fits at 24 — diagnosed via the harness's on-device debug
+  strip, which is kept for future device QA); the arrow bridges the
+  relationship, favoring moving the head away from the button on
+  spacious layouts; the tail's
   TANGENT extended backward must intersect the text block (startDir
   points straight out of the message). All pure + unit-tested
   (`emptyGuideArrowGeometry`); re-measures on resize, scroll, AND after

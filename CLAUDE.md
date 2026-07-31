@@ -368,9 +368,13 @@ src/
                                    exported emptyGuideArrowGeometry): ADAPT-BEFORE-REMOVE — tail
                                    prefers the text's right edge, re-attaches to its TOP edge when
                                    that no longer fits, null ONLY when anchors are unmeasurable or
-                                   no vertical room in any form; EQUAL 32px breathing room at both
-                                   ends (the arrow bridges a relationship — never let it belong to
-                                   one element); startDir points straight OUT of the text so the
+                                   no vertical room in any form; EQUAL breathing room at both ends
+                                   via a gap LADDER (32→24→16 — both ends always equal, compress
+                                   before ever dropping the arrow; a real 617×290 Android landscape
+                                   missed both forms by single digits at rigid 32; the harness's
+                                   on-device debug strip diagnosed it and is kept for device QA);
+                                   the arrow bridges a relationship — never let it belong to one
+                                   element; startDir points straight OUT of the text so the
                                    tail's tangent extended backward intersects the message. SHORT
                                    viewports adapt on the height axis (Erik's Android landscape QA):
                                    available height < 320 → compact type scale (the narrow sizes,

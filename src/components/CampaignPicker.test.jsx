@@ -204,6 +204,28 @@ describe('emptyGuideArrowGeometry — adaptive attachment (pure)', () => {
     expect(g.tip.y).toBe(btn.bottom + 32)
   })
 
+  it('compresses both end gaps together on cramped viewports instead of dropping the arrow', () => {
+    // Erik's Android landscape, 617×290 CSS px — exact rects from the
+    // on-device debug strip (2026-07-30). At the 32px rung the right form
+    // missed by 7px and the top form by 2px; the ladder steps to 24 and the
+    // right form fits. The balance invariant (equal gaps) holds at every
+    // rung.
+    const text = rect(165, 130, 287, 51)
+    const btn = rect(450, 30, 150, 38)
+    const g = emptyGuideArrowGeometry(text, btn)
+    expect(g).not.toBeNull()
+    expect(g.attach).toBe('right')
+    expect(g.gap).toBe(24)
+    expect(g.tail.x).toBe(text.right + 24)
+    expect(g.tip.y).toBe(btn.bottom + 24)
+  })
+
+  it('keeps the generous 32px gaps whenever they fit', () => {
+    const text = rect(400, 378, 480, 102)
+    const btn = rect(1065, 145, 150, 38)
+    expect(emptyGuideArrowGeometry(text, btn).gap).toBe(32)
+  })
+
   it('biases the top-edge tail toward the button when the button is left of center', () => {
     const text = rect(300, 419, 343, 68)
     const btn = rect(100, 145, 150, 38) // center 175 < text center 471
@@ -217,8 +239,11 @@ describe('emptyGuideArrowGeometry — adaptive attachment (pure)', () => {
     expect(emptyGuideArrowGeometry(null, rect(1065, 145, 150, 38))).toBeNull()
     expect(emptyGuideArrowGeometry(text, null)).toBeNull()
     expect(emptyGuideArrowGeometry(text, rect(0, 0, 0, 0))).toBeNull()
-    // Button hugging the text from above: top-form run shrinks below the
-    // minimum (tail 387 − tip 370 = 17px) → truly no room.
-    expect(emptyGuideArrowGeometry(text, rect(208, 300, 150, 38))).toBeNull()
+    // Button hugging the text from above: even at the tightest gap rung
+    // (16px) the top-form rise is 9px → truly no room in any form.
+    expect(emptyGuideArrowGeometry(text, rect(208, 340, 150, 38))).toBeNull()
+    // And the OLD "cramped" case (rise 49 at the 16px rung) now correctly
+    // yields a compressed top-form arrow instead of null.
+    expect(emptyGuideArrowGeometry(text, rect(208, 300, 150, 38))?.attach).toBe('top')
   })
 })

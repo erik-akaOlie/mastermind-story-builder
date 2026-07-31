@@ -541,7 +541,9 @@ function CampaignPickerInner({ previewEmpty: previewEmptyProp = false }) {
         {/* Empty-library guidance — the handwritten FTUE voice on the picker.
             Unmounted while the create flow is open: the arrow must never
             point at a control that has morphed into something else. */}
-        {isEmpty && !creating && <EmptyLibraryGuide narrow={narrow} />}
+        {isEmpty && !creating && (
+          <EmptyLibraryGuide narrow={narrow} debug={previewEmpty} />
+        )}
       </div>
     </div>
   )
@@ -576,8 +578,13 @@ const GUIDE_OPTICAL_BIAS = 0.12
 // Breathing room at BOTH ends of the arrow — tail-to-text and head-to-button
 // (Erik, 2026-07-30: the arrow bridges a relationship between two elements,
 // so it must feel equally related to both; on a spacious layout, equalize by
-// moving the head AWAY from the button, never the tail closer).
-const GUIDE_END_GAP = 32
+// moving the head AWAY from the button, never the tail closer). The gap is a
+// LADDER, not a constant: prefer the generous value, and on cramped
+// viewports compress BOTH ends together before giving up the arrow — the
+// balance invariant is equality, not 32px (Erik's Android landscape is
+// 617×290 CSS px: the 32px gaps missed the top form by 2px and the right
+// form by 7px; 24px fits comfortably).
+const GUIDE_END_GAPS = [32, 24, 16]
 // Minimum clear runs for an attachment form to read as a gesture. The rise
 // minimum is deliberately SHALLOW (48, not the 96 first shipped): a
 // landscape phone leaves only ~56px of rise, and the requirement is
@@ -611,37 +618,46 @@ export function emptyGuideArrowGeometry(textRect, btnRect) {
   if (!textRect || !btnRect || btnRect.width === 0) return null
   const btnCx = btnRect.left + btnRect.width / 2
   const aim = { x: btnCx, y: btnRect.top + btnRect.height / 2 }
-  const tip = { x: btnCx, y: btnRect.bottom + GUIDE_END_GAP }
 
-  // Form 1 — right-edge attachment, departing horizontally out of the text.
-  const rightTail = {
-    x: textRect.right + GUIDE_END_GAP,
-    y: textRect.top + textRect.height * 0.35,
-  }
-  if (btnCx - rightTail.x >= GUIDE_MIN_RUN_X && rightTail.y - tip.y >= GUIDE_MIN_RISE) {
-    return { tail: rightTail, tip, aim, startDir: { x: 1, y: 0 }, attach: 'right' }
-  }
+  // Outer loop: the gap ladder — each rung keeps BOTH ends equal; inner
+  // order: preferred form first at each rung. A generous top-form arrow
+  // beats a compressed right-form one, so the rung (visual quality) is the
+  // outer axis, the form the inner.
+  for (const gap of GUIDE_END_GAPS) {
+    const tip = { x: btnCx, y: btnRect.bottom + gap }
 
-  // Form 2 — top-edge attachment, departing straight up out of the text,
-  // from the side of the block nearer the button.
-  const frac = btnCx >= textRect.left + textRect.width / 2 ? 0.65 : 0.35
-  const topTail = {
-    x: textRect.left + textRect.width * frac,
-    y: textRect.top - GUIDE_END_GAP,
-  }
-  if (topTail.y - tip.y >= GUIDE_MIN_RISE) {
-    return { tail: topTail, tip, aim, startDir: { x: 0, y: -1 }, attach: 'top' }
+    // Form 1 — right-edge attachment, departing horizontally out of the text.
+    const rightTail = {
+      x: textRect.right + gap,
+      y: textRect.top + textRect.height * 0.35,
+    }
+    if (btnCx - rightTail.x >= GUIDE_MIN_RUN_X && rightTail.y - tip.y >= GUIDE_MIN_RISE) {
+      return { tail: rightTail, tip, aim, startDir: { x: 1, y: 0 }, attach: 'right', gap }
+    }
+
+    // Form 2 — top-edge attachment, departing straight up out of the text,
+    // from the side of the block nearer the button.
+    const frac = btnCx >= textRect.left + textRect.width / 2 ? 0.65 : 0.35
+    const topTail = {
+      x: textRect.left + textRect.width * frac,
+      y: textRect.top - gap,
+    }
+    if (topTail.y - tip.y >= GUIDE_MIN_RISE) {
+      return { tail: topTail, tip, aim, startDir: { x: 0, y: -1 }, attach: 'top', gap }
+    }
   }
 
   return null
 }
 
-function EmptyLibraryGuide({ narrow }) {
+function EmptyLibraryGuide({ narrow, debug = false }) {
   const wrapRef = useRef(null)
   const textRef = useRef(null)
   const [avail, setAvail] = useState(null)
   const [arrow, setArrow] = useState(null)
   const [tick, setTick] = useState(0)
+  // Harness-only diagnostics (see the debug strip below).
+  const [debugInfo, setDebugInfo] = useState(null)
 
   useEffect(() => {
     const remeasure = () => setTick((n) => n + 1)
@@ -681,8 +697,22 @@ function EmptyLibraryGuide({ narrow }) {
     const btn = document
       .querySelector('[data-empty-guide-target]')
       ?.getBoundingClientRect() ?? null
-    setArrow(emptyGuideArrowGeometry(text, btn))
-  }, [avail, narrow, tick])
+    const g = emptyGuideArrowGeometry(text, btn)
+    setArrow(g)
+    if (debug && import.meta.env.DEV) {
+      const r = (v) => Math.round(v)
+      setDebugInfo(
+        `dbg2 ${window.innerWidth}x${window.innerHeight} narrow=${narrow} ` +
+        `avail=${r(avail)} scrollY=${r(window.scrollY)} ` +
+        `text=${text ? [r(text.left), r(text.top), r(text.width), r(text.height)].join(',') : 'null'} ` +
+        `btn=${btn ? [r(btn.left), r(btn.top), r(btn.width), r(btn.height)].join(',') : 'null'} ` +
+        `→ ${g ? `${g.attach} gap=${g.gap}` : 'NO ARROW'}` +
+        (g ? '' : text && btn
+          ? ` (@16: xRun=${r((btn.left + btn.width / 2) - (text.right + 16))} rise=${r((text.top + text.height * 0.35) - (btn.bottom + 16))} topRise=${r((text.top - 16) - (btn.bottom + 16))})`
+          : ''),
+      )
+    }
+  }, [avail, narrow, tick, debug])
 
   // Compact type scale: narrow viewports (width-driven) and short ones
   // (height-driven, measured available space) share the same stepped-down
@@ -735,6 +765,18 @@ function EmptyLibraryGuide({ narrow }) {
             <path d={arrowheadPath(arrow.tail, arrow.tip, 40, 14, arrow.aim)} />
           </g>
         </svg>
+      )}
+      {/* HARNESS-ONLY diagnostics (#empty-picker-preview): the guide's live
+          decision inputs, readable on a device with no devtools. Never
+          renders in production (debug flows from previewEmpty, which is
+          import.meta.env.DEV-gated). */}
+      {debug && import.meta.env.DEV && debugInfo && (
+        <div
+          className="fixed bottom-0 left-0 right-0 z-50 bg-gray-900 text-white px-2 py-1"
+          style={{ fontSize: 11, fontFamily: 'ui-monospace, monospace', wordBreak: 'break-all' }}
+        >
+          {debugInfo}
+        </div>
       )}
     </>
   )

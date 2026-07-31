@@ -30,7 +30,11 @@ Android landscape QA) adapt on the height axis too: below 320px of
 available space the compact type scale renders (same 2:1 hierarchy)
 and the arrow accepts a shallow sweep instead of demanding tall-layout
 rise, so the instruction keeps its arrow in every orientation; page
-scroll re-anchors it. This makes
+scroll re-anchors it. The end gaps themselves adapt as a ladder
+(32 → 24 → 16, always equal at both ends — the balance invariant is
+equality, not a fixed number), which is what finally kept the arrow on
+a real 617×290 landscape phone where rigid 32px gaps missed both
+attachment forms by single digits. This makes
 the handwritten-guidance pattern a shared product asset: the FTUE's
 arrow-path helpers moved to `lib/handDrawn.js` with both surfaces
 consuming them. A dev-only `#empty-picker-preview` harness (absent from
