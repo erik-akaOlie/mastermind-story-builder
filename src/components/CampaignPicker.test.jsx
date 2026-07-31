@@ -18,9 +18,14 @@ const GUIDE_LINE_1 = 'Add a new workspace'
 const GUIDE_LINE_2 = 'to get started'
 const CTA_BG = 'rgb(2, 132, 199)' // sky-600, the system CTA color
 
-const { mockList, narrowState } = vi.hoisted(() => ({
+const { mockList, narrowState, workspaceCtx } = vi.hoisted(() => ({
   mockList: vi.fn(),
   narrowState: { value: false },
+  workspaceCtx: {
+    setActiveWorkspaceId: () => {},
+    workspaceNotice: null,
+    clearWorkspaceNotice: () => {},
+  },
 }))
 
 vi.mock('../lib/workspaces.js', () => ({
@@ -30,7 +35,7 @@ vi.mock('../lib/workspaces.js', () => ({
   deleteWorkspace: vi.fn(),
 }))
 vi.mock('../lib/WorkspaceContext.jsx', () => ({
-  useWorkspace: () => ({ setActiveWorkspaceId: vi.fn() }),
+  useWorkspace: () => workspaceCtx,
 }))
 vi.mock('../lib/imageStorage.js', () => ({
   workspaceCoverPipeline: vi.fn(),
@@ -146,6 +151,36 @@ describe('CampaignPicker — empty-library state', () => {
     const btn = newWorkspaceButton()
     expect(btn).toBeTruthy()
     expect(btn).toHaveStyle({ backgroundColor: CTA_BG })
+  })
+})
+
+describe('CampaignPicker — invalid-workspace recovery notice', () => {
+  beforeEach(() => {
+    mockList.mockReset()
+    narrowState.value = false
+    workspaceCtx.workspaceNotice = null
+    workspaceCtx.clearWorkspaceNotice = vi.fn()
+  })
+
+  it('renders the notice in the error (red) treatment with a dismiss ×', async () => {
+    workspaceCtx.workspaceNotice =
+      'The workspace you were trying to reach is no longer available, so we’ve returned you to your library.'
+    mockList.mockResolvedValue([WORKSPACE_ROW])
+    render(<CampaignPicker />)
+
+    const notice = await screen.findByText(/no longer available/)
+    // Error family styling (matches the picker's existing error banner).
+    expect(notice.closest('div').className).toContain('bg-red-50')
+
+    fireEvent.click(screen.getByRole('button', { name: /dismiss notice/i }))
+    expect(workspaceCtx.clearWorkspaceNotice).toHaveBeenCalled()
+  })
+
+  it('renders no banner when there is no notice', async () => {
+    mockList.mockResolvedValue([WORKSPACE_ROW])
+    render(<CampaignPicker />)
+    await screen.findByText('Curse of Strahd')
+    expect(screen.queryByRole('button', { name: /dismiss notice/i })).not.toBeInTheDocument()
   })
 })
 

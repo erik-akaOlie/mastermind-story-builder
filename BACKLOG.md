@@ -273,6 +273,13 @@ GM; one observed session, evidence-weighted accordingly)
   harnesses must be non-destructive BY CONSTRUCTION, especially when
   they can run inside authenticated sessions. Normalize both into
   tenets/docs wording with Erik in a dedicated pass — not mid-bugfix.
+- **Notification language (post-beta design-system pass).** The picker
+  now has two banner kinds (error red; the recovery notice reuses it)
+  plus chip toasts and the sync chip — as cases accumulate, define one
+  small consistent system: Info / Success / Warning / Error colors,
+  shared rules for persistence vs auto-dismiss, icons, and
+  dismissibility (× is the adopted convention). Design-system work,
+  not launch work (surfaced 2026-07-31 during the bug-2 notice pass).
 
 *Core workflow (candidate pre-launch — founder decision after the gating
 items land)*

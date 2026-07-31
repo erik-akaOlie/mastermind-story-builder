@@ -4,6 +4,36 @@ A running log of meaningful changes to MasterMind: Story Builder. Append-only. N
 
 ## [Unreleased]
 
+### Fix: a deleted workspace can no longer masquerade as an empty one (2026-07-31)
+
+The active workspace lives in the URL (`?w=…`), and a URL can outlive
+its workspace — delete a workspace and press Back, reload a tab whose
+workspace was deleted on another device, or follow a stale bookmark.
+Before: that dead workspace opened as a perfectly normal-looking empty
+canvas (loads filter by workspace and silently return nothing), and
+every attempt to create content failed with a misleading connection
+error. Now: when the app can definitively tell the workspace is
+unavailable to you, it returns you to your library with a notice that
+connects the outcome to what you just did — "The workspace you were
+trying to reach is no longer available, so we've returned you to your
+library" — shown in the error (red) banner treatment with a × to
+dismiss (it also clears itself the next time you open or create a
+workspace). The dead URL is replaced in browser history so Back can't
+loop into it. A flaky network can never
+trigger this — transient fetch errors keep you where you are — and deep
+links still survive the sign-in round-trip. Known limitation, tracked:
+a tab whose canvas is already open when the workspace is deleted
+elsewhere gets no live signal and discovers via failing saves.
+
+### Fix: save-failure messages no longer blame your connection without evidence (2026-07-31)
+
+"Can't save … — check your connection" used to appear for every
+persistence failure, whatever the cause (found in QA when saves failed
+over a perfectly good connection). The message now names the connection
+only when the browser itself reports it's offline; otherwise it reports
+the failure neutrally ("Couldn't save your new card"). Text blocks also
+now use their proper name in these messages (was "text note").
+
 ### Fix: the Inspector can no longer outlive its card (2026-07-31)
 
 Undoing the creation of the card you were editing left its Inspector

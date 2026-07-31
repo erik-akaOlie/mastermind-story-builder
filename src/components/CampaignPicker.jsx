@@ -68,7 +68,10 @@ export default function CampaignPicker({ previewEmpty = false }) {
 function CampaignPickerInner({ previewEmpty: previewEmptyProp = false }) {
   // Dev-only escape hatch — a production build can never enter preview mode.
   const previewEmpty = import.meta.env.DEV && previewEmptyProp
-  const { setActiveWorkspaceId } = useWorkspace()
+  // workspaceNotice: one-shot notice from invalid-workspace recovery —
+  // cleared by the provider when any workspace is activated, or manually
+  // via the banner's × (clearWorkspaceNotice).
+  const { setActiveWorkspaceId, workspaceNotice, clearWorkspaceNotice } = useWorkspace()
   const upload = useUploadImage()
 
   // MB-4: phone-narrow viewports get their own top-band layout (stacked sort,
@@ -273,6 +276,29 @@ function CampaignPickerInner({ previewEmpty: previewEmptyProp = false }) {
           </div>
           <UserAvatar />
         </div>
+
+        {/* Recovery notice — a recovered ERROR, not information (Erik,
+            2026-07-31), so it uses the error family's red treatment, matching
+            the banner below. Dismissible via × (the convention GitHub/Slack/
+            Figma/Linear converged on — a "Dismiss" text link competes with
+            the message; × doesn't). No auto-dismiss timer: the banner
+            explains an unexpected teleport the user didn't ask for, and it
+            already self-clears on the next meaningful action (opening or
+            creating a workspace). */}
+        {workspaceNotice && (
+          <div className="flex items-start gap-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2 mb-4">
+            <WarningCircle size={16} weight="fill" className="flex-shrink-0 mt-px" />
+            <span className="flex-1">{workspaceNotice}</span>
+            <button
+              type="button"
+              onClick={clearWorkspaceNotice}
+              aria-label="Dismiss notice"
+              className="flex-shrink-0 -m-1 p-1 rounded text-red-700 hover:bg-red-100"
+            >
+              <X size={14} weight="bold" />
+            </button>
+          </div>
+        )}
 
         {error && (
           <div className="flex items-start gap-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2 mb-4">

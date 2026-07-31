@@ -23,6 +23,7 @@
 // ============================================================================
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
+import { useAuth } from './AuthContext.jsx'
 import { getWorkspace, touchWorkspaceOpened } from './workspaces.js'
 
 const WORKSPACE_PARAM = 'w'
@@ -46,14 +47,17 @@ function readWorkspaceFromUrl() {
 
 // Reflect the active id into `?w=…` while preserving the hash (overlay routes)
 // and any other query params. pushState (not replace) so browser back returns
-// to wherever the user came from — e.g. the picker.
-function writeWorkspaceToUrl(id) {
+// to wherever the user came from — e.g. the picker. `replace: true` swaps the
+// CURRENT history entry instead — used by invalid-workspace recovery so Back
+// can never return to a dead `?w=` URL and loop.
+function writeWorkspaceToUrl(id, { replace = false } = {}) {
   try {
     const url = new URL(window.location.href)
     if (id) url.searchParams.set(WORKSPACE_PARAM, id)
     else url.searchParams.delete(WORKSPACE_PARAM)
     if (url.href !== window.location.href) {
-      window.history.pushState(null, '', url.toString())
+      if (replace) window.history.replaceState(null, '', url.toString())
+      else window.history.pushState(null, '', url.toString())
     }
   } catch {
     // URL/history can throw in exotic environments — non-fatal; state still set.
@@ -63,8 +67,12 @@ function writeWorkspaceToUrl(id) {
 const WorkspaceContext = createContext(null)
 
 export function WorkspaceProvider({ children }) {
+  const { session, loading: authLoading } = useAuth()
   const [activeWorkspaceId, setActiveWorkspaceIdState] = useState(() => readWorkspaceFromUrl())
   const [activeWorkspace, setActiveWorkspace] = useState(null)
+  // One-shot user-facing notice set by invalid-workspace recovery; the picker
+  // renders it. Cleared whenever a workspace is activated.
+  const [workspaceNotice, setWorkspaceNotice] = useState(null)
 
   // One-time cleanup of the abandoned localStorage keys.
   useEffect(() => {
@@ -75,6 +83,7 @@ export function WorkspaceProvider({ children }) {
   // workspace is bookmarkable and survives refresh. Signature unchanged, so
   // all existing callers (picker, UserMenu) work as-is.
   const setActiveWorkspaceId = (id) => {
+    if (id) setWorkspaceNotice(null)
     setActiveWorkspaceIdState(id)
     writeWorkspaceToUrl(id)
   }
@@ -96,6 +105,11 @@ export function WorkspaceProvider({ children }) {
 
   const [leaving, setLeaving] = useState(false)
 
+  // Manual dismissal for the recovery notice (the picker's × control). The
+  // notice ALSO self-clears when any workspace is activated — the next
+  // meaningful action is the natural end of its relevance.
+  const clearWorkspaceNotice = useCallback(() => setWorkspaceNotice(null), [])
+
   const leaveWorkspace = useCallback(async (nextId = null) => {
     const current = activeIdRef.current
     const handler = beforeLeaveRef.current
@@ -115,6 +129,7 @@ export function WorkspaceProvider({ children }) {
         setLeaving(false)
       }
     }
+    if (nextId) setWorkspaceNotice(null)
     setActiveWorkspaceIdState(nextId)
     writeWorkspaceToUrl(nextId)
   }, [])
@@ -144,15 +159,53 @@ export function WorkspaceProvider({ children }) {
       console.error('Failed to record workspace open', err))
   }, [activeWorkspaceId])
 
-  // Fetch the active workspace row whenever the id changes.
+  // Fetch the active workspace row whenever the id changes — and RECOVER
+  // from an unavailable one (bug-2 fix, 2026-07-31). getWorkspace uses
+  // .maybeSingle(), so the three outcomes are cleanly distinguishable:
+  //   row     → workspace is real and visible to this user
+  //   null    → DEFINITIVELY unavailable to this user (deleted, or access
+  //             lost — RLS filters both the same way, which is why the
+  //             notice says "no longer available", never "deleted")
+  //   throws  → transient fetch/network failure → keep today's behavior; a
+  //             flaky connection must never eject the user from a real
+  //             workspace.
+  // Recovery on null: clear the id (Root falls back to the picker), REPLACE
+  // the dead `?w=` URL in history so Back can't loop into it, and set a
+  // one-shot notice the picker renders. GATED on a settled, signed-in
+  // session: pre-auth, RLS returns null for EVERY workspace, and a deep
+  // link to `?w=<id>` must survive the sign-in round-trip (documented
+  // behavior) — so without a session we don't fetch or interpret at all.
+  // KNOWN LIMITATION (documented, unresolved): this covers ENTERING or
+  // RELOADING an unavailable workspace. A tab whose canvas is already open
+  // when the workspace is deleted elsewhere gets no live signal (the
+  // workspaces table isn't in the Realtime publication) and discovers via
+  // failing writes.
   useEffect(() => {
     let cancelled = false
     if (!activeWorkspaceId) {
       setActiveWorkspace(null)
       return
     }
+    if (authLoading || !session) return
     getWorkspace(activeWorkspaceId)
-      .then((row) => { if (!cancelled) setActiveWorkspace(row) })
+      .then((row) => {
+        if (cancelled) return
+        if (row) {
+          setActiveWorkspace(row)
+          return
+        }
+        setActiveWorkspace(null)
+        // Wording (Erik, 2026-07-31): acknowledges what the user was TRYING
+        // to do (dominant path: browser Back after a delete) without being
+        // Back-specific — reload, bookmark, and deep link all read naturally.
+        // Never says "deleted" (RLS can't distinguish deletion from lost
+        // access), and explains the recovery the app performed.
+        setWorkspaceNotice(
+          'The workspace you were trying to reach is no longer available, so we’ve returned you to your library.',
+        )
+        setActiveWorkspaceIdState(null)
+        writeWorkspaceToUrl(null, { replace: true })
+      })
       .catch((err) => {
         if (!cancelled) {
           console.error('Failed to load active workspace', err)
@@ -160,7 +213,7 @@ export function WorkspaceProvider({ children }) {
         }
       })
     return () => { cancelled = true }
-  }, [activeWorkspaceId])
+  }, [activeWorkspaceId, session, authLoading])
 
   return (
     <WorkspaceContext.Provider
@@ -170,6 +223,8 @@ export function WorkspaceProvider({ children }) {
         setActiveWorkspaceId,
         leaveWorkspace,
         registerBeforeLeave,
+        workspaceNotice,
+        clearWorkspaceNotice,
       }}
     >
       {children}

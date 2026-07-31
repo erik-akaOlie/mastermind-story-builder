@@ -135,7 +135,10 @@ src/
     AuthContext.jsx                session + signIn/signUp/signOut context. signOut calls
                                    useUndoStore.clearAllForUser(userId) before Supabase clears the session
                                    so a different next user can't inherit prior undo history.
-    WorkspaceContext.jsx            active-workspace-id context (URL ?w=); also exposes
+    WorkspaceContext.jsx            active-workspace-id context (URL ?w=) + invalid-workspace
+                                   recovery (null row while signed in → clear id, REPLACE dead URL,
+                                   one-shot workspaceNotice rendered by the picker — see the Auth
+                                   flow section); also exposes
                                    leaveWorkspace(nextId)/registerBeforeLeave(fn): App registers a
                                    canvas-snapshot capture, run behind a "Saving changes…" spinner
                                    overlay while the canvas is still mounted before navigating away.
@@ -820,7 +823,7 @@ const flowPos = rfInstance.project({ x: event.clientX, y: event.clientY })
 
 - `src/main.jsx` wraps the app in `AuthProvider` → `WorkspaceProvider` → `ProfileProvider` → `Root`.
 - `Root` gatekeeper: loading → null; not signed in → `<Login />`; signed in with no active workspace → `<CampaignPicker />` (file name retained per ADR-0012 — the picker is the user-facing surface, "Workspace" is the architectural name); signed in with active workspace → `<App /> + <UserMenu />`.
-- Active workspace id is persisted in localStorage (`mastermind:activeWorkspaceId`) so refresh returns to the same workspace.
+- Active workspace id lives in the URL as `?w=<id>` (WorkspaceContext; the old `mastermind:activeWorkspaceId` localStorage key is LEGACY and actively deleted on mount) — refresh, bookmarks, deep links across sign-in, and back/forward all work off the URL. **Invalid-workspace recovery (bug-2 fix, 2026-07-31):** when signed in and settled, the provider fetches the workspace row (`.maybeSingle()`); a definitive null (deleted OR access lost — indistinguishable under RLS, so copy says "no longer available") clears the id, REPLACES the dead `?w=` history entry (Back can't loop into it), and sets a one-shot `workspaceNotice` the picker renders. Thrown (transient) errors never eject the user; pre-auth nothing is fetched, so deep links survive the sign-in round-trip. KNOWN LIMITATION: a tab with the canvas already open when the workspace is deleted elsewhere gets no live signal — it discovers via failing writes (now surfaced with honest copy via `toastSaveFailed`'s offline-aware wording). Pinned by `WorkspaceContext.test.jsx`.
 
 ### Workspace creation
 
