@@ -1658,6 +1658,26 @@ export default function App() {
     setInspectorNode(null)
   }, [setNodes])
 
+  // ── Inspector-existence invariant (2026-07-31) ──────────────────────────
+  // An Inspector must never stay open for a node that no longer exists —
+  // REGARDLESS of which path removed it. The explicit delete paths call
+  // closeInspectorForDelete directly, but undo (createCard inverse), redo,
+  // and a Realtime DELETE from another tab all remove nodes without knowing
+  // about the Inspector; before this rule they stranded it on a ghost whose
+  // auto-save then wrote against a deleted row (Erik's 2026-07-31 QA:
+  // undo-create left the Inspector open and misaligned the FTUE).
+  // `!loading` is the required guard: loading flips true for every
+  // hydration/workspace-switch, and outside loading the nodes array only
+  // ever changes per-id — so absence genuinely means removed, never
+  // "not loaded yet."
+  useEffect(() => {
+    if (loading) return
+    if (!inspectorNode) return
+    if (!nodes.some((n) => n.id === inspectorNode.topicNodeId)) {
+      closeInspectorForDelete()
+    }
+  }, [loading, nodes, inspectorNode, closeInspectorForDelete])
+
   // ── Delete (DB-backed, cascades to sections + connections) ──────────────
   const onDeleteNode = useCallback(async (nodeId) => {
     const target = nodes.find((n) => n.id === nodeId)

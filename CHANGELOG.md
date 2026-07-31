@@ -4,6 +4,19 @@ A running log of meaningful changes to MasterMind: Story Builder. Append-only. N
 
 ## [Unreleased]
 
+### Fix: the Inspector can no longer outlive its card (2026-07-31)
+
+Undoing the creation of the card you were editing left its Inspector
+open on a ghost — the card vanished from the canvas but the editing
+panel stayed, its auto-save pointed at a deleted row, and the returning
+first-run introduction rendered misaligned beside the leftover panel
+(found in Erik's empty-canvas QA). The app now enforces one invariant
+instead of patching each removal path: whenever the inspected card no
+longer exists on the canvas, the Inspector closes immediately — without
+writing anything. This covers undo, redo, deletion from another device
+via live sync, and workspace switching alike, and is guarded so a
+workspace still loading can never trigger a false close.
+
 ### Empty canvas: altitude rail appears only when there's something to navigate (2026-07-31)
 
 The left-edge altitude rail now follows a present-state rule (Erik's
