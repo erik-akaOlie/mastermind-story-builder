@@ -119,8 +119,9 @@ src/
   index.css                        Tailwind base + RF overrides + .is-lifted z-index rule
   main.jsx                         entry; wraps app in AuthProvider → WorkspaceProvider → ProfileProvider →
                                    Root gatekeeper; hash routes to <MigrateImages /> at #migrate and to
-                                   <Profile /> at #profile; DEV-ONLY #ftue-preview route (gated on
-                                   import.meta.env.DEV → dead-code-eliminated from production builds)
+                                   <Profile /> at #profile; DEV-ONLY #ftue-preview and
+                                   #empty-picker-preview routes (gated on import.meta.env.DEV →
+                                   dead-code-eliminated from production builds)
 
   dev/
     FtuePreview.jsx                DEV-ONLY design-QA harness (#ftue-preview, no auth): renders the REAL
@@ -149,6 +150,14 @@ src/
                                    calls the list_workspaces_with_activity() RPC (migration 011) →
                                    each workspace + last_activity_at (true newest edit across content)
                                    for the picker's "Last modified" sort.
+    handDrawn.js                   the "handwritten guidance" product pattern's pure SVG path helpers
+                                   (handArrowPath, handArrowPathWavy, arrowheadPath) — Caveat text +
+                                   loose curved arrow from an instruction to its control, always
+                                   COMPUTED from live element measurements. Born in FtueIntro (which
+                                   re-exports them so its tests keep pinning that surface); second
+                                   consumer is CampaignPicker's empty-library guide. Geometry only —
+                                   each surface supplies its own colors (FTUE: white on canvas;
+                                   picker: gray on light page).
     canvasColor.js                 single source of truth for the canvas background color
                                    (DEFAULT_CANVAS_COLOR #031a15 + getWorkspaceCanvasColor(workspace),
                                    ready for per-workspace colors). Used by the snapshot background and
@@ -345,7 +354,27 @@ src/
                                    creating, returns after the 300ms retract on cancel), and a Cancel/
                                    Create action row slides open beneath (grid 0fr↔1fr), pushing the
                                    gallery down; page top padding tightens 48→24px. Desktop unchanged.
-                                   Wrapped in UploadImageProvider for cover uploads.
+                                   Wrapped in UploadImageProvider for cover uploads. EMPTY-LIBRARY
+                                   STATE (2026-07-30): at zero workspaces the closed New-workspace
+                                   button promotes to the PRIMARY treatment (sky fill, white text) and
+                                   EmptyLibraryGuide renders — the Caveat instruction with an
+                                   INTENTIONAL two-line hierarchy ("Add a new workspace" at 2× /
+                                   "to get started"; the break is designed, never responsive) +
+                                   a hand-drawn arrow (lib/handDrawn.js) to the button
+                                   ([data-empty-guide-target] on both branches' closed buttons).
+                                   Everything is measured, never fixed (re-measured on resize AND
+                                   after webfont load — Caveat shifts metrics post-paint). Arrow
+                                   rules (Erik 2026-07-30, all in the pure exported
+                                   emptyGuideArrowGeometry): ADAPT-BEFORE-REMOVE — tail prefers the
+                                   text's right edge, re-attaches to its TOP edge when that no longer
+                                   fits, null ONLY when anchors are unmeasurable or no vertical room
+                                   in any form; EQUAL 32px breathing room at both ends (the arrow
+                                   bridges a relationship — never let it belong to one element);
+                                   startDir points straight OUT of the text so the tail's tangent
+                                   extended backward intersects the message. The guide unmounts while
+                                   `creating`. `previewEmpty` prop is DEV-ONLY (honored only when
+                                   import.meta.env.DEV) for the #empty-picker-preview harness.
+                                   Pinned by CampaignPicker.test.jsx.
     WorkspaceThumbnail.jsx         canonical workspace cover image; one place owns the render precedence
                                    cover_image_url → snapshot_path → bare canvas color. Used by the picker
                                    tiles (16:9) and the UserMenu switcher (circle).

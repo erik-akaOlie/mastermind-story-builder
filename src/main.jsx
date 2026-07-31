@@ -76,6 +76,16 @@ function Root() {
     )
   }
 
+  // DEV-ONLY — empty-library design-QA harness: the REAL CampaignPicker with
+  // the zero-workspace state forced (previewEmpty is honored only in dev
+  // builds), so the handwritten guidance + arrow can be inspected at any
+  // window size without an empty account. Auth-independent; the create flow
+  // itself won't persist here (no session) — this harness is for looking,
+  // not creating.
+  if (import.meta.env.DEV && hash === '#empty-picker-preview') {
+    return <CampaignPicker previewEmpty />
+  }
+
   if (loading) return null
   // Pre-auth routes — accessible without signing in so a prospective user can
   // read the legal documents before deciding to create an account.

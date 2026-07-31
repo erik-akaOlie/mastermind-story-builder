@@ -215,10 +215,30 @@ GM; one observed session, evidence-weighted accordingly)
   (≤640px wide, ~500px tall): the mobile branch's fixed offsets don't
   height-compress — measured 19px hero/mission box overlap at 620×500;
   revisit only if a real tester environment hits that shape.
-- **Empty homepage** (S): primary-button treatment for New workspace when
-  the user has zero workspaces + a deliberately designed empty state in
-  the gallery area (the current one-line footnote reads unintentional —
-  Mark found the button fine; this is presentation, not discoverability).
+- ✅ **Empty homepage — DONE 2026-07-30 (pending Erik design QA).** Erik
+  chose a simplified Option A (via ChatGPT review): no ghost tile, icon,
+  or welcome copy — a continuation of the FTUE's handwritten voice.
+  Zero workspaces → the + New workspace control promotes to the primary
+  treatment, and the gallery area shows the Caveat instruction with an
+  INTENTIONAL two-line hierarchy ("Add a new workspace" at 2× / "to get
+  started" — the break is designed, never responsive) plus a hand-drawn
+  arrow to the button. Erik's composition rules (first-pass review,
+  2026-07-30): ADAPT-BEFORE-REMOVE — the arrow is instructional
+  language, so when the preferred right-edge tail no longer fits, it
+  re-attaches to the text's TOP edge rather than disappearing (null
+  only when anchors are unmeasurable or there's no vertical room in any
+  form); EQUAL BREATHING ROOM at both ends (32px tail-to-text =
+  32px head-to-button — the arrow bridges the relationship, favoring
+  moving the head away from the button on spacious layouts); the tail's
+  TANGENT extended backward must intersect the text block (startDir
+  points straight out of the message). All pure + unit-tested
+  (`emptyGuideArrowGeometry`); re-measures on resize AND after webfont
+  load (Caveat shifts metrics post-paint). The guide unmounts while the
+  create flow is open. Arrow-path helpers extracted to
+  `lib/handDrawn.js` (shared FTUE + picker — the "handwritten guidance"
+  product pattern). Dev-only `#empty-picker-preview` harness for design
+  QA without a zero-workspace account (verified absent from the
+  production bundle). 8 new tests; suite 686/686.
 - **Empty canvas** (S): hide the altitude rail until the first canvas
   object (node / text block / line) exists, keyed off the same
   canvas-empty condition the FTUE uses. Pan/zoom stay technically live

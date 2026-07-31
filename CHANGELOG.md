@@ -4,6 +4,34 @@ A running log of meaningful changes to MasterMind: Story Builder. Append-only. N
 
 ## [Unreleased]
 
+### Empty homepage: handwritten guidance + primary New-workspace button (2026-07-30)
+
+A brand-new account (or one whose last workspace was deleted) no longer
+lands on a page that reads unfinished. When the library has zero
+workspaces, the + New workspace control promotes to the primary
+treatment (sky fill, white text — the same weight as Create), and the
+empty gallery area shows a handwritten instruction in the FTUE's Caveat
+voice with an INTENTIONAL two-line hierarchy — "Add a new workspace"
+dominant at twice the size of the supporting "to get started" — plus a
+hand-drawn arrow bridging the message to the button. The text and arrow
+are one composition computed from live element measurements (never
+fixed positions), optically centered in the available empty space and
+re-laid-out on resize (including after the webfont settles). The arrow
+follows adapt-before-remove: its tail prefers the text's right edge,
+and when a narrower layout no longer leaves room there it re-attaches
+to the text's top edge instead of disappearing — the tail's tangent
+always emerges from the message, the head always aims at the button's
+center, and both ends keep the same breathing room so the arrow bridges
+the relationship rather than belonging to either element. The whole
+guide steps aside while the create flow is open (the arrow must never
+point at a control that has morphed into the name input). This makes
+the handwritten-guidance pattern a shared product asset: the FTUE's
+arrow-path helpers moved to `lib/handDrawn.js` with both surfaces
+consuming them. A dev-only `#empty-picker-preview` harness (absent from
+production builds, same pattern as `#ftue-preview`) renders the real
+empty state without needing a zero-workspace account. 8 new tests;
+suite 686/686.
+
 ### Quick-connect: outward carets replace the plus signs (2026-07-29)
 
 The four buttons that appear around a hovered, selected card now show

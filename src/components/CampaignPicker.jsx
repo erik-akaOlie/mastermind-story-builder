@@ -14,7 +14,7 @@
 // Uses Phosphor icons + sky-600 CTA per CLAUDE.md conventions.
 // ============================================================================
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   Plus,
   PencilSimple,
@@ -30,6 +30,7 @@ import WorkspaceThumbnail from './WorkspaceThumbnail.jsx'
 import WorkspaceSortMenu from './WorkspaceSortMenu.jsx'
 import { readSortId, writeSortId, sortWorkspaces } from '../lib/workspaceSort.js'
 import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport.js'
+import { handArrowPathWavy, arrowheadPath } from '../lib/handDrawn.js'
 import { UploadImageProvider, useUploadImage } from './UploadImageProvider.jsx'
 import { workspaceCoverPipeline, deleteCardImage } from '../lib/imageStorage.js'
 import {
@@ -52,15 +53,21 @@ const NEW_BTN_WIDTH = 152
 
 // Public entry: wrap the picker in UploadImageProvider so per-tile cover
 // uploads can open the shared Upload Image modal (mirrors Profile.jsx).
-export default function CampaignPicker() {
+// `previewEmpty` is DEV-ONLY (honored only when import.meta.env.DEV, so it is
+// statically false in production builds): the #empty-picker-preview harness
+// route passes it to render the real empty-library state without an account
+// that has zero workspaces. See main.jsx.
+export default function CampaignPicker({ previewEmpty = false }) {
   return (
     <UploadImageProvider>
-      <CampaignPickerInner />
+      <CampaignPickerInner previewEmpty={previewEmpty} />
     </UploadImageProvider>
   )
 }
 
-function CampaignPickerInner() {
+function CampaignPickerInner({ previewEmpty: previewEmptyProp = false }) {
+  // Dev-only escape hatch — a production build can never enter preview mode.
+  const previewEmpty = import.meta.env.DEV && previewEmptyProp
   const { setActiveWorkspaceId } = useWorkspace()
   const upload = useUploadImage()
 
@@ -123,6 +130,12 @@ function CampaignPickerInner() {
 
   const refresh = useCallback(async () => {
     setError(null)
+    if (previewEmpty) {
+      // Harness mode: skip the fetch and render the real zero-workspace state.
+      setWorkspaces([])
+      setLoading(false)
+      return
+    }
     try {
       const rows = await listWorkspacesWithActivity()
       setWorkspaces(rows)
@@ -131,7 +144,7 @@ function CampaignPickerInner() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [previewEmpty])
 
   useEffect(() => {
     refresh()
@@ -303,15 +316,22 @@ function CampaignPickerInner() {
                     transitionTimingFunction: 'cubic-bezier(0.4, 0, 0.2, 1)',
                   }}
                 >
-                  {/* Closed layer — the "+ New workspace" secondary button. */}
+                  {/* Closed layer — "+ New workspace". Secondary treatment
+                      normally; promoted to the PRIMARY treatment (sky fill,
+                      white text — same as Create) when the library is empty,
+                      so the one next action reads as the one next action. */}
                   <button
                     type="button"
                     onClick={openCreate}
+                    data-empty-guide-target
                     tabIndex={creating ? -1 : 0}
                     aria-hidden={creating}
-                    className="absolute inset-0 flex items-center justify-center gap-1 rounded-lg hover:bg-sky-50"
+                    className={`absolute inset-0 flex items-center justify-center gap-1 rounded-lg ${
+                      isEmpty ? 'hover:brightness-95' : 'hover:bg-sky-50'
+                    }`}
                     style={{
-                      color: CTA_COLOR,
+                      color: isEmpty ? '#ffffff' : CTA_COLOR,
+                      backgroundColor: isEmpty ? CTA_COLOR : undefined,
                       opacity: creating ? 0 : 1,
                       pointerEvents: creating ? 'none' : 'auto',
                       transition: 'opacity 150ms ease',
@@ -413,15 +433,22 @@ function CampaignPickerInner() {
               transitionDelay: creating ? '0ms' : '140ms',
             }}
           >
-            {/* Closed layer — the "+ New workspace" secondary button. */}
+            {/* Closed layer — "+ New workspace". Secondary treatment normally;
+                promoted to the PRIMARY treatment (sky fill, white text — same
+                as Create) when the library is empty, so the one next action
+                reads as the one next action. */}
             <button
               type="button"
               onClick={openCreate}
+              data-empty-guide-target
               tabIndex={creating ? -1 : 0}
               aria-hidden={creating}
-              className="absolute inset-0 flex items-center justify-center gap-1 rounded-lg hover:bg-sky-50"
+              className={`absolute inset-0 flex items-center justify-center gap-1 rounded-lg ${
+                isEmpty ? 'hover:brightness-95' : 'hover:bg-sky-50'
+              }`}
               style={{
-                color: CTA_COLOR,
+                color: isEmpty ? '#ffffff' : CTA_COLOR,
+                backgroundColor: isEmpty ? CTA_COLOR : undefined,
                 opacity: creating ? 0 : 1,
                 pointerEvents: creating ? 'none' : 'auto',
                 transition: 'opacity 150ms ease',
@@ -511,13 +538,188 @@ function CampaignPickerInner() {
           </div>
         )}
 
-        {isEmpty && !creating && (
-          <p className="text-center text-sm text-gray-500 mt-6">
-            No workspaces yet. Create your first one to get started.
-          </p>
-        )}
+        {/* Empty-library guidance — the handwritten FTUE voice on the picker.
+            Unmounted while the create flow is open: the arrow must never
+            point at a control that has morphed into something else. */}
+        {isEmpty && !creating && <EmptyLibraryGuide narrow={narrow} />}
       </div>
     </div>
+  )
+}
+
+// ----------------------------------------------------------------------------
+// EmptyLibraryGuide — the zero-workspace state (Erik's mockup, 2026-07-30).
+// ----------------------------------------------------------------------------
+// A continuation of the FTUE's handwritten instructional language: one Caveat
+// sentence, comfortably centered in the empty gallery area, with a hand-drawn
+// arrow whose tail leaves the text and whose head points at the + New
+// workspace control. The text and arrow are ONE COMPOSITION — the spec is the
+// relationship (instruction → control), not pixel positions, so everything is
+// computed from live measurements and recomputed on resize.
+//
+// Product requirements (Erik + review, 2026-07-30):
+//  - Visual balance over mathematical centering: the message centers in the
+//    AVAILABLE empty space with a slight upward optical bias, not in the
+//    whole viewport.
+//  - The arrow appears only when it clearly reinforces the instruction; in
+//    constrained spaces the text stands alone (it is written to).
+//  - Colors are the light-surface adaptation of the FTUE's white-on-canvas
+//    strokes: text gray-400, arrow gray-300.
+// ----------------------------------------------------------------------------
+
+// Vertical room below which the guide stops trying to center and just sits.
+const GUIDE_MIN_HEIGHT = 160
+// Fraction of the available height reserved below the message — biases the
+// optical center slightly ABOVE the mathematical center (the header band
+// carries visual weight; true centering reads low).
+const GUIDE_OPTICAL_BIAS = 0.12
+// Breathing room at BOTH ends of the arrow — tail-to-text and head-to-button
+// (Erik, 2026-07-30: the arrow bridges a relationship between two elements,
+// so it must feel equally related to both; on a spacious layout, equalize by
+// moving the head AWAY from the button, never the tail closer).
+const GUIDE_END_GAP = 32
+// Minimum clear runs for each attachment form to read as a gesture. The
+// right-side form needs real horizontal + vertical sweep; the top form only
+// needs vertical room. Below the last of these the arrow truly has no room
+// in any form (the only case where the text stands alone).
+const GUIDE_MIN_RUN_Y = 96
+const GUIDE_MIN_RUN_X = 48
+const GUIDE_MIN_RUN_TOP = 48
+
+// Pure (exported for tests): the arrow's anchors from the two measured rects.
+// Design rule (Erik, 2026-07-30): the arrow is instructional language, not
+// decoration — when its preferred form no longer fits, ADAPT the presentation
+// before removing the instruction. The tail is attached to the INSTRUCTION,
+// not to any particular edge of it:
+//   1. Preferred: tail off the text's RIGHT edge, sweeping up to the button.
+//   2. Adapted:  tail off the text's TOP edge (biased toward the button's
+//      side), rising to the button — for layouts where the button no longer
+//      sits meaningfully to the right (e.g. phone widths).
+//   3. Last resort (no vertical room in any form, or an anchor is
+//      unmeasurable): null — the text stands alone; it's written to.
+// Every form keeps both invariants: `startDir` points straight OUT of the
+// text block, so the tail's tangent extended backward intersects the
+// instruction (the arrow visibly emerges from the message); the head backs
+// off the button by the same GUIDE_END_GAP as the tail, aimed at its center.
+export function emptyGuideArrowGeometry(textRect, btnRect) {
+  if (!textRect || !btnRect || btnRect.width === 0) return null
+  const btnCx = btnRect.left + btnRect.width / 2
+  const aim = { x: btnCx, y: btnRect.top + btnRect.height / 2 }
+  const tip = { x: btnCx, y: btnRect.bottom + GUIDE_END_GAP }
+
+  // Form 1 — right-edge attachment, departing horizontally out of the text.
+  const rightTail = {
+    x: textRect.right + GUIDE_END_GAP,
+    y: textRect.top + textRect.height * 0.35,
+  }
+  if (btnCx - rightTail.x >= GUIDE_MIN_RUN_X && rightTail.y - tip.y >= GUIDE_MIN_RUN_Y) {
+    return { tail: rightTail, tip, aim, startDir: { x: 1, y: 0 }, attach: 'right' }
+  }
+
+  // Form 2 — top-edge attachment, departing straight up out of the text,
+  // from the side of the block nearer the button.
+  const frac = btnCx >= textRect.left + textRect.width / 2 ? 0.65 : 0.35
+  const topTail = {
+    x: textRect.left + textRect.width * frac,
+    y: textRect.top - GUIDE_END_GAP,
+  }
+  if (topTail.y - tip.y >= GUIDE_MIN_RUN_TOP) {
+    return { tail: topTail, tip, aim, startDir: { x: 0, y: -1 }, attach: 'top' }
+  }
+
+  return null
+}
+
+function EmptyLibraryGuide({ narrow }) {
+  const wrapRef = useRef(null)
+  const textRef = useRef(null)
+  const [avail, setAvail] = useState(null)
+  const [arrow, setArrow] = useState(null)
+  const [tick, setTick] = useState(0)
+
+  useEffect(() => {
+    const remeasure = () => setTick((n) => n + 1)
+    window.addEventListener('resize', remeasure)
+    // Caveat loading changes the text block's metrics after first paint —
+    // re-measure when the webfonts settle (plus a delayed second pass as
+    // cheap insurance, mirroring FtueIntro).
+    if (typeof document !== 'undefined' && document.fonts?.ready) {
+      document.fonts.ready.then(remeasure)
+    }
+    const t = setTimeout(remeasure, 300)
+    return () => {
+      clearTimeout(t)
+      window.removeEventListener('resize', remeasure)
+    }
+  }, [])
+
+  // Pass 1: how much vertical room the guide owns (its top edge → viewport
+  // bottom, minus the page's pb-12). Layout effect so the height applies
+  // before paint.
+  useLayoutEffect(() => {
+    const el = wrapRef.current
+    if (!el) return
+    const top = el.getBoundingClientRect().top
+    setAvail(Math.max(GUIDE_MIN_HEIGHT, window.innerHeight - top - 48))
+  }, [narrow, tick])
+
+  // Pass 2 (after the measured height applies): compute the arrow from the
+  // live text + button rects via the pure geometry/clarity-gate helper.
+  useLayoutEffect(() => {
+    if (avail == null) return
+    const text = textRef.current?.getBoundingClientRect() ?? null
+    const btn = document
+      .querySelector('[data-empty-guide-target]')
+      ?.getBoundingClientRect() ?? null
+    setArrow(emptyGuideArrowGeometry(text, btn))
+  }, [avail, narrow, tick])
+
+  return (
+    <>
+      <div
+        ref={wrapRef}
+        className="flex items-center justify-center"
+        style={{
+          height: avail ?? 320,
+          // border-box: padding eats into the height, lifting the flex
+          // center by half the bias — the optical placement.
+          paddingBottom: (avail ?? 320) * GUIDE_OPTICAL_BIAS,
+        }}
+      >
+        {/* The line break is INTENTIONAL, never responsive (Erik, 2026-07-30):
+            the action dominates ("Add a new workspace", 2× size) and the
+            second line answers why ("to get started"). The 2:1 hierarchy
+            holds at every breakpoint; only the absolute sizes step down
+            (narrow sizes chosen so line 1 fits a 375px viewport). */}
+        <p
+          ref={textRef}
+          className="font-hand leading-hand text-center text-gray-400 select-none"
+        >
+          <span className="block" style={{ fontSize: narrow ? 40 : 80 }}>
+            Add a new workspace
+          </span>
+          <span className="block" style={{ fontSize: narrow ? 20 : 40 }}>
+            to get started
+          </span>
+        </p>
+      </div>
+      {arrow && (
+        <svg
+          aria-hidden="true"
+          className="pointer-events-none fixed inset-0 w-full h-full z-10"
+        >
+          <g
+            stroke="#d1d5db"
+            strokeWidth={4}
+            strokeLinecap="round"
+            fill="none"
+          >
+            <path d={handArrowPathWavy(arrow.tail, arrow.tip, 40, arrow.aim, arrow.startDir)} />
+            <path d={arrowheadPath(arrow.tail, arrow.tip, 40, 14, arrow.aim)} />
+          </g>
+        </svg>
+      )}
+    </>
   )
 }
 
