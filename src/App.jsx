@@ -69,7 +69,7 @@ import { setSearchOpsImpl } from './lib/searchOps.js'
 import { track } from './lib/analytics.js'
 import { safeRandomUUID } from './lib/uuid.js'
 import { toastDeleteCaptureFailed } from './lib/feedbackToasts.jsx'
-import { nextAltitude, MORPH_DURATION_MS, computeMinZoom, currentThresholdZoom } from './utils/altitude.js'
+import { nextAltitude, MORPH_DURATION_MS, computeMinZoom, currentThresholdZoom, isExpandedForm } from './utils/altitude.js'
 import {
   computeEnvelope,
   computeEntryViewport,
@@ -473,16 +473,31 @@ export default function App() {
   // focused in the drawer). More than one id can be present — the dual-expand
   // case is the two endpoints of a hovered edge.
   const currentlyExpandedIds = useMemo(() => {
+    // Candidate ids run through the SAME shared eligibility rule CampaignNode
+    // uses (isExpandedForm, altitude.js) — one rule source, two consumers,
+    // structurally unable to drift. Since 2026-07-31 Card View expands too:
+    // edge-highlighted endpoints only (Erik's equal-emphasis rule).
+    const inBeadView = altitudeForExpand === 'beadView'
+    const singleSelectedId = selectedNodeIdsForExp.size === 1
+      ? selectedNodeIdsForExp.values().next().value
+      : null
+    const candidates = new Set()
+    if (hoveredNodeIdForExp)    candidates.add(hoveredNodeIdForExp)
+    if (singleSelectedId)       candidates.add(singleSelectedId)
+    if (hoveredEdgeNodeIdsForExp) {
+      for (const id of hoveredEdgeNodeIdsForExp) candidates.add(id)
+    }
+    if (searchFocusNodeIdForExp) candidates.add(searchFocusNodeIdForExp)
     const ids = new Set()
-    if (altitudeForExpand === 'beadView') {
-      if (hoveredNodeIdForExp) ids.add(hoveredNodeIdForExp)
-      else if (selectedNodeIdsForExp.size === 1) {
-        for (const id of selectedNodeIdsForExp) { ids.add(id); break }
-      }
-      if (hoveredEdgeNodeIdsForExp) {
-        for (const id of hoveredEdgeNodeIdsForExp) ids.add(id)
-      }
-      if (searchFocusNodeIdForExp) ids.add(searchFocusNodeIdForExp)
+    for (const id of candidates) {
+      if (isExpandedForm({
+        inBeadView,
+        isHovered: id === hoveredNodeIdForExp,
+        anyNodeHovered: hoveredNodeIdForExp !== null,
+        isSingleSelected: id === singleSelectedId,
+        isEdgeHighlighted: hoveredEdgeNodeIdsForExp?.has(id) ?? false,
+        isSearchFocused: id === searchFocusNodeIdForExp,
+      })) ids.add(id)
     }
     return ids
   }, [altitudeForExpand, hoveredNodeIdForExp, selectedNodeIdsForExp, hoveredEdgeNodeIdsForExp, searchFocusNodeIdForExp])

@@ -300,6 +300,31 @@ items land)*
   676/676. Restores the "two doors to the same connection record"
   principle the cutover broke; the legacy ConnectionsSection.jsx stays
   as historical reference only.
+- ✅ **Card-View connection-hover emphasis — DONE 2026-07-31, Erik
+  QA-approved (desktop).** Erik's equal-emphasis rule: connection hover
+  creates the same meaningful emphasis in both representations. Card
+  View edge-highlighted endpoints now grow to the peek size (or +10%
+  via `emphasisZoom` when already larger — never shrink), off-screen
+  endpoints clamp into view, cards stay interactive (bead-style
+  click-through NOT carried over), Bead View untouched by construction
+  (anchor + expansion-zoom parameterized; the three pre-existing peek
+  suites pass unchanged). Eligibility rule centralized in
+  `isExpandedForm` (altitude.js) — single source for CampaignNode +
+  App's mirror. Hover sessions are now altitude-agnostic (threshold
+  crossings mid-hover continue instead of cancelling). 6 new tests;
+  suite 706/706.
+- **Connection-hover endpoint collision in constrained viewport corners
+  (deferred polish, recorded 2026-07-31).** When one endpoint card sits
+  near a viewport corner and the other endpoint is farther off-screen
+  beyond it, both cards clamp independently into the same corner and
+  the incoming card can cover the visible one. WHY repulsion misses it:
+  pairwise repulsion deliberately reads pre-clamp NATURAL centers (for
+  loop-freedom), so cards whose natural positions don't overlap but
+  whose CLAMPED positions do are invisible to it. Desired: pair-aware
+  placement that keeps both emphasized cards simultaneously visible
+  (possibly shifting the originally-visible card inward), visual-only,
+  restoring cleanly on hover end. Investigate alongside the repulsion
+  logic — not a corner-specific offset patch.
 - **Quick-connect redesign (M).** Erik's selected direction (2026-07-28):
   no selection prerequisite (hover on card form suffices, incl.
   hover-expanded beads), somewhat shorter dwell (currently 800ms

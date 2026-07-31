@@ -8,7 +8,7 @@ import { useImageUrl } from '../lib/useImageUrl'
 import { useLightbox } from '../components/Lightbox'
 import { labelInitial } from '../utils/labelUtils'
 import { computeHeaderLayout } from './cardHeaderLayout'
-import { BEAD_DIAMETER_PX, BEAD_BORDER_SCREEN_PX, MORPH_DURATION_MS, CONNECTION_DOT_SCREEN_PX, REPEL_PAD_FRACTION, expandedPeekZoom } from '../utils/altitude'
+import { BEAD_DIAMETER_PX, BEAD_BORDER_SCREEN_PX, MORPH_DURATION_MS, CONNECTION_DOT_SCREEN_PX, REPEL_PAD_FRACTION, expandedPeekZoom, emphasisZoom, isExpandedForm } from '../utils/altitude'
 import { useReducedMotion } from '../hooks/useReducedMotion'
 import { useTouchPrimary } from '../hooks/useTouchPrimary'
 import { useViewportWidth } from '../hooks/useViewportWidth'
@@ -110,12 +110,20 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
   // two endpoints of a hovered line). This derivation mirrors App.jsx's
   // currentlyExpandedIds set so the local expansion and the store's published
   // records always agree on which nodes are expanded.
-  const isExpanded        = isInBeadView && (
-    isThisHovered ||
-    (hoveredNodeId === null && isThisSingleSel) ||
-    isEdgeHighlighted ||
-    isThisSearchFocused
-  )
+  // THE shared eligibility rule (altitude.js isExpandedForm — also consumed
+  // by App.jsx's currentlyExpandedIds mirror, so the two derivations
+  // structurally cannot drift). Bead View: today's union. Card View:
+  // edge-highlight ONLY (Erik's 2026-07-31 rule — connection hover creates
+  // the same meaningful emphasis in both representations; ordinary card
+  // hover/selection/search keep their normal Card-View presentation).
+  const isExpanded = isExpandedForm({
+    inBeadView: isInBeadView,
+    isHovered: isThisHovered,
+    anyNodeHovered: hoveredNodeId !== null,
+    isSingleSelected: isThisSingleSel,
+    isEdgeHighlighted,
+    isSearchFocused: isThisSearchFocused,
+  })
   // True when THIS card is open ONLY because an edge-hover session is holding
   // it (an endpoint of the dwelled line). Such a card is a read-only "peek":
   // it must be click-through (pointer-events:none, applied on the root below)
@@ -130,8 +138,14 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
   // Android and a 430-px iPhone), hence the resize-aware viewport read.
   const viewportWidth     = useViewportWidth()
   const peekZoom          = expandedPeekZoom(touchPrimary, viewportWidth)
-  const effectiveZoom     = isExpanded ? peekZoom : zoom
-  const counterScale      = isExpanded ? peekZoom / (zoom || 1) : 1
+  // Expansion target scale. Bead View: the plain screen-constant peek
+  // (unchanged — the threshold is user-draggable, so bead behavior must not
+  // depend on zoom). Card View: floor at the peek size but NEVER shrink —
+  // past peek zoom the card grows a modest percentage instead (emphasisZoom,
+  // altitude.js).
+  const expandZoom        = isInBeadView ? peekZoom : emphasisZoom(peekZoom, zoom)
+  const effectiveZoom     = isExpanded ? expandZoom : zoom
+  const counterScale      = isExpanded ? expandZoom / (zoom || 1) : 1
 
   // Scale header text up as the user zooms out so titles remain readable.
   // zoom >= 1 → use base sizes (already sharp at 100%+).
@@ -393,22 +407,31 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
   // expansion disappears and the bead sits at its true canvas position
   // unchanged.
   const CLAMP_PADDING_PX = 24
+  // Current-form ANCHOR half-extents: the canvas point the expanded card
+  // centers on is the bead's center in Bead View, and the card's OWN center
+  // in Card View (2026-07-31 generalization — which makes the centering
+  // offset below collapse to 0 there: a Card-View card grows in place).
+  // Every formerly bead-center formula (clamp, repulsion, centering, the
+  // published record) reads these, so Bead View math is unchanged by
+  // construction.
+  const anchorHalfW = isInBeadView ? BEAD_DIAMETER_PX / 2 : cardWidth    / 2
+  const anchorHalfH = isInBeadView ? BEAD_DIAMETER_PX / 2 : layoutHeight / 2
   let naturalClampDxScreen = 0
   let naturalClampDyScreen = 0
   if (isExpanded && typeof xPos === 'number' && typeof yPos === 'number') {
-    // Bead's screen-space center — the canvas point we want the visible
+    // Anchor's screen-space center — the canvas point we want the visible
     // expanded card to be centered on (modulo the clamp).
-    const beadScreenCx = (xPos + BEAD_DIAMETER_PX / 2) * zoom + panX
-    const beadScreenCy = (yPos + BEAD_DIAMETER_PX / 2) * zoom + panY
-    // Expanded card's screen-space size: cardWidth × peekZoom.
-    // (counterScale × canvas-zoom compose to give peekZoom; the card's
-    // box is cardWidth wide, so visible-on-screen = cardWidth × peekZoom.)
-    const cardScreenW = cardWidth   * peekZoom
-    const cardScreenH = layoutHeight * peekZoom
-    const left   = beadScreenCx - cardScreenW / 2
-    const right  = beadScreenCx + cardScreenW / 2
-    const top    = beadScreenCy - cardScreenH / 2
-    const bottom = beadScreenCy + cardScreenH / 2
+    const anchorScreenCx = (xPos + anchorHalfW) * zoom + panX
+    const anchorScreenCy = (yPos + anchorHalfH) * zoom + panY
+    // Expanded card's screen-space size: cardWidth × expandZoom.
+    // (counterScale × canvas-zoom compose to give expandZoom; the card's
+    // box is cardWidth wide, so visible-on-screen = cardWidth × expandZoom.)
+    const cardScreenW = cardWidth    * expandZoom
+    const cardScreenH = layoutHeight * expandZoom
+    const left   = anchorScreenCx - cardScreenW / 2
+    const right  = anchorScreenCx + cardScreenW / 2
+    const top    = anchorScreenCy - cardScreenH / 2
+    const bottom = anchorScreenCy + cardScreenH / 2
     const vw = window.innerWidth
     const vh = window.innerHeight
     if (left   < CLAMP_PADDING_PX)            naturalClampDxScreen = CLAMP_PADDING_PX - left
@@ -526,10 +549,10 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
   let repelXCanvas = 0
   let repelYCanvas = 0
   if (isExpanded && typeof xPos === 'number' && typeof yPos === 'number') {
-    const myCx = xPos + BEAD_DIAMETER_PX / 2
-    const myCy = yPos + BEAD_DIAMETER_PX / 2
-    const myW  = cardWidth   * peekZoom / (zoom || 1)
-    const myH  = layoutHeight * peekZoom / (zoom || 1)
+    const myCx = xPos + anchorHalfW
+    const myCy = yPos + anchorHalfH
+    const myW  = cardWidth    * expandZoom / (zoom || 1)
+    const myH  = layoutHeight * expandZoom / (zoom || 1)
     for (const [otherId, rec] of expandedNodesForRepel) {
       if (otherId === data.id || typeof rec.natCenterX !== 'number') continue
       const dx = myCx - rec.natCenterX
@@ -567,8 +590,10 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
 
   // The translate contributions in canvas units (= CSS local px inside the RF
   // node coord space): center-on-bead + viewport-clamp + pairwise repulsion.
-  const centerOffsetX = isExpanded ? (BEAD_DIAMETER_PX / 2 - cardWidth    / 2) : 0
-  const centerOffsetY = isExpanded ? (BEAD_DIAMETER_PX / 2 - layoutHeight / 2) : 0
+  // Anchor-centering: 0 by construction in Card View (anchorHalf = box half
+  // — the card grows in place); the bead-vs-card box difference in Bead View.
+  const centerOffsetX = isExpanded ? (anchorHalfW - cardWidth    / 2) : 0
+  const centerOffsetY = isExpanded ? (anchorHalfH - layoutHeight / 2) : 0
   const clampDxCanvas = zoom > 0 ? effectiveClampDxScreen / zoom : 0
   const clampDyCanvas = zoom > 0 ? effectiveClampDyScreen / zoom : 0
   const totalTx = centerOffsetX + clampDxCanvas + repelXCanvas
@@ -601,7 +626,7 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
     // NaN/Infinity — which the store now rejects, but don't even build the
     // record: keep the previous good one and republish next frame when the
     // inputs are real.
-    if (!(zoom > 0) || !Number.isFinite(peekZoom)) return
+    if (!(zoom > 0) || !Number.isFinite(expandZoom)) return
     if (!isExpanded || typeof xPos !== 'number' || typeof yPos !== 'number') {
       // Clear only THIS node's entry. The keyed map makes that inherently
       // safe — deleting our own key can never disturb another expanded node's
@@ -609,10 +634,10 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
       store.setExpandedNode(data.id, null)
       return
     }
-    // Natural (pre-clamp, pre-repel) bead center — what OTHER cards' repulsion
-    // reads, so the pairwise push has a stable, loop-free input.
-    const natCenterX = xPos + BEAD_DIAMETER_PX / 2
-    const natCenterY = yPos + BEAD_DIAMETER_PX / 2
+    // Natural (pre-clamp, pre-repel) anchor center — what OTHER cards'
+    // repulsion reads, so the pairwise push has a stable, loop-free input.
+    const natCenterX = xPos + anchorHalfW
+    const natCenterY = yPos + anchorHalfH
     // Visible center edges route to: bead center + clamp + repulsion (canvas).
     const centerX = natCenterX + clampDxCanvas + repelXCanvas
     const centerY = natCenterY + clampDyCanvas + repelYCanvas
@@ -623,13 +648,13 @@ export default function CampaignNode({ data, selected, xPos, yPos }) {
     // so the published rect matches the container's actual hit-box AND the
     // visible bg-tint extent. Edges route to the visible card border,
     // including the small footer of bg-tint that short cards display.
-    const width      = cardWidth     * peekZoom / zoom
-    const height     = layoutHeight  * peekZoom / zoom
+    const width      = cardWidth     * expandZoom / zoom
+    const height     = layoutHeight  * expandZoom / zoom
     // Box size in canvas units: just the CSS layout dimensions.
     const boxWidth   = cardWidth
     const boxHeight  = layoutHeight
     store.setExpandedNode(data.id, { centerX, centerY, natCenterX, natCenterY, width, height, boxWidth, boxHeight })
-  }, [isExpanded, xPos, yPos, clampDxCanvas, clampDyCanvas, repelXCanvas, repelYCanvas, zoom, peekZoom, cardWidth, layoutHeight, data.id])
+  }, [isExpanded, xPos, yPos, clampDxCanvas, clampDyCanvas, repelXCanvas, repelYCanvas, zoom, expandZoom, anchorHalfW, anchorHalfH, cardWidth, layoutHeight, data.id])
 
   // Clear our published record when this node unmounts mid-expansion.
   useEffect(() => () => {

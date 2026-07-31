@@ -4,6 +4,29 @@ A running log of meaningful changes to MasterMind: Story Builder. Append-only. N
 
 ## [Unreleased]
 
+### Connection hover: equal emphasis in Card View and Bead View (2026-07-31)
+
+Hovering a connection line now creates the same meaningful emphasis
+whichever way the canvas is currently showing your nodes. In Bead View
+this already worked: both endpoints pop into readable cards, and an
+off-screen endpoint is pulled into the window. Card View previously
+gave only a faint nudge (a generic 3% hover lift — incidental styling,
+never a designed rule) and left off-screen endpoints off-screen. Now,
+hovering a line in Card View grows both endpoint cards to the same
+familiar highlighted-card size beads expand to; if you're zoomed in far
+enough that a card already renders larger than that, it grows a modest
+10% instead — highlighting never shrinks a card. Off-screen endpoints
+are pulled into view exactly as in Bead View, everything restores when
+the hover ends, and — unlike Bead View's read-only peeks — Card View
+cards stay fully clickable while emphasized. Ordinary card hover,
+selection, and search are unchanged; this applies to connection-line
+hover only. The hover session also survives zooming across the
+card/bead threshold mid-hover, re-deriving each endpoint's form
+instead of cancelling. Known deferred polish (BACKLOG): when both
+endpoints resolve into the same constrained viewport corner, the
+incoming card can overlap the visible one — pair-aware placement is a
+recorded follow-up.
+
 ### Fix: a deleted workspace can no longer masquerade as an empty one (2026-07-31)
 
 The active workspace lives in the URL (`?w=…`), and a URL can outlive

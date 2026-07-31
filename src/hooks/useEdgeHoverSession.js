@@ -191,15 +191,11 @@ export function useEdgeHoverSession({ rfInstanceRef, edgesRef }) {
     return () => window.removeEventListener('pointermove', onPointerMove)
   }, [isCursorAlive, endSession])
 
-  // End the session if the canvas leaves Bead View — expansion is moot in Card
-  // View, so a zoom-in that crosses the threshold mid-session collapses it.
-  useEffect(() => {
-    return useCanvasUiStore.subscribe((state, prev) => {
-      if (prev.altitude === 'beadView' && state.altitude !== 'beadView') {
-        endSession()
-      }
-    })
-  }, [endSession])
+  // Sessions are altitude-agnostic (2026-07-31 — Erik's equal-emphasis rule
+  // retired the old "expansion is moot in Card View" assumption and its
+  // force-end on leaving Bead View). A mid-session threshold crossing just
+  // re-derives each endpoint's form (bead-peek ⇄ card-emphasis) while the
+  // session keeps its normal exit path: the cursor hit-test + grace timer.
 
   // React Flow activation handlers (the pluggable feeder for Pass 1).
   const onEdgeMouseEnter = useCallback((_event, edge) => {

@@ -201,6 +201,57 @@ export function expandedPeekZoom(touchPrimary, viewportWidth) {
   return Math.min(TOUCH_PEEK_MAX_ZOOM, Math.max(TOUCH_PEEK_MIN_ZOOM, scale))
 }
 
+// ── Card-View edge-hover emphasis (2026-07-31, Erik's product rule) ─────────
+// "Connection hover should create the same meaningful emphasis in both Bead
+// View and Card View." In Card View, a highlighted endpoint grows to the
+// SAME screen-constant peek size a bead expands to — unless the user is
+// zoomed in far enough that the card already renders larger, in which case
+// it grows a modest percentage from its current size instead. Highlighting
+// must NEVER shrink a card (the naive peek formula would, past peek zoom).
+// TUNING KNOB: the growth factor. 10% communicates emphasis without making
+// large cards lurch; add a cap only if QA shows very large cards becoming
+// disruptive.
+export const EDGE_EMPHASIS_GROW = 1.1
+
+// Pure: the effective render zoom for a Card-View edge-highlighted card.
+// max() IS the never-shrink guarantee: the result is always ≥ currentZoom ×
+// EDGE_EMPHASIS_GROW > currentZoom. Bead View deliberately does NOT use
+// this — it keeps the plain peekZoom formula (the threshold is user-
+// draggable, so bead-side behavior must not depend on zoom).
+export function emphasisZoom(peekZoom, currentZoom) {
+  const z = currentZoom > 0 ? currentZoom : 0
+  return Math.max(peekZoom, z * EDGE_EMPHASIS_GROW)
+}
+
+// Pure: should a node render its EXPANDED (card-at-emphasis-size) form?
+// THE single eligibility rule, shared by its two consumers — CampaignNode
+// (per-node booleans from narrow store selectors, preserving the perf
+// pattern) and App.jsx's currentlyExpandedIds mirror (per-candidate
+// evaluation). Centralized so the two derivations structurally cannot
+// drift (the App mirror has no test harness).
+//   Bead View:  hover, single-select (only when nothing is hovered),
+//               edge-highlight, or search-result preview — today's union.
+//   Card View:  edge-highlight ONLY. Ordinary card hover, selection, and
+//               search keep their normal Card-View presentation.
+export function isExpandedForm({
+  inBeadView,
+  isHovered = false,
+  anyNodeHovered = false,
+  isSingleSelected = false,
+  isEdgeHighlighted = false,
+  isSearchFocused = false,
+}) {
+  if (inBeadView) {
+    return (
+      isHovered ||
+      (!anyNodeHovered && isSingleSelected) ||
+      isEdgeHighlighted ||
+      isSearchFocused
+    )
+  }
+  return isEdgeHighlighted
+}
+
 // ── Dynamic minZoom (Chunk F, per ADR-0010 addendum) ──────────────────────
 // React Flow's static `minZoom = 0.5` is replaced by a per-campaign limit
 // that lets the user zoom out far enough that the bounding box of all

@@ -19,7 +19,10 @@ import {
   EXPANDED_PEEK_ZOOM,
   TOUCH_PEEK_MIN_ZOOM,
   TOUCH_PEEK_MAX_ZOOM,
+  EDGE_EMPHASIS_GROW,
   expandedPeekZoom,
+  emphasisZoom,
+  isExpandedForm,
 } from '../utils/altitude'
 
 // jsdom's innerWidth is 1024 by default; the touch peek reads it, so tests
@@ -183,6 +186,87 @@ describe('expanded-peek scale — touch-primary (phones/tablets)', () => {
     const low  = scaleAtThreshold(1.0)
     const high = scaleAtThreshold(8.0)
     expect(low).toBe(high)
+  })
+})
+
+// ── Card-View edge-hover emphasis (2026-07-31, Erik's equal-emphasis rule) ──
+// Hovering a connection line must create the same meaningful emphasis in
+// Card View as in Bead View: highlighted endpoints grow to the peek size
+// when smaller, grow ~10% when already larger, and NEVER shrink. Only
+// edge-highlight expands in Card View — ordinary hover/selection do not.
+describe('Card-View edge-hover emphasis (desktop)', () => {
+  beforeEach(() => {
+    mockMatchMedia(() => false)
+    useCanvasUiStore.setState({
+      altitude: 'cardView',
+      hoveredNodeId: null,
+      hoveredEdgeNodeIds: new Set(['n1']),
+    })
+  })
+  afterEach(() => {
+    useCanvasUiStore.setState({ hoveredEdgeNodeIds: null })
+  })
+
+  it('grows a small card to the peek size (zoomed out)', () => {
+    viewport.zoom = 0.25
+    const scale = renderedScale()
+    // emphasisZoom floors at the peek: max(1.0, 0.25×1.1) = 1.0 → counter 4.
+    const counter = EXPANDED_PEEK_ZOOM / viewport.zoom
+    const matchesLifted   = Math.abs(scale - counter * 1.03) < 1e-6
+    const matchesUnlifted = Math.abs(scale - counter) < 1e-6
+    expect(matchesLifted || matchesUnlifted).toBe(true)
+  })
+
+  it('grows an already-large card by the modest factor — NEVER shrinks (zoomed in)', () => {
+    viewport.zoom = 1.5
+    const scale = renderedScale()
+    // Past the peek: max(1.0, 1.5×1.1)/1.5 = 1.1 → 10% growth.
+    const counter = (viewport.zoom * EDGE_EMPHASIS_GROW) / viewport.zoom
+    const matchesLifted   = Math.abs(scale - counter * 1.03) < 1e-6
+    const matchesUnlifted = Math.abs(scale - counter) < 1e-6
+    expect(matchesLifted || matchesUnlifted).toBe(true)
+    // The invariant itself: rendered scale is a growth, not a shrink.
+    expect(scale).toBeGreaterThan(1)
+  })
+
+  it('ordinary Card-View node hover does NOT expand (edge-highlight only)', () => {
+    useCanvasUiStore.setState({ hoveredEdgeNodeIds: null, hoveredNodeId: 'n1' })
+    viewport.zoom = 0.25
+    const scale = renderedScale()
+    // No expansion: no counter-scale — at most the 1.03 hover lift.
+    expect(scale).toBeLessThanOrEqual(1.03 + 1e-6)
+  })
+})
+
+describe('emphasisZoom + isExpandedForm (pure)', () => {
+  it('floors at the peek size below it, grows 10% above it — never shrinks', () => {
+    expect(emphasisZoom(1.0, 0.25)).toBe(1.0)          // small → peek floor
+    expect(emphasisZoom(1.0, 1.5)).toBeCloseTo(1.65)   // large → 10% growth
+    expect(emphasisZoom(1.0, 0.95)).toBeCloseTo(1.045) // just past peek/1.1 → growth wins
+    for (const z of [0.1, 0.5, 0.9, 1, 1.3, 2]) {
+      expect(emphasisZoom(1.0, z)).toBeGreaterThan(z)  // the never-shrink invariant
+    }
+    expect(emphasisZoom(1.0, 0)).toBe(1.0)             // degenerate zoom → peek, never NaN
+  })
+
+  it('Bead View keeps the full expansion union', () => {
+    const base = { inBeadView: true }
+    expect(isExpandedForm({ ...base, isHovered: true })).toBe(true)
+    expect(isExpandedForm({ ...base, isSingleSelected: true })).toBe(true)
+    // Selection yields to an active hover elsewhere (today's rule).
+    expect(isExpandedForm({ ...base, isSingleSelected: true, anyNodeHovered: true })).toBe(false)
+    expect(isExpandedForm({ ...base, isEdgeHighlighted: true })).toBe(true)
+    expect(isExpandedForm({ ...base, isSearchFocused: true })).toBe(true)
+    expect(isExpandedForm(base)).toBe(false)
+  })
+
+  it('Card View expands for edge-highlight ONLY', () => {
+    const base = { inBeadView: false }
+    expect(isExpandedForm({ ...base, isEdgeHighlighted: true })).toBe(true)
+    expect(isExpandedForm({ ...base, isHovered: true })).toBe(false)
+    expect(isExpandedForm({ ...base, isSingleSelected: true })).toBe(false)
+    expect(isExpandedForm({ ...base, isSearchFocused: true })).toBe(false)
+    expect(isExpandedForm(base)).toBe(false)
   })
 })
 
