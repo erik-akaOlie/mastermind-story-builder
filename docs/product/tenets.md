@@ -48,11 +48,11 @@ The schema and feature design assume Pathfinder 2e, Daggerheart, Shadowdark, and
 
 When competing solutions to a design or engineering problem conflict, these five dimensions frame the evaluation, listed in their current order of priority:
 
-1. **Preserve trust in the graph.**
+1. **Preserve trust.**
 2. **Preserve visual comprehension.**
-3. **Reduce friction in creating and organizing information.**
+3. **Reduce data-entry friction.**
 4. **Prefer progressive disclosure over adding controls.**
-5. **Engineer for extensibility — never at the expense of today's UX.**
+5. **Engineer for extensibility without sacrificing today's UX.**
 
 **The ordering is not a decision procedure.** Its purpose is to ensure every meaningful option is evaluated across all five dimensions, and to indicate which compromises deserve the greatest scrutiny — not which option automatically wins. A solution that slightly compromises a higher-ranked tenet while substantially serving the other four may still be the better solution; the goal is the strongest overall product outcome with the fewest meaningful tradeoffs, chosen by judgment, not by mechanically following the list.
 
