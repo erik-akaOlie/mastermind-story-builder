@@ -105,7 +105,7 @@ They reorder relative to each other based on what #1 + #2 reveal.
 
 ## Mox free-beta launch readiness (pre-launch) — CURRENT FOCUS
 
-### Current Mox launch snapshot (2026-07-09)
+### Current Mox launch snapshot (2026-07-09; updated through 2026-08-13 — older dated evidence preserved below as recorded)
 
 **Hard gates closed** ✅
 - Signup / waitlist / attribution (how-heard) / in-flow recording notice /
@@ -143,6 +143,76 @@ They reorder relative to each other based on what #1 + #2 reveal.
 GM; one observed session, evidence-weighted accordingly)
 
 *Launch-gating*
+- ✅ **Release-pipeline cutover, Phase A — EXECUTED + COMPLETED 2026-08-13** (ADR-0020;
+  runbook `QA/release-pipeline-cutover-runbook-v5.3-2026-08-13.md` final as-executed
+  record; facts appended to `QA/release-pipeline-phase-a-facts-2026-08-07.md`).
+  Completed outcomes only: pushing master now builds a protected Preview (stable
+  `…git-master…` alias, real config via branch-pinned vars; verified end-to-end);
+  under the approved operating procedure (R1–R3) the public app changes only via an
+  approved `production-gate` push + manual promotion (auto-assign OFF) — a process
+  rule, not a technical impossibility for an administrator, and **creation of a staged
+  deployment from a genuinely new approved `production-gate` push remains UNPROVEN
+  until Phase B's hard proof point**; branch/tag rulesets active with empty bypass;
+  the four obsolete real-credential Preview deployments deleted (addresses
+  `DEPLOYMENT_NOT_FOUND`, old branch aliases `NOT_FOUND`); verified on desktop +
+  Android + iPhone incl. the reversible write cycle in the Star Wars workspace
+  (product-owner-accepted A25 order discrepancy recorded in runbook §0.8/facts sheet).
+- ☐ **Phase B — no-change release rehearsal (separate approval; runbook §6).**
+  Problem: the pipeline's staged-Production behavior and tag protections are configured
+  but not empirically proven. Success: a genuinely new approved commit pushed to
+  `production-gate` CREATES a staged Production deployment (hard proof — STOP if
+  absent); validate staged; promote WITHOUT rebuild; smoke-test public Production;
+  first successful `prod-*` tag created; tag-ruleset protection empirically verified
+  via the non-production `verification-release-tag-*` procedure. Dependencies: Phase A
+  (done). Existing estimate: ≈1–2 h (runbook §7).
+- ☐ **Disposable database + Local isolation (D5-ratified position: after Phase B).**
+  Problem: Local dev still points at Production Supabase — authenticated Local QA is
+  PROHIBITED until this completes (authenticated Local actions can mutate real user
+  data). Success: disposable Supabase project with schema parity + proven
+  approved-owner refresh; Local pointed exclusively at it; approved warning banner
+  (copy needs Erik's UX approval). Dependencies: Phase B. No documented estimate —
+  investigation required.
+- ☐ **Focused security-readiness review (separate from pipeline work).** Problem: RLS
+  and Storage policies exist [REPO] but cross-account behavior has never been
+  empirically verified. Success: empirical cross-account isolation proof for
+  workspaces, nodes, connections, and Media Gallery files at both the database and
+  file-storage layer; database/storage policy review; auth/reset flows; credentials/
+  env-var hygiene; dependency audit; security headers; analytics/personal-data
+  exposure; authorization regression tests. Dependencies: sequenced after Local
+  isolation in the ratified 2026-08-13 briefing order (empirical account-vs-account
+  testing benefits from the disposable project). No documented estimate —
+  investigation required.
+- ☐ **Production-domain transition (Phase D; part of cutover definition of done).**
+  Problem: canonical domain is still the vercel.app address. Success:
+  `mastermind.justlivingthedream.com` canonical with expand-and-contract handling
+  (Supabase Site URL/redirects revisited under its own proposal per A22 record), old
+  address redirecting, device QA passed. Dependencies: Local isolation first
+  (D5-ratified); must complete before public launch. Existing estimate: ≈1 day + DNS
+  propagation (runbook §7).
+- ☐ **Proven external backups (Backblaze B2).** Problem: Supabase daily backups
+  exclude Storage objects, and **no external backup of the Production database or
+  Storage is currently known or verified**. Success: encrypted-BEFORE-upload backup of
+  the Production database AND all Production Storage buckets/objects — Media Gallery
+  files, node thumbnails, workspace covers (`workspace-media`) and profile avatars
+  (`profile-media`) — using read-only Production access wherever possible; a manual
+  backup AND a manual restoration into a disposable project that verifies
+  representative database records and representative uploaded files, proven BEFORE any
+  automation. Dependencies: disposable project (from the Local-isolation workstream)
+  for the restoration proof. No documented estimate — investigation required.
+- ☐ **Migration 016 — remains PAUSED.** Unapplied. Gated on: (1) the previously agreed
+  execution-based acceptance checklist, which must be RETRIEVED from the project
+  record and must NOT be reconstructed from memory; (2) a rehearsal against disposable
+  data; (3) applicable proven backup/restoration protection — all before any
+  Production proposal. Dependencies: disposable database; proven backups. Not part of
+  launch-gating sequencing beyond that; stays at the end of the queue.
+- ☐ **Tester-cohort expansion.** Only after the applicable isolation, security,
+  backup, and launch-safety gates above pass. Dependencies: explicitly on those
+  gates, not on a fixed calendar.
+- *(Out-of-band owner follow-ups — NOT launch-gating product work: clear github.com
+  site data in Android Chrome (corrupted cookies caused 500s on GitHub sign-in;
+  worked around via Incognito 2026-08-13); migrate anything valuable out of the
+  defunct espoc.com-managed Chrome profile; restore CC browser-automation access to
+  github.com / supabase.com before Phase B.)*
 - ✅ PostHog missing-recording investigation — **RESOLVED 2026-07-28.**
   Mark's 2026-07-27 session produced ZERO PostHog data (no person, no
   events, no recording) despite a healthy profiles row
@@ -1289,6 +1359,10 @@ and markdown export are Soon-after. **Honest sizing:** remaining Bucket-1 is
   app-level workspace soft-delete (Soon-after item below) for clean per-workspace
   recovery. (Storage-object backup is a separate future consideration — not a beta
   blocker; campaign *text* is the crown jewel and it is now covered.)
+  **SUPERSEDED FOR COHORT-EXPANSION READINESS (Erik, 2026-08-13):** proven external
+  backup and restoration of both the Production database and all Production Storage
+  objects is now an applicable safety gate before tester-cohort expansion. See the
+  current launch-gating Backblaze B2 entry above.
 - **Size:** S (dashboard/console checks).
 
 ---
