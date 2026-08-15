@@ -5,7 +5,10 @@
 > snapshots** of pre-execution state. When facts conflict, the **later dated evidence
 > controls — especially the "Phase A as-executed" section appended at the end**, which is
 > the canonical current reference (canonical identifiers, end state, discrepancies,
-> corrections). This file remains **uncommitted pending Erik's normal review**.
+> corrections). **Post-Phase-A events (documentation publication 2026-08-14; post-push
+> Preview verification (c) 2026-08-15) are recorded in the final section** and control
+> where they add to or supersede the 2026-08-13 record. This file was committed and
+> published to GitHub `master` at `39c50a7` (2026-08-14).
 
 **Read-only dashboard walkthrough, 2026-08-07.** Erik signed in; Claude drove Vercel via browser
 extension; GitHub/Supabase/PostHog read via Erik's screenshots. **Nothing was changed, created,
@@ -241,3 +244,63 @@ rehearsal/proposal.
 Out-of-band follow-ups for Erik, any time: clear github.com site data in Android Chrome;
 migrate valuables out of the defunct espoc.com-managed Chrome profile; restore CC
 browser-automation access to github.com / supabase.com.
+
+---
+
+## Post-Phase-A record — documentation publication (2026-08-14) and post-push Preview verification (c) (2026-08-15)
+
+Three separately approved steps followed Phase A: (a) reconciliation of the Phase A
+documentation commit, (b) its push to GitHub `master`, (c) read-only verification of the
+Vercel-side result of that push. Each was proposed, approved, and executed under its own
+approval; none authorized anything else. **(a), (b), (c) are all COMPLETE.** Nothing was
+pushed to `production-gate`; nothing was promoted; no Production, Supabase, or service
+configuration change occurred; Phase B remains NOT started.
+
+**(a)+(b) — reconciliation and push (2026-08-14; performed in a prior session; end state
+re-verified read-only in the (c) session).** The A28 deliverables were originally committed
+in the main working folder as `efc768f` with parent C0 — a sibling of A23's `5acc5b9`
+(also parent C0). In the release-ops clone (`C:\Users\erik\projects\mastermind-release-ops`)
+a corrected commit was constructed around the identical documentation tree with parent
+`5acc5b9`, verified before adoption (exact tree `8a8f5e7457551be9a1cda8318518ed4719b9571f`;
+parent `5acc5b9`; identical author name/email/timestamp; byte-identical 779-byte message;
+exactly the five expected files), then pushed as a normal fast-forward `5acc5b9 → 39c50a7`.
+**Canonical published documentation commit: `39c50a7a6abed7fae7449f4082bb1c81007b060f`.**
+Re-verified 2026-08-15 with zero-mutation commands only (`git ls-remote`, `rev-parse`,
+`log`, `status`; no fetch): GitHub `master` = `39c50a7`; GitHub `production-gate` = C0
+`52bacc3`; no `prod-*` or `verification-release-tag-*` tags exist; release-ops clone clean
+at `39c50a7` with `refs/reconcile/source` → `efc768f` retained; main working folder still at
+local `master` = `efc768f` (NOT realigned — a separate, unauthorized housekeeping step) with
+its protected uncommitted work intact [VERIFIED].
+
+**(c) — post-push Preview verification (2026-08-15) — ALL SIX PASS.** Approved with fixed
+observation channels: **[DASH]** = read-only navigation of the Vercel dashboard in Erik's
+authenticated Chrome (no Visit, no deployment address opened, no application load);
+**[HEAD]** = one `curl -I` per address from the shell — headers only, no cookies, no Vercel
+session, redirects NOT followed, no authentication attempted, no JavaScript executed,
+nothing reaches Production Supabase. Vercel CLI deliberately not used (no added evidence).
+
+| # | Proposition | Result | Evidence |
+|---|---|---|---|
+| 1 | A Preview deployment exists for `39c50a7` | PASS | [DASH] deployment **`CdykawAVrSMimonCa5npUTZHACDZ`** — Environment Preview, branch `master`, commit `39c50a7` "docs(release): record Phase A pipeline cutover", created by erik-akaOlie; deployment-specific address `mastermind-story-builder-4f5bzx4z5-erik-akaolies-projects.vercel.app` |
+| 2 | It completed successfully | PASS | [DASH] Status Ready, 19s; build log 66 lines, `✓ built in 14.49s`; the single ⚠ is Vite's standard "Some chunks are larger than 500 kB after minification" advisory (log line 59) — informational, present on prior builds, not an error |
+| 3 | The stable git-master alias points to it | PASS, **qualified** | [DASH] `39c50a7` carries **Ready · Latest**; the two prior master deployments (`5acc5b9`/`48TSmiL…` and P-ID `Eu1r5…`) both show **Ready · Stale**; the alias is listed in the `39c50a7` deployment's Domains section. **Qualification (evidence lesson):** a deployment page's Domains list is HISTORICAL — the git-master alias appears on all three master deployments — so that list alone does NOT establish current alias ownership. The PASS rests on the Latest/Stale badges plus Vercel's documented rule that a branch alias tracks the latest deployment on that branch [DOCS]. Do not later strengthen this into "the Domains list proved the alias resolves to `39c50a7`". |
+| 4 | Vercel Authentication blocks an anonymous request before the app is served | PASS | [HEAD] `HTTP/1.1 302 Found`; `Location: https://vercel.com/sso-api?url=<alias>&nonce=…`; `Set-Cookie: _vercel_sso_nonce=…`; `Content-Type: text/plain`; `X-Robots-Tag: noindex`. Interception by Vercel Authentication, no application HTML; redirect not followed; no authentication; no JS; no Supabase reach. (Success criterion, as amended before approval: evidence of interception, NOT a fixed status code.) |
+| 5 | No Production deployment, promotion, or Production-domain change | PASS | [DASH] Deployments list: newest Production row is C0 `52bacc3` with the current marker; only the three Preview builds sit above it. P-ID `Eu1r5aDjpQzPnPweqWiBnfhLRpfb` page: Production · Current, commit `52bacc3`, created Aug 4. Settings → Environments → Production: Branch Tracking `production-gate`; Auto-assign Custom Production Domains **Disabled** ("Production deployments will need to be manually promoted"). Settings → Domains: exactly one domain, `mastermind-story-builder.vercel.app` → Production |
+| 6 | The public app still serves the verified Production deployment | PASS | [DASH] (authoritative) `mastermind-story-builder.vercel.app` listed on P-ID and marked Current; Environments → Production → Domains shows it checked. [HEAD] (supplemental only) `HTTP/1.1 200 OK`, `text/html`, `Last-Modified: Tue, 11 Aug 2026 19:49:23 GMT`, `X-Vercel-Cache: HIT`, no auth challenge — confirms the address responds normally and is not behind the Preview wall; it does NOT by itself identify which deployment is serving |
+
+**Recorded identifiers added (canonical for future phases):** documentation Preview
+deployment `CdykawAVrSMimonCa5npUTZHACDZ` = `…-4f5bzx4z5-…`, commit `39c50a7`; current
+target of the stable git-master alias as of 2026-08-15 **as established by the qualified
+Check 3 evidence above** (`39c50a7` = Latest; prior master deployments = Stale; Vercel's
+documented branch-alias behavior [DOCS]; the historical Domains list alone did not prove
+current alias ownership). P-ID unchanged (`Eu1r5aDjpQzPnPweqWiBnfhLRpfb`, C0).
+
+**What (c) proves and does not prove.** It proves the second post-flip master push again
+built a protected Preview and left Production untouched — the Phase A invariant held for a
+genuinely new (documentation-only) commit. It does NOT bear on Phase B's hard proof point
+(a genuinely new `production-gate` push creating a staged Production deployment), which
+remains UNPROVEN and was deliberately not attempted.
+
+**Still separately unauthorized after (c):** main-folder `master` realignment to `39c50a7`;
+Phase B; any `production-gate` push; any staged-deployment validation or promotion; any
+Production-domain change; migration 016; any Supabase or service-configuration change.

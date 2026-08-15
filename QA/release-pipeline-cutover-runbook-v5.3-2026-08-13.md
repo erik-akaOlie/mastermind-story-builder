@@ -8,8 +8,10 @@ historical labels as the HISTORICAL approved procedure for auditability (step bo
 unchanged; headings carry executed/historical markers) — they are not current instructions;
 no further execution is authorized by this document. Sections 4–7 (standing release
 procedure R0–R5, rollback handling, Phase B, sequencing) remain forward-looking and
-operative. This file remains uncommitted pending Erik's normal review. Supersedes v5.2
-(and v1–v5.1). Self-contained.
+operative. This file was committed and published to GitHub `master` at `39c50a7`
+(2026-08-14); the resulting Preview build was verified read-only on 2026-08-15 (approval
+(c) — six checks, all PASS; record in the facts sheet's "Post-Phase-A record" section).
+Supersedes v5.2 (and v1–v5.1). Self-contained.
 
 **Amendment 2026-08-13-c (A15 deployment expectation corrected by observation).** Execution
 under the 2026-08-13-b approval completed CP-1…A14 (all passed — §0.7) and stopped at A15:
@@ -88,10 +90,13 @@ compatibility-assessed rollback target (R0). (2) The generated master address qu
 
 ## 0.5. As-executed record — 2026-08-13 (v5.2 run, PRE-1 → A9, stopped at A10)
 
-**Freeze continuity: the master push freeze became effective with Erik's original PRE-4
-approval message (2026-08-13) and has remained CONTINUOUSLY ACTIVE since. No push to
-`master` has occurred at any point. The freeze does not need reactivation — the new
-approval acknowledges its continuity and its end condition (A24) is unchanged.**
+**Freeze continuity (as of this §0.5 stop point — historical): the master push freeze
+became effective with Erik's original PRE-4 approval message (2026-08-13) and, at this
+stop point, had remained CONTINUOUSLY ACTIVE since; no push to `master` had yet occurred.
+The freeze did not need reactivation for the next approval — that approval acknowledged
+its continuity, and its end condition (A24) was unchanged. The freeze subsequently ended at
+A24 as recorded in §0.8 (after exactly one push, A23's `5acc5b9`); the documentation
+commit `39c50a7` was pushed later, on 2026-08-14, outside any freeze.**
 
 Completed steps, each verified on screen or in command output as it happened. Every expected
 result matched **except A8(b)**, whose discrepancy is recorded below and requires Erik's
@@ -303,9 +308,10 @@ observation reported in-session for steps whose text does not prescribe the oper
   `…git-clau-0af300…`) → `404: NOT_FOUND`, no content, no wall. Zero Production-host
   requests during the retired-address checks (④ and ⑦; ① intentionally loads the
   production app and is excluded from that claim).
-- **A28 — deliverables produced (all uncommitted pending Erik's normal review):** this
-  §0.8 record + the Phase A as-executed append in
-  `QA/release-pipeline-phase-a-facts-2026-08-07.md` + ADR-0020 draft
+- **A28 — deliverables produced (reviewed and published to GitHub `master` at `39c50a7`
+  on 2026-08-14 after reconciliation onto A23's `5acc5b9` — see the facts sheet's
+  "Post-Phase-A record"):** this §0.8 record + the Phase A as-executed append in
+  `QA/release-pipeline-phase-a-facts-2026-08-07.md` + ADR-0020
   (`docs/decisions/0020-release-pipeline-cutover.md`) + CLAUDE.md "Release Pipeline"
   section + BACKLOG launch-queue entry.
 
@@ -314,7 +320,7 @@ genuinely NEW commit pushed to `production-gate` has NOT yet been empirically pr
 create a staged Production deployment. That proof lands at Phase B's first rehearsal push
 (§6) and is a stop condition if it fails.
 
-## 1. HISTORICAL pre-execution fixed facts (as verified before/at approval time — preserved for audit; several are superseded by execution: `origin/master` is now `5acc5b9` after A23, and auto-assign is now Disabled after A16. **Current end state: §0.8**)
+## 1. HISTORICAL pre-execution fixed facts (as verified before/at approval time — preserved for audit; several are superseded by execution: `origin/master` became `5acc5b9` after A23 and is `39c50a7` after the 2026-08-14 documentation push, and auto-assign is now Disabled after A16. **Current end state: §0.8 + the facts sheet's "Post-Phase-A record"**)
 
 - **C0 = `52bacc3`.** CP-5 re-verifies BOTH `origin/master` and the live Production
   deployment sit exactly at C0. **Any mismatch → STOP; the package is re-drafted with a new
