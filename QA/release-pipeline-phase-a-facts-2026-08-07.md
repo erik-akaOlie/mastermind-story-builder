@@ -304,3 +304,75 @@ remains UNPROVEN and was deliberately not attempted.
 **Still separately unauthorized after (c):** main-folder `master` realignment to `39c50a7`;
 Phase B; any `production-gate` push; any staged-deployment validation or promotion; any
 Production-domain change; migration 016; any Supabase or service-configuration change.
+*(Later the same day, 2026-08-15: the (c) record was committed as `779c0a1` and pushed;
+Development-folder master was realigned to `779c0a1` — superseding the "NOT realigned"
+statement above; its Preview `7viRyiEH1yumUSbA9RGSUTiXmBL3` verified Ready. Phase B then
+executed — next section.)*
+
+---
+
+## Phase B record — no-change release rehearsal EXECUTED AND COMPLETED 2026-08-15 (Pacific)
+
+Full as-executed record: `QA/release-pipeline-phase-b-rehearsal-checklist-v1-2026-08-15.md`
+§8 (checklist v1.1, executed under Erik's explicit approval with all human gates preserved;
+one stop + approved recovery). Headlines and canonical identifiers:
+
+- **HARD PROOF POINT PROVEN [VERIFIED]:** a genuinely new commit pushed to `production-gate`
+  (`8af7469`, empty commit on `779c0a1`; tree identical; zero application-path diff vs C0)
+  created a **staged Production deployment** within ~1 minute — Vercel label
+  "Production · Staged", "Assigning Custom Domains: Skipped", public domain untouched,
+  P-ID still Current. Model S is now empirically proven end-to-end.
+- **Promotion without rebuild [VERIFIED]:** Erik promoted the staged deployment from the
+  dashboard (the Promote dialog's wording was NOT captured — Erik-reported that it named
+  `mastermind-story-builder.vercel.app`); the post-promotion state was directly verified
+  [DASH]: the SAME deployment ID became Production · Current; no new deployment row.
+- **Post-promotion Auto-assign finding [VERIFIED, one observation]:** in this single observed
+  dashboard promotion (2026-08-15), "Auto-assign Custom Production Domains" remained
+  **Disabled**. This is one observation, NOT a general guarantee about dashboard
+  promotions; the documented re-enable behavior for CLI `vercel promote` / Undo Rollback
+  still applies, and the post-promotion toggle check stays in the standing procedure.
+- **Tag ruleset [VERIFIED]:** `verification-release-tag-protection-2026-08-15` (permanent,
+  → `779c0a1`, tag object `1f62d724…`): deletion REJECTED (`GH013 … Cannot delete this
+  tag`), forced re-point REJECTED (`Cannot force-push to this tag / Cannot update this
+  protected ref`); remote never moved. Tag pushes triggered no Vercel deployment (observed
+  at 1/3/5 min, both tags).
+- **First release tag:** `prod-2026.08.15` (tag object `620ed78c…`) → `8af7469`, message
+  `deployment: TdLdhwDGc3q569ucqhLcpinSY9MG; commit: 8af746945e9d04776e782548c1a335cffb208a34`.
+- **Identifiers:** B-SHA `8af746945e9d04776e782548c1a335cffb208a34`; Preview PV-ID
+  `GYGg933nHWSnqNCXNbEzYBNtVrLX` (`…-jfbj9b5tq-…`); staged→promoted S-ID
+  **`TdLdhwDGc3q569ucqhLcpinSY9MG`** (`…-gnrrez7c7-…`), branch alias
+  `…-git-prod-688cf1-…` — **now the current Production deployment**; previous Production
+  P-ID `Eu1r5aDjpQzPnPweqWiBnfhLRpfb` (C0) = the release's named rollback target, retained.
+- **Smoke test:** public app after promotion, hard reload: sign-in, workspace "Star Wars",
+  one node opened/closed, sign-out; console identical to the pre-release baseline
+  (0 errors; 3 warnings — two React Flow deprecations + PostHog re-init note on sign-out).
+  `Last-Modified` of the public page moved to 2026-08-16 01:05:43 GMT (promotion moment);
+  Etag unchanged (byte-identical page).
+- **One stop (B1) + approved recovery:** `TZ=America/Los_Angeles date` in the release-ops
+  Git Bash returns the UTC date (no tz database) — a misdated verification tag was created
+  LOCALLY only, caught before push, deleted under approval; both date computations
+  replaced with the explicit .NET Pacific conversion
+  (`[System.TimeZoneInfo]::ConvertTimeBySystemTimeZoneId((Get-Date).ToUniversalTime(),'Pacific Standard Time')`).
+  **Standing R5 requirement:** the tag date is the America/Los_Angeles calendar date,
+  computed by a method proven in the release-ops execution environment — the .NET
+  conversion is the currently proven method there; `TZ=America/Los_Angeles date` is
+  known-invalid in that Git Bash (returned the UTC date).
+- **Observations (not stops):** the Deployments branch-filter header showed "Branch link
+  for production-gate" pointing at the git-master alias (unexplained UI display); the
+  staged deployment's Domains list included the team-scoped generated alias
+  `mastermind-story-builder-erik-akaolies-projects.vercel.app` (generated address, not the
+  public custom domain).
+- **End state (four locations, per the terminology rule): Published master = `8af7469` ·
+  GitHub `production-gate` = `8af7469` · Release-ops master = `8af7469` (clone clean) ·
+  Development-folder master = `779c0a1`.** The Development-folder gap is the EXPECTED
+  post-Phase-B state (the release candidate was created in the release-ops clone) — not
+  the earlier repository-history divergence, which was closed on 2026-08-15 by the
+  realignment to `779c0a1` recorded above; realigning to `8af7469` requires its own
+  separate approval. Tags: `prod-2026.08.15`, `verification-release-tag-protection-2026-08-15`,
+  `workspace-rename-pre-stage-5`. Vercel: Production Current = S-ID; auto-assign Disabled;
+  Branch Tracking `production-gate`. Production data: **no A26-style test writes were
+  performed**; Erik's use of the Star Wars workspace was read-only apart from the
+  application's routine bookkeeping writes (sign-in session, `last_opened_at`, cover
+  snapshot).
+- **Next (each its own approval):** commit/push of these Phase B records → Development-
+  folder realignment → Local isolation (D5) → Phase D domains → Backblaze → migration 016.

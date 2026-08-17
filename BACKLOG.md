@@ -150,28 +150,33 @@ GM; one observed session, evidence-weighted accordingly)
   `…git-master…` alias, real config via branch-pinned vars; verified end-to-end);
   under the approved operating procedure (R1–R3) the public app changes only via an
   approved `production-gate` push + manual promotion (auto-assign OFF) — a process
-  rule, not a technical impossibility for an administrator, and **creation of a staged
-  deployment from a genuinely new approved `production-gate` push remains UNPROVEN
-  until Phase B's hard proof point**; branch/tag rulesets active with empty bypass;
+  rule, not a technical impossibility for an administrator (creation of a staged
+  deployment from a genuinely new approved `production-gate` push was PROVEN by Phase B
+  on 2026-08-15 — next entry); branch/tag rulesets active with empty bypass;
   the four obsolete real-credential Preview deployments deleted (addresses
   `DEPLOYMENT_NOT_FOUND`, old branch aliases `NOT_FOUND`); verified on desktop +
   Android + iPhone incl. the reversible write cycle in the Star Wars workspace
   (product-owner-accepted A25 order discrepancy recorded in runbook §0.8/facts sheet).
-- ☐ **Phase B — no-change release rehearsal (separate approval; runbook §6).**
-  Problem: the pipeline's staged-Production behavior and tag protections are configured
-  but not empirically proven. Success: a genuinely new approved commit pushed to
-  `production-gate` CREATES a staged Production deployment (hard proof — STOP if
-  absent); validate staged; promote WITHOUT rebuild; smoke-test public Production;
-  first successful `prod-*` tag created; tag-ruleset protection empirically verified
-  via the non-production `verification-release-tag-*` procedure. Dependencies: Phase A
-  (done). Existing estimate: ≈1–2 h (runbook §7).
+- ✅ **Phase B — no-change release rehearsal — EXECUTED + COMPLETED 2026-08-15** (checklist
+  v1.1 + as-executed record: `QA/release-pipeline-phase-b-rehearsal-checklist-v1-2026-08-15.md`
+  §8; facts-sheet "Phase B record"; ADR-0020 Phase B amendment). Completed outcomes only:
+  rehearsal commit `8af7469` (empty; app identical to Production) → Preview → pushed to
+  `production-gate` → **staged Production deployment CREATED (hard proof PROVEN)**
+  `TdLdhwDGc3q569ucqhLcpinSY9MG` → validated behind the wall → promoted by Erik WITHOUT
+  rebuild (same ID now Current) → public smoke test passed vs recorded console baseline →
+  **first release tag `prod-2026.08.15`**; tag ruleset empirically rejects delete + force
+  (`verification-release-tag-protection-2026-08-15`, permanent); dashboard promote left
+  auto-assign Disabled. One stop (Git Bash ignores `TZ` → UTC date; local-only misdated
+  tag caught before push; approved recovery; R5 date now via explicit .NET Pacific
+  conversion). Follow-ups: commit/push the Phase B records (own approval); realign
+  Development-folder master to `8af7469` (own approval).
 - ☐ **Disposable database + Local isolation (D5-ratified position: after Phase B).**
   Problem: Local dev still points at Production Supabase — authenticated Local QA is
   PROHIBITED until this completes (authenticated Local actions can mutate real user
   data). Success: disposable Supabase project with schema parity + proven
   approved-owner refresh; Local pointed exclusively at it; approved warning banner
-  (copy needs Erik's UX approval). Dependencies: Phase B. No documented estimate —
-  investigation required.
+  (copy needs Erik's UX approval). Dependencies: Phase B (done 2026-08-15) — this is
+  now the NEXT workstream. No documented estimate — investigation required.
 - ☐ **Focused security-readiness review (separate from pipeline work).** Problem: RLS
   and Storage policies exist [REPO] but cross-account behavior has never been
   empirically verified. Success: empirical cross-account isolation proof for

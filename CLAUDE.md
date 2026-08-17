@@ -116,16 +116,26 @@ Never use or reference the Supabase `service_role` key in client code.
 ## Release Pipeline (cut over 2026-08-13 — ADR-0020; operational source of truth: `QA/release-pipeline-cutover-runbook-v5.3-2026-08-13.md`)
 
 **Pushing `master` no longer deploys production.** The Vercel Production Branch is
-**`production-gate`**, and "Auto-assign Custom Production Domains" is **OFF**. The
-configured and required Model S behavior: a push to `production-gate` creates a *staged*
-Production deployment that serves nothing publicly until manually promoted in the
-dashboard. **Not yet empirically proven** — Phase B's first genuinely new approved commit
-pushed to `production-gate` is the hard proof, and execution stops if no staged Production
-deployment appears. Under the approved operating procedure, the public app changes only
-via the release procedure (runbook §4: R0 preflight → R1 approved push to
+**`production-gate`**, and "Auto-assign Custom Production Domains" is **OFF**. Model S
+behavior — a push to `production-gate` creates a *staged* Production deployment
+("Production · Staged") that serves nothing publicly until manually promoted in the
+dashboard, and promotion does not rebuild — was **empirically PROVEN 2026-08-15 by the
+Phase B rehearsal** (record: `QA/release-pipeline-phase-b-rehearsal-checklist-v1-2026-08-15.md`
+§8; ADR-0020 Phase B amendment). Under the approved operating procedure, the public app
+changes only via the release procedure (runbook §4: R0 preflight → R1 approved push to
 `production-gate` → R2 validate staged → R3 promote → R4 smoke test → R5 `prod-*` tag),
 each release individually approved by Erik — a process rule, not a technical
 impossibility for an administrator. Rollback/incident handling is runbook §5.
+**R5 date rule:** the tag date is the **America/Los_Angeles calendar date**, computed by a
+method **proven in the release-ops execution environment**. Currently proven on the Windows
+release-ops machine: the explicit .NET conversion
+(`powershell -NoProfile -Command "[System.TimeZoneInfo]::ConvertTimeBySystemTimeZoneId((Get-Date).ToUniversalTime(),'Pacific Standard Time').ToString('yyyy.MM.dd')"`).
+Known-INVALID there: `TZ=America/Los_Angeles date` returns the UTC date in that Git Bash
+(no tz database; caught by a Phase B stop). The command is the current implementation, not
+the rule. **Terminology (Erik, 2026-08-15):** never bare "master" when
+more than one location is in play — say Published master (GitHub), Development-folder
+master (this folder), Release-ops master (the clone), or origin/master tracking reference;
+attach the commit id when it matters.
 
 **LOCAL SAFETY BOUNDARY (current):** Local still points to Production Supabase.
 Authenticated Local QA is PROHIBITED until Local isolation is completed — authenticated
@@ -147,11 +157,23 @@ Local actions can mutate real user data. Daily campaign work remains in Producti
   force push).
 - **Release Git operations run in the dedicated clone**
   `C:\Users\erik\projects\mastermind-release-ops` — never in this working folder.
-- **Phase B (rehearsal) is NOT yet done:** the first genuinely new approved commit pushed to `production-gate` must
-  produce a staged Production deployment (hard proof point — after its branch-creation
-  push at the already-built C0, no deployment was observed through CP-7 and no deployment
-  address was recorded; cause unestablished). No `prod-*` tag exists yet. Local isolation
-  is the next workstream (see the LOCAL SAFETY BOUNDARY above).
+- **Phase B (rehearsal) DONE 2026-08-15:** rehearsal commit `8af7469` (empty; tree =
+  `779c0a1`; app identical to C0) → Preview `GYGg933nHWSnqNCXNbEzYBNtVrLX` → pushed to
+  `production-gate` → staged Production deployment **`TdLdhwDGc3q569ucqhLcpinSY9MG`**
+  (hard proof) → validated → promoted by Erik without rebuild (same ID now Current on
+  `mastermind-story-builder.vercel.app`) → smoke test passed → **first release tag
+  `prod-2026.08.15`**. Previous Production `Eu1r5aDjpQzPnPweqWiBnfhLRpfb` (C0) retained as
+  that release's rollback target. Tag ruleset proven (permanent artifact
+  `verification-release-tag-protection-2026-08-15`); dashboard promote left auto-assign
+  Disabled (observed once — not a general guarantee; the post-promotion check stays).
+  Post-Phase-A docs: `779c0a1` (Preview `7viRyiEH1yumUSbA9RGSUTiXmBL3`). State after
+  Phase B (four locations): Published master = `8af7469` · GitHub `production-gate` =
+  `8af7469` · Release-ops master = `8af7469` · Development-folder master = `779c0a1` — the
+  expected post-Phase-B gap; realignment requires its own separate approval. **Domain direction (product-owner input, nothing configured —
+  Phase D, not B):** Production → `mastermind.justlivingthedream.com`; Preview →
+  `preview.mastermind.justlivingthedream.com` (extends runbook decision D4 — needs a
+  recorded decision); `staging.mastermind…` RESERVED only. Local isolation is the next
+  workstream (see the LOCAL SAFETY BOUNDARY above).
 
 `VITE_POSTHOG_KEY` must be set at **build time**, not just at runtime. Vite
 substitutes `import.meta.env.VITE_POSTHOG_KEY` with its literal value during

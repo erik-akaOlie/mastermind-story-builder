@@ -20,9 +20,12 @@ protections existed. The launch queue was deliberately paused behind fixing this
 2. **Auto-assign Custom Production Domains = OFF.** The configured and required Model S
    behavior: a push to `production-gate` creates a *staged* Production deployment that
    does NOT serve the public domain until manually promoted (R3) after validation (R2).
-   Promotion is the release act, not the push. **This staged-deployment behavior is not
-   yet empirically proven** — Phase B's first genuinely new push is the hard proof, and
-   execution stops if it produces no staged deployment.
+   Promotion is the release act, not the push. **Empirically PROVEN 2026-08-15 (Phase B
+   rehearsal):** the first genuinely new commit pushed to `production-gate` (`8af7469`)
+   created a "Production · Staged" deployment that did not touch the public domain; Erik
+   promoted it from the dashboard without rebuild (same deployment ID
+   `TdLdhwDGc3q569ucqhLcpinSY9MG` became Current); the smoke test passed; the first release
+   tag `prod-2026.08.15` was created. See "Phase B amendment" below.
 3. **`master` is the integration branch → Preview environment.** Master pushes build
    Preview deployments with real app configuration via branch-pinned env vars
    (Preview/`master` scope), reachable at the stable generated alias
@@ -70,6 +73,35 @@ the operational source of truth; this ADR records the architecture and the decis
   deleted, and confirmed absent everywhere (the only production-data write of the cutover).
 - The master push freeze held from the first PRE-4 approval through exactly one push
   (A23's empty commit `5acc5b9`, tree-identical to C0).
+
+## Phase B amendment (2026-08-15) — rehearsal executed; Model S proven
+
+Record: `QA/release-pipeline-phase-b-rehearsal-checklist-v1-2026-08-15.md` §8 and the facts
+sheet's "Phase B record". Facts that change or sharpen this ADR:
+
+- **The staged-deployment behavior is proven [VERIFIED]** (a genuinely new `production-gate`
+  push → "Production · Staged"; the A15 no-deployment outcome was specific to creating the
+  branch at an already-built commit and is not the normal case).
+- **Promotion does not rebuild [VERIFIED]** — the deployment ID is preserved across
+  promotion; verify "Current = the staged ID" at every R3.
+- **In this one observed dashboard promotion (2026-08-15), Auto-assign Custom Production
+  Domains remained Disabled [VERIFIED, single observation]** — not a general guarantee
+  about dashboard promotions. The [DOCS] re-enable warning for CLI `vercel promote` and
+  Undo Rollback still applies; the post-promotion toggle check remains a permanent part
+  of the procedure.
+- **Tag ruleset proven [VERIFIED]:** deletion and forced re-point of a
+  `verification-release-tag-*` tag are rejected by GitHub with bypass lists empty; the
+  permanent artifact is `verification-release-tag-protection-2026-08-15` → `779c0a1`.
+- **Release record begins:** `prod-2026.08.15` → `8af7469`, annotated with the promoted
+  deployment ID. Previous Production P-ID `Eu1r5…` (C0) is retained as that release's
+  rollback target.
+- **R5 date requirement (enduring):** the release-tag date is the **America/Los_Angeles
+  calendar date**, and the method used to compute it must be **proven in the release-ops
+  execution environment**. Currently proven on the Windows release-ops machine: the
+  explicit .NET/PowerShell time-zone conversion (recorded in CLAUDE.md). Known-invalid in
+  that environment's Git Bash: `TZ=America/Los_Angeles date …` — it returned the UTC date
+  (no tz database). Discovered by a stop before anything was pushed; recovered under a
+  separate approval. The specific command is an implementation detail, not architecture.
 
 ## Consequences
 
